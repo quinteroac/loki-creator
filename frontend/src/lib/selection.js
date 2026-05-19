@@ -30,5 +30,5 @@ export function toggleMultiSelection(currentSelection, item) {
 export function getFirstSelectedCardLabel(cards, selectedCardIds, fallbackLabel) {
   const selectedCard = cards.find((card) => selectedCardIds.includes(card.id));
 
-  return selectedCard?.title ?? selectedCard?.id ?? fallbackLabel;
+  return selectedCard?.name ?? selectedCard?.id ?? fallbackLabel;
 }

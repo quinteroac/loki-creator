@@ -159,6 +159,71 @@ button {
   background: radial-gradient(circle at 50% 42%, transparent 0 42%, var(--workspace-bg) 86%);
 }
 
+.canvas-card-grid {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 24px;
+}
+
+.canvas-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  color: var(--dark-text);
+  background: var(--panel-bg);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 16px;
+}
+
+.canvas-card.selected {
+  outline: 2px solid var(--brand-blue-deep);
+  outline-offset: 3px;
+}
+
+.canvas-card-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  overflow: hidden;
+  background: var(--ink);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 12px;
+}
+
+.canvas-card-preview canvas,
+.canvas-card-preview iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.canvas-card-preview iframe {
+  pointer-events: none;
+}
+
+.html-canvas-hidden {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.html-canvas-source {
+  width: 100%;
+  height: 100%;
+}
+
+.canvas-card p {
+  margin: 0;
+  color: var(--dark-text-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
 .icon-button {
   display: inline-grid;
   width: 36px;

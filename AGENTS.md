@@ -24,6 +24,7 @@ Before implementing any UI work, open and review [`DESIGN.md`](./DESIGN.md) to e
 
 ## Architecture Guidelines
 
+- Before changing backend/frontend architecture, tool contracts, tool jobs, card rendering, or agent/tool flows, read [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 - Apply SOLID principles in both frontend and backend code.
 - Keep modules focused on one responsibility: UI components render UI, hooks manage reusable UI behavior, services perform side effects, and pure utilities hold reusable business rules.
 - Prefer dependency boundaries that make code easy to replace or extend without editing unrelated modules.

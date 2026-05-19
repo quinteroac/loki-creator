@@ -63,7 +63,9 @@ export function AgentComposer({
                 </button>
               );
             })}
-            {filteredTools.length === 0 && <p className="tool-empty">No matching tools</p>}
+            {filteredTools.length === 0 && (
+              <p className="tool-empty">{toolSearch.trim() ? "No matching tools" : "No tools available"}</p>
+            )}
           </div>
         </div>
       )}
