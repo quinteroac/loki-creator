@@ -4,6 +4,7 @@ import { createToolJob, listToolJobs, waitForToolJob } from "./api/toolJobs";
 import { listTools } from "./api/tools";
 import { AgentComposer } from "./components/AgentComposer";
 import { CanvasStage } from "./components/CanvasStage";
+import { availableModels } from "./data/models";
 import { Topbar } from "./components/Topbar";
 import { initialCanvasCards } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
@@ -20,6 +21,7 @@ export function App() {
   const [canvasCards, setCanvasCards] = useState(initialCanvasCards);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState(["Auto"]);
+  const [selectedModel, setSelectedModel] = useState(availableModels[0]);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [toolSearch, setToolSearch] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -115,10 +117,13 @@ export function App() {
         prompt: text,
         context: {
           tools: selectedTools,
+          model: selectedModel,
           selectedElement: selectedNode?.name ?? null,
         },
         selectedCards,
-        params: {},
+        params: {
+          model: selectedModel,
+        },
       });
       const completedJob = await waitForToolJob(createdJob.id);
 
@@ -163,6 +168,11 @@ export function App() {
     setSelectedCards((currentCards) => toggleMultiSelection(currentCards, cardId));
   }
 
+  function selectModel(model: string) {
+    setSelectedModel(model);
+    setOpenMenu(null);
+  }
+
   return (
     <main className="workspace" aria-label="Loki workspace">
       <Topbar />
@@ -174,6 +184,7 @@ export function App() {
       />
       <AgentComposer
         canvasNodes={canvasCards}
+        availableModels={availableModels}
         fileInputRef={fileInputRef}
         filteredTools={filteredTools}
         instruction={instruction}
@@ -181,6 +192,7 @@ export function App() {
         onCreateAgent={handleCreateAgent}
         onInstructionChange={setInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
+        onSelectModel={selectModel}
         onSubmit={submitInstruction}
         onToggleCard={toggleCard}
         onToggleTool={toggleTool}
@@ -188,6 +200,7 @@ export function App() {
         selectedCards={selectedCards}
         selectedCardCount={selectedCards.length}
         selectedCardLabel={selectedCardLabel}
+        selectedModel={selectedModel}
         selectedToolCount={selectedTools.length}
         selectedTools={selectedTools}
         setOpenMenu={setOpenMenu}

@@ -1,8 +1,9 @@
-import { ArrowUp, Bot, Check, Layers, Paperclip, Search, Wrench } from "lucide-react";
+import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Wrench } from "lucide-react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import type { GeneratedCard } from "../types";
 
 type AgentComposerProps = {
+  availableModels: string[];
   canvasNodes: GeneratedCard[];
   filteredTools: string[];
   instruction: string;
@@ -10,6 +11,7 @@ type AgentComposerProps = {
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSelectModel: (model: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
   onToggleTool: (tool: string) => void;
@@ -17,6 +19,7 @@ type AgentComposerProps = {
   selectedCards: string[];
   selectedCardCount: number;
   selectedCardLabel: string;
+  selectedModel: string;
   selectedToolCount: number;
   selectedTools: string[];
   setOpenMenu: (openMenu: string | null) => void;
@@ -28,6 +31,7 @@ type AgentComposerProps = {
 };
 
 export function AgentComposer({
+  availableModels,
   canvasNodes,
   filteredTools,
   instruction,
@@ -35,6 +39,7 @@ export function AgentComposer({
   onCreateAgent,
   onInstructionChange,
   onInstructionKeyDown,
+  onSelectModel,
   onSubmit,
   onToggleCard,
   onToggleTool,
@@ -42,6 +47,7 @@ export function AgentComposer({
   selectedCards,
   selectedCardCount,
   selectedCardLabel,
+  selectedModel,
   selectedToolCount,
   selectedTools,
   setOpenMenu,
@@ -97,6 +103,28 @@ export function AgentComposer({
         </div>
       )}
 
+      {openMenu === "model-picker" && (
+        <div className="popover model-popover" data-popover aria-label="Select model">
+          <div className="tool-list">
+            {availableModels.map((model) => {
+              const isSelected = selectedModel === model;
+
+              return (
+                <button
+                  className={`tool-option ${isSelected ? "selected" : ""}`}
+                  key={model}
+                  type="button"
+                  onClick={() => onSelectModel(model)}
+                >
+                  <span>{model}</span>
+                  {isSelected && <Check size={14} strokeWidth={2} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {openMenu === "selected-cards" && (
         <div className="popover cards-popover" data-popover aria-label="Selected cards">
           <div className="tool-list">
@@ -143,6 +171,16 @@ export function AgentComposer({
             >
               <Bot size={14} strokeWidth={2} />
               <span>Agent</span>
+            </button>
+            <button
+              className="chat-chip"
+              type="button"
+              data-popover-trigger
+              aria-expanded={openMenu === "model-picker"}
+              onClick={() => setOpenMenu(openMenu === "model-picker" ? null : "model-picker")}
+            >
+              <Cpu size={14} strokeWidth={2} />
+              <span>{selectedModel}</span>
             </button>
             <button
               className="chat-chip"

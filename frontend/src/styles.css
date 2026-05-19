@@ -426,13 +426,18 @@ textarea::placeholder {
   width: min(312px, calc(100vw - 48px));
 }
 
+.model-popover {
+  left: 236px;
+  width: min(280px, calc(100vw - 48px));
+}
+
 .elements-popover {
   left: 188px;
   min-width: 232px;
 }
 
 .cards-popover {
-  left: 252px;
+  left: 364px;
   width: min(280px, calc(100vw - 48px));
 }
 

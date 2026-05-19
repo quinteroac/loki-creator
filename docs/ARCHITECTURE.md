@@ -42,6 +42,7 @@ The backend owns contracts, tool registration, invocation, and async job state:
 
 Important modules:
 
+- `backend/app/models/agents.py`: base agent and agent-skill contracts for future user-created agents.
 - `backend/app/models/tools.py`: tool, package, job, invocation, and result contracts.
 - `backend/app/models/instructions.py`: current instruction and generated-card contracts.
 - `backend/app/services/builtin_tools.py`: built-in tool contracts.
@@ -97,6 +98,18 @@ Built-in tools may be:
 `GET /api/tools` returns only frontend-visible tools.  
 `GET /api/tools?include_internal=true` includes internal tools such as `Browser Tool`.
 
+## Agent Contracts
+
+Agents are the base template for future user-created agents. The first contract-only version defines:
+
+- `AgentDefinition`: identity, display metadata, `defaultModel`, inherited `defaultSkills`, and `agentSkillId`.
+- `AgentSkillDefinition`: the agent-specific skill referenced by an agent.
+- `AgentSkillStep`: an ordered canvas workflow step with tool, input card, output card, and prompt references.
+
+`defaultModel` represents the agent's preferred model for future execution, but it is not used by the runtime yet. `defaultSkills` represents skills inherited by every agent, but starts empty in this first version. `agentSkillId` expresses the planned 1:1 relationship between an agent and its primary agent skill.
+
+Creation from canvas elements is intentionally reserved for a future implementation. There are no agent endpoints, registries, persistence files, frontend flows, or `ToolJobService` integration in this version.
+
 ## Export And Import Preparation
 
 The contract includes `ToolPackage` for future export/import:
@@ -139,5 +152,6 @@ Current backend endpoints:
 - Use HTML as the primary card output format.
 - Support HTML-in-Canvas progressively with iframe fallback.
 - Separate tool contracts from tool implementations.
+- Define agent contracts before implementing user-created agent persistence, canvas creation, or execution.
 - Prepare for user tool export/import with manifests and package contracts before adding UI.
 - Keep SOLID boundaries: schemas, registry, invokers, services, routes, and UI components remain separate.

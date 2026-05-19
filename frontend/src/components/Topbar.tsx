@@ -12,7 +12,7 @@ export function Topbar() {
         <span>Untitled project</span>
       </div>
       <button className="button-secondary compact" type="button">
-        Share
+        Save
       </button>
     </header>
   );
