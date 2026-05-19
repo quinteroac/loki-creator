@@ -21,3 +21,11 @@ Before implementing any UI work, open and review [`DESIGN.md`](./DESIGN.md) to e
 2. Identify which design tokens, components, and patterns apply to the task.
 3. Implement the UI change using only the specified design system elements.
 4. If the design system does not cover a needed element, fall back to the closest existing pattern and flag the gap for design review.
+
+## Architecture Guidelines
+
+- Apply SOLID principles in both frontend and backend code.
+- Keep modules focused on one responsibility: UI components render UI, hooks manage reusable UI behavior, services perform side effects, and pure utilities hold reusable business rules.
+- Prefer dependency boundaries that make code easy to replace or extend without editing unrelated modules.
+- Avoid large catch-all files. When a component, route, or service grows beyond one clear responsibility, split it into smaller modules with explicit props or function inputs.
+- Keep backend request/response schemas, route handlers, and domain services separated.
