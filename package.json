@@ -1,0 +1,10 @@
+{
+  "name": "loki-creator",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "dev:frontend": "bun run --cwd frontend dev",
+    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload"
+  }
+}

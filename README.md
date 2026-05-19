@@ -2,6 +2,14 @@
 
 Workspace creativo con frontend React sobre Bun y backend Python sobre uv.
 
+## Desarrollo
+
+```bash
+bun run dev
+```
+
+Este comando levanta el frontend y el backend al mismo tiempo.
+
 ## Frontend
 
 ```bash
