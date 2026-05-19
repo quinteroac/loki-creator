@@ -1,10 +1,10 @@
 import { useEffect } from "react";
 
-export function useDismissablePopover(openPopover, closePopover) {
+export function useDismissablePopover(openPopover: string | null, closePopover: () => void): void {
   useEffect(() => {
     if (!openPopover) return undefined;
 
-    function closeOnOutsidePointer(event) {
+    function closeOnOutsidePointer(event: PointerEvent) {
       const target = event.target;
 
       if (!(target instanceof Element)) return;
@@ -13,7 +13,7 @@ export function useDismissablePopover(openPopover, closePopover) {
       closePopover();
     }
 
-    function closeOnEscape(event) {
+    function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         closePopover();
       }

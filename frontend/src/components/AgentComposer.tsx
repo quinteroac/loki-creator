@@ -1,4 +1,31 @@
 import { ArrowUp, Bot, Check, Layers, Paperclip, Search, Wrench } from "lucide-react";
+import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
+import type { GeneratedCard } from "../types";
+
+type AgentComposerProps = {
+  canvasNodes: GeneratedCard[];
+  filteredTools: string[];
+  instruction: string;
+  onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void;
+  onCreateAgent: () => void;
+  onInstructionChange: (instruction: string) => void;
+  onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onToggleCard: (cardId: string) => void;
+  onToggleTool: (tool: string) => void;
+  openMenu: string | null;
+  selectedCards: string[];
+  selectedCardCount: number;
+  selectedCardLabel: string;
+  selectedToolCount: number;
+  selectedTools: string[];
+  setOpenMenu: (openMenu: string | null) => void;
+  setToolSearch: (toolSearch: string) => void;
+  status: string;
+  toolButtonLabel: string;
+  toolSearch: string;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+};
 
 export function AgentComposer({
   canvasNodes,
@@ -23,7 +50,7 @@ export function AgentComposer({
   toolButtonLabel,
   toolSearch,
   fileInputRef,
-}) {
+}: AgentComposerProps) {
   return (
     <section className="composer-wrap" aria-label="Agent instructions">
       {openMenu === "agents" && (

@@ -1,6 +1,8 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
-export async function createToolJob(payload) {
+import type { ToolJob, ToolJobRequest, ToolJobStatus } from "../types";
+
+export async function createToolJob(payload: ToolJobRequest): Promise<ToolJob> {
   const response = await fetch(`${API_URL}/api/tool-jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -14,7 +16,7 @@ export async function createToolJob(payload) {
   return response.json();
 }
 
-export async function getToolJob(jobId) {
+export async function getToolJob(jobId: string): Promise<ToolJob> {
   const response = await fetch(`${API_URL}/api/tool-jobs/${jobId}`);
 
   if (!response.ok) {
@@ -24,7 +26,7 @@ export async function getToolJob(jobId) {
   return response.json();
 }
 
-export async function listToolJobs({ status } = {}) {
+export async function listToolJobs({ status }: { status?: ToolJobStatus } = {}): Promise<ToolJob[]> {
   const searchParams = new URLSearchParams();
 
   if (status) {
@@ -41,7 +43,10 @@ export async function listToolJobs({ status } = {}) {
   return response.json();
 }
 
-export async function waitForToolJob(jobId, { intervalMs = 400, maxAttempts = 30 } = {}) {
+export async function waitForToolJob(
+  jobId: string,
+  { intervalMs = 400, maxAttempts = 30 }: { intervalMs?: number; maxAttempts?: number } = {},
+): Promise<ToolJob> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     const job = await getToolJob(jobId);
 

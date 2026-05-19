@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createToolJob, listToolJobs, waitForToolJob } from "./api/toolJobs";
 import { listTools } from "./api/tools";
 import { AgentComposer } from "./components/AgentComposer";
@@ -12,18 +13,19 @@ import {
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
+import type { GeneratedCard, ToolJob } from "./types";
 
 export function App() {
   const [instruction, setInstruction] = useState("");
   const [canvasCards, setCanvasCards] = useState(initialCanvasCards);
-  const [availableTools, setAvailableTools] = useState([]);
+  const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState(["Auto"]);
-  const [selectedCards, setSelectedCards] = useState([]);
+  const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [toolSearch, setToolSearch] = useState("");
-  const [openMenu, setOpenMenu] = useState(null);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [status, setStatus] = useState("");
-  const fileInputRef = useRef(null);
-  const processedJobIdsRef = useRef(new Set());
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const processedJobIdsRef = useRef<Set<string>>(new Set());
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
   useDismissablePopover(openMenu, closePopover);
@@ -51,19 +53,22 @@ export function App() {
     };
   }, []);
 
-  const addCardsFromJob = useCallback((job) => {
+  const addCardsFromJob = useCallback((job: ToolJob) => {
     if (processedJobIdsRef.current.has(job.id)) return;
 
     const generatedCards = job.result?.cards ?? [];
     if (job.status !== "succeeded" || generatedCards.length === 0) return;
 
     processedJobIdsRef.current.add(job.id);
-    setCanvasCards((currentCards) => {
+    setCanvasCards((currentCards: GeneratedCard[]) => {
       const currentCardIds = new Set(currentCards.map((card) => card.id));
       const newCards = generatedCards.filter((card) => !currentCardIds.has(card.id));
       return [...currentCards, ...newCards];
     });
-    setSelectedCards([generatedCards[0].id]);
+    const firstGeneratedCard = generatedCards[0];
+    if (firstGeneratedCard) {
+      setSelectedCards([firstGeneratedCard.id]);
+    }
   }, []);
 
   useEffect(() => {
@@ -94,7 +99,7 @@ export function App() {
   const toolButtonLabel = selectedTools[0] ?? "Auto";
   const selectedCardLabel = getFirstSelectedCardLabel(canvasCards, selectedCards, "Selected cards");
 
-  async function submitInstruction(event) {
+  async function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = instruction.trim();
 
@@ -131,15 +136,15 @@ export function App() {
     }
   }
 
-  function handleInstructionKeyDown(event) {
+  function handleInstructionKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      event.currentTarget.form.requestSubmit();
+      event.currentTarget.form?.requestSubmit();
     }
   }
 
-  function handleFiles(event) {
-    const count = event.target.files.length;
+  function handleFiles(event: ChangeEvent<HTMLInputElement>) {
+    const count = event.target.files?.length ?? 0;
     if (count > 0) {
       setStatus(count === 1 ? "1 file attached." : `${count} files attached.`);
     }
@@ -150,11 +155,11 @@ export function App() {
     setOpenMenu(null);
   }
 
-  function toggleTool(tool) {
+  function toggleTool(tool: string) {
     setSelectedTools((currentTools) => toggleExclusiveAutoSelection(currentTools, tool));
   }
 
-  function toggleCard(cardId) {
+  function toggleCard(cardId: string) {
     setSelectedCards((currentCards) => toggleMultiSelection(currentCards, cardId));
   }
 

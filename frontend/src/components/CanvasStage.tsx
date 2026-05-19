@@ -1,6 +1,14 @@
 import { CanvasCard } from "./CanvasCard";
+import type { GeneratedCard } from "../types";
 
-export function CanvasStage({ cards, selectedCards, selectedNode, onToggleCard }) {
+type CanvasStageProps = {
+  cards: GeneratedCard[];
+  selectedCards: string[];
+  selectedNode?: GeneratedCard;
+  onToggleCard: (cardId: string) => void;
+};
+
+export function CanvasStage({ cards, selectedCards, selectedNode, onToggleCard }: CanvasStageProps) {
   return (
     <section className="canvas-shell" aria-label="Creative canvas">
       <div className="canvas" id="creativeCanvas" tabIndex={0}>
