@@ -45,6 +45,7 @@ Important modules:
 - `backend/app/models/agents.py`: base agent and agent-skill contracts for future user-created agents.
 - `backend/app/models/tools.py`: tool, package, job, invocation, and result contracts.
 - `backend/app/models/instructions.py`: current instruction and generated-card contracts.
+- `backend/app/services/builtin_agents.py`: built-in agent definitions such as `Tool Builder`.
 - `backend/app/services/builtin_tools.py`: built-in tool contracts.
 - `backend/app/services/tool_registry.py`: hybrid registry for built-ins and user manifests.
 - `backend/app/services/tool_invokers.py`: invoker abstraction for built-in, HTTP, and CLI tools.
@@ -100,7 +101,7 @@ Built-in tools may be:
 
 ## Agent Contracts
 
-Agents are the base template for future user-created agents. The first contract-only version defines:
+Agents are the base template for future user-created agents and built-in agents. The first contract-only version defines:
 
 - `AgentDefinition`: identity, display metadata, `defaultModel`, inherited `defaultSkills`, and `agentSkillId`.
 - `AgentSkillDefinition`: the agent-specific skill referenced by an agent.
@@ -108,7 +109,17 @@ Agents are the base template for future user-created agents. The first contract-
 
 `defaultModel` represents the agent's preferred model for future execution, but it is not used by the runtime yet. `defaultSkills` represents skills inherited by every agent, but starts empty in this first version. `agentSkillId` expresses the planned 1:1 relationship between an agent and its primary agent skill.
 
-Creation from canvas elements is intentionally reserved for a future implementation. There are no agent endpoints, registries, persistence files, frontend flows, or `ToolJobService` integration in this version.
+Agent skills adopt the Agent Skills standard: a skill is a folder with a required `SKILL.md` file containing YAML frontmatter and Markdown instructions. Built-in agent skills live in `backend/builtin_agent_skills/`, for example `backend/builtin_agent_skills/tool-builder/SKILL.md`. Future user-created agent skills should live in an equivalent user-owned location such as `backend/user_agent_skills/`.
+
+`AgentDefinition.agentSkillId` points to the standard skill folder name, not to a JSON manifest. JSON remains reserved for user-created tool manifests.
+
+`Tool Builder` is a built-in agent defined in code and backed by the standard `tool-builder` Agent Skill folder. Its helper tools are built-in internal `ToolDefinition` entries:
+
+- `tool-requirements-analyzer`
+- `tool-contract-drafter`
+- `tool-preview-card-builder`
+
+Creation from canvas elements is intentionally reserved for a future implementation. There are no agent endpoints, registries, frontend flows, or `ToolJobService` integration in this version.
 
 ## Export And Import Preparation
 
@@ -153,5 +164,6 @@ Current backend endpoints:
 - Support HTML-in-Canvas progressively with iframe fallback.
 - Separate tool contracts from tool implementations.
 - Define agent contracts before implementing user-created agent persistence, canvas creation, or execution.
+- Store agent skills as Agent Skills standard folders with `SKILL.md`, not as JSON manifests.
 - Prepare for user tool export/import with manifests and package contracts before adding UI.
 - Keep SOLID boundaries: schemas, registry, invokers, services, routes, and UI components remain separate.

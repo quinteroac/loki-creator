@@ -41,6 +41,8 @@ def create_builtin_tool(
     description: str,
     capabilities: list[str],
     invocation_visibility: str = "frontend",
+    input_schema: dict | None = None,
+    output_schema: dict | None = None,
     configuration: list[ToolConfigurationField] | None = None,
 ) -> ToolDefinition:
     return ToolDefinition(
@@ -54,13 +56,33 @@ def create_builtin_tool(
         source_type="builtin",
         invocation_visibility=invocation_visibility,
         capabilities=capabilities,
-        input_schema=TOOL_INPUT_SCHEMA,
-        output_schema=TOOL_OUTPUT_SCHEMA,
+        input_schema=input_schema or TOOL_INPUT_SCHEMA,
+        output_schema=output_schema or TOOL_OUTPUT_SCHEMA,
         exportable=False,
         runtime=ToolRuntime(source_type="builtin", entrypoint=tool_id),
         permissions=ToolPermissions(),
         configuration=configuration or [],
     )
+
+
+TOOL_PACKAGE_DRAFT_OUTPUT_SCHEMA = {
+    "type": "object",
+    "required": ["cards"],
+    "properties": {
+        **TOOL_OUTPUT_SCHEMA["properties"],
+        "draftPackage": {
+            "type": "object",
+            "description": "Planned structured ToolPackage draft. Until ToolResult supports extra fields, render this draft inside a review card.",
+            "properties": {
+                "manifestVersion": {"type": "string"},
+                "tool": {"type": "object"},
+                "assets": {"type": "array", "items": {"type": "string"}},
+                "secretsRequired": {"type": "array", "items": {"type": "string"}},
+                "integrity": {"type": "object"},
+            },
+        },
+    },
+}
 
 
 BUILTIN_TOOLS = [
@@ -159,6 +181,29 @@ BUILTIN_TOOLS = [
         name="Tool Creator",
         description="Creates draft tool contracts and manifests for future user-created tools.",
         capabilities=["tool-creation", "manifest-generation", "html-card-output"],
+    ),
+    create_builtin_tool(
+        tool_id="tool-requirements-analyzer",
+        name="Tool Requirements Analyzer",
+        description="Internal Tool Builder capability that converts a user request into Loki tool requirements.",
+        capabilities=["tool-creation", "requirements-analysis", "agent-internal"],
+        invocation_visibility="internal",
+    ),
+    create_builtin_tool(
+        tool_id="tool-contract-drafter",
+        name="Tool Contract Drafter",
+        description="Internal Tool Builder capability that drafts ToolDefinition and ToolPackage-compatible contracts.",
+        capabilities=["tool-creation", "contract-drafting", "manifest-generation", "agent-internal"],
+        invocation_visibility="internal",
+        output_schema=TOOL_PACKAGE_DRAFT_OUTPUT_SCHEMA,
+    ),
+    create_builtin_tool(
+        tool_id="tool-preview-card-builder",
+        name="Tool Preview Card Builder",
+        description="Internal Tool Builder capability that renders a tool draft as a Loki canvas review card.",
+        capabilities=["tool-creation", "html-card-output", "preview-card", "agent-internal"],
+        invocation_visibility="internal",
+        output_schema=TOOL_PACKAGE_DRAFT_OUTPUT_SCHEMA,
     ),
     create_builtin_tool(
         tool_id="hello-world",

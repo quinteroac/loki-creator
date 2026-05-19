@@ -1,0 +1,35 @@
+{
+  "manifestVersion": "1",
+  "tool": {
+    "id": "example-tool",
+    "slug": "example-tool",
+    "name": "Example Tool",
+    "description": "Describe what the tool does and when to use it.",
+    "version": "0.1.0",
+    "author": "Loki",
+    "origin": "user",
+    "sourceType": "builtin",
+    "invocationVisibility": "frontend",
+    "capabilities": [],
+    "inputSchema": {},
+    "outputSchema": {},
+    "exportable": true,
+    "runtime": {
+      "sourceType": "builtin",
+      "entrypoint": "example-tool",
+      "command": [],
+      "method": "POST",
+      "timeoutSeconds": 120
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": false,
+      "envVars": [],
+      "allowedCommands": []
+    },
+    "configuration": []
+  },
+  "assets": [],
+  "secretsRequired": [],
+  "integrity": {}
+}
