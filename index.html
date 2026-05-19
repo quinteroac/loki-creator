@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Loki Creator Workspace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="workspace" aria-label="Interfaz de trabajo Loki">
+      <header class="topbar">
+        <a class="brand" href="./index.html" aria-label="Loki Creator">
+          <span class="brand-mark" aria-hidden="true">L</span>
+          <span>Loki Creator</span>
+        </a>
+        <div class="project-switcher" aria-label="Proyecto actual">
+          <span class="project-dot" aria-hidden="true"></span>
+          <span>Proyecto sin título</span>
+        </div>
+        <button class="button-secondary compact" type="button">Compartir</button>
+      </header>
+
+      <section class="canvas-shell" aria-label="Canvas creativo">
+        <div class="canvas-toolbar" aria-label="Controles del canvas">
+          <button class="icon-button" type="button" aria-label="Alejar" title="Alejar">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14" />
+            </svg>
+          </button>
+          <span class="zoom-label">100%</span>
+          <button class="icon-button" type="button" aria-label="Acercar" title="Acercar">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+        </div>
+
+        <div class="canvas" id="creativeCanvas" tabindex="0">
+          <article class="canvas-node node-image selected" data-node-name="Moodboard de personaje">
+            <span class="node-kicker">Imagen</span>
+            <h2>Moodboard de personaje</h2>
+            <p>Exploración visual para agente de concepto.</p>
+          </article>
+          <article class="canvas-node node-video" data-node-name="Animatic escena 01">
+            <span class="node-kicker">Video</span>
+            <h2>Animatic escena 01</h2>
+            <p>Ritmo, cámara y timing inicial.</p>
+          </article>
+          <article class="canvas-node node-audio" data-node-name="SFX portal">
+            <span class="node-kicker">Audio</span>
+            <h2>SFX portal</h2>
+            <p>Capas de impacto, aire y textura.</p>
+          </article>
+          <div class="canvas-selection-note" id="selectionNote">1 elemento seleccionado</div>
+        </div>
+      </section>
+
+      <section class="composer-wrap" aria-label="Instrucciones para el agente">
+        <div class="popover" id="toolsMenu" aria-label="Seleccionar herramientas" hidden>
+          <button type="button" data-tool="Imagen">Imagen</button>
+          <button type="button" data-tool="Video">Video</button>
+          <button type="button" data-tool="Audio">Audio</button>
+          <button type="button" data-tool="3D">3D</button>
+        </div>
+
+        <div class="popover elements-popover" id="elementsMenu" aria-label="Elementos del canvas" hidden>
+          <button type="button" data-target="Moodboard de personaje">Moodboard de personaje</button>
+          <button type="button" data-target="Animatic escena 01">Animatic escena 01</button>
+          <button type="button" data-target="SFX portal">SFX portal</button>
+        </div>
+
+        <form class="composer" id="instructionForm">
+          <div class="composer-actions">
+            <input id="fileInput" type="file" hidden multiple />
+            <button class="icon-button" id="attachButton" type="button" aria-label="Adjuntar archivo" title="Adjuntar">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.3-9.3a4 4 0 0 1 5.7 5.7l-9.3 9.3a2 2 0 1 1-2.8-2.8l8.8-8.8" />
+              </svg>
+            </button>
+            <button class="button-tertiary tool-toggle" id="toolsButton" type="button" aria-expanded="false">
+              Herramientas
+            </button>
+            <button class="button-tertiary tool-toggle" id="elementsButton" type="button" aria-expanded="false">
+              Seleccionar
+            </button>
+          </div>
+
+          <textarea
+            id="instructionInput"
+            name="instruction"
+            rows="1"
+            placeholder="Dale instrucciones al agente..."
+            aria-label="Instrucción para el agente"
+          ></textarea>
+
+          <button class="button-primary send-button" type="submit" aria-label="Enviar instrucción">
+            <span>Enviar</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </button>
+        </form>
+        <p class="composer-status" id="composerStatus" aria-live="polite"></p>
+      </section>
+    </main>
+
+    <script src="./script.js"></script>
+  </body>
+</html>

@@ -1,0 +1,16 @@
+[project]
+name = "loki-creator-backend"
+version = "0.1.0"
+description = "Backend API for Loki Creator"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.124.2",
+  "uvicorn[standard]>=0.38.0",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false
