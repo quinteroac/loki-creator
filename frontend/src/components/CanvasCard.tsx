@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { getCardDisplaySubtitle, getCardDisplayTitle, hasPlayableMedia } from "../lib/cardDocuments";
-import type { CardDocument, CanvasNode, CanvasNodeFrame } from "../types";
+import {
+  getCardDisplaySubtitle,
+  getCardDisplayTitle,
+  hasPlayableMedia,
+  isDataUrlWithinLimit,
+  SELECTED_CARD_PREVIEW_MAX_BYTES,
+} from "../lib/cardDocuments";
+import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview } from "../types";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
   drawElementImage?: (element: Element, x: number, y: number, width: number, height: number) => void;
@@ -14,6 +20,7 @@ type CanvasCardProps = {
   node: CanvasNode;
   isSelected: boolean;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
+  onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
 };
@@ -86,17 +93,32 @@ function shouldUsePlayableMediaFallback(document: CardDocument): boolean {
   return document.metadata?.playableMedia ?? hasPlayableMedia(document.html);
 }
 
+function createOmittedPreview(
+  reason: Extract<SelectedCardPreview, { omitted: true }>["reason"],
+  canvas?: HTMLCanvasElement | null,
+): SelectedCardPreview {
+  return {
+    source: "rendered-preview",
+    omitted: true,
+    reason,
+    width: canvas?.clientWidth,
+    height: canvas?.clientHeight,
+  };
+}
+
 export function CanvasCard({
   document,
   node,
   isSelected,
   onRenameDocument,
+  onRegisterPreviewCapture,
   onToggleSelect,
   onUpdateFrame,
 }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const previewReadyRef = useRef(false);
   const dragStateRef = useRef<{
     pointerId: number;
     startClientX: number;
@@ -122,6 +144,7 @@ export function CanvasCard({
     const shouldUseIframe = shouldUsePlayableMediaFallback(document);
 
     if (shouldUseIframe) {
+      previewReadyRef.current = false;
       setUseIframeFallback(true);
       return undefined;
     }
@@ -141,15 +164,18 @@ export function CanvasCard({
 
       if (drawStatus === "drawn") {
         retryCount = 0;
+        previewReadyRef.current = true;
         setUseIframeFallback(false);
         return;
       }
 
       if (drawStatus === "unsupported") {
+        previewReadyRef.current = false;
         setUseIframeFallback(true);
         return;
       }
 
+      previewReadyRef.current = false;
       retryCount += 1;
       if (retryCount <= 8) {
         scheduleRender();
@@ -179,6 +205,34 @@ export function CanvasCard({
       titleInputRef.current?.select();
     }
   }, [isEditingTitle]);
+
+  useEffect(() => {
+    return onRegisterPreviewCapture(document.id, () => {
+      const canvas = canvasRef.current;
+
+      if (useIframeFallback) return createOmittedPreview("iframe-fallback", canvas);
+      if (!canvas || canvas.width === 0 || canvas.height === 0 || !previewReadyRef.current) {
+        return createOmittedPreview("capture-unavailable", canvas);
+      }
+
+      try {
+        const dataUrl = canvas.toDataURL("image/png");
+        if (!isDataUrlWithinLimit(dataUrl, SELECTED_CARD_PREVIEW_MAX_BYTES)) {
+          return createOmittedPreview("size-limit", canvas);
+        }
+
+        return {
+          source: "rendered-preview",
+          mimeType: "image/png",
+          dataUrl,
+          width: canvas.clientWidth,
+          height: canvas.clientHeight,
+        };
+      } catch {
+        return createOmittedPreview("tainted-canvas", canvas);
+      }
+    });
+  }, [document.id, onRegisterPreviewCapture, useIframeFallback]);
 
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;

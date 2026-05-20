@@ -8,7 +8,17 @@ TOOL_INPUT_SCHEMA = {
         "prompt": {"type": "string"},
         "context": {"type": "object"},
         "selectedCards": {"type": "array", "items": {"type": "string"}},
-        "params": {"type": "object"},
+        "params": {
+            "type": "object",
+            "properties": {
+                "html": {
+                    "type": "string",
+                    "description": "Complete self-contained HTML authored by the model. For selected-card edits, this should be the transformed selected card artifact.",
+                },
+                "cardHtml": {"type": "string"},
+                "outputHtml": {"type": "string"},
+            },
+        },
     },
 }
 

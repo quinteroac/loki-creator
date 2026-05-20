@@ -1,11 +1,24 @@
-import html
 import json
 import sys
+from html import escape
 from uuid import uuid4
 
 
-def build_card_html(prompt: str) -> str:
-    escaped_prompt = html.escape(prompt or "Animated HTML study")
+def resolve_authored_html(payload: dict) -> str:
+    params = payload.get("params", {})
+    if not isinstance(params, dict):
+        return ""
+
+    for key in ("html", "cardHtml", "outputHtml"):
+        value = params.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return ""
+
+
+def build_fallback_card_html(prompt: str) -> str:
+    escaped_prompt = escape(prompt or "HTML animation")
 
     return f"""<section class="loki-html-animation-card" style="position:absolute;inset:0;width:100%;height:100%;max-width:100%;max-height:100%;overflow:hidden;contain:layout paint size;isolation:isolate;background:#000000;color:#ffffff;font-family:DM Sans,Inter,Helvetica Neue,Arial,sans-serif;">
   <style>
@@ -79,17 +92,14 @@ def build_card_html(prompt: str) -> str:
   <div class="orb" aria-hidden="true"></div>
   <div class="orb" aria-hidden="true"></div>
   <div class="orb" aria-hidden="true"></div>
-
-  <div style="position:absolute;inset:auto 24px 24px;display:grid;gap:8px;">
-    <strong style="font-size:24px;font-weight:700;line-height:1.25;letter-spacing:0;">HTML Animation</strong>
-    <span style="max-width:34ch;color:#b5bac3;font-size:13px;line-height:1.7;">{escaped_prompt}</span>
-  </div>
+  <span style="position:absolute;left:-9999px;">{escaped_prompt}</span>
 </section>"""
 
 
 def main() -> None:
     payload = json.load(sys.stdin)
     prompt = str(payload.get("prompt", "")).strip()
+    html = resolve_authored_html(payload) or build_fallback_card_html(prompt)
 
     result = {
         "cards": [
@@ -97,7 +107,7 @@ def main() -> None:
                 "id": f"card_{uuid4().hex}",
                 "name": "HTML Animation",
                 "prompt": prompt,
-                "html": build_card_html(prompt),
+                "html": html,
                 "sourceToolId": "html-animation",
                 "metadata": {
                     "kind": "interactive",

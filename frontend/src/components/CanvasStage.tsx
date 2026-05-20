@@ -7,7 +7,7 @@ import {
   getCardHeight,
 } from "../lib/cardDocuments";
 import { CanvasCard } from "./CanvasCard";
-import type { CardDocument, CanvasNode, CanvasNodeFrame } from "../types";
+import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview } from "../types";
 
 type CanvasStageProps = {
   documentsById: Record<string, CardDocument>;
@@ -15,6 +15,7 @@ type CanvasStageProps = {
   selectedIds: string[];
   selectedDocument?: CardDocument;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
+  onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onToggleNode: (nodeId: string) => void;
   onUpdateNodeFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
 };
@@ -25,6 +26,7 @@ export function CanvasStage({
   selectedIds,
   selectedDocument,
   onRenameDocument,
+  onRegisterPreviewCapture,
   onToggleNode,
   onUpdateNodeFrame,
 }: CanvasStageProps) {
@@ -54,6 +56,7 @@ export function CanvasStage({
                 isSelected={selectedIds.includes(node.cardDocumentId)}
                 key={node.id}
                 onRenameDocument={onRenameDocument}
+                onRegisterPreviewCapture={onRegisterPreviewCapture}
                 onUpdateFrame={updateNodeFrame}
                 onToggleSelect={onToggleNode}
               />

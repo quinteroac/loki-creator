@@ -1,4 +1,11 @@
-import type { CardDocument, CanvasNode, CanvasNodeFrame } from "../types";
+import type {
+  CardDocument,
+  CanvasNode,
+  CanvasNodeFrame,
+  SelectedCardMediaAsset,
+  SelectedCardPreview,
+  SelectedCardSnapshot,
+} from "../types";
 
 export const CARD_DEFAULT_WIDTH = 512;
 export const CARD_MIN_WIDTH = 240;
@@ -6,10 +13,15 @@ export const CARD_MAX_WIDTH = 720;
 export const CARD_ASPECT_HEIGHT_RATIO = 4 / 3;
 export const CARD_GAP = 16;
 export const CANVAS_PADDING = 24;
+export const SELECTED_CARD_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+export const SELECTED_CARD_ASSET_MAX_BYTES = 5 * 1024 * 1024;
+export const SELECTED_CARD_TOTAL_ASSET_MAX_BYTES = 10 * 1024 * 1024;
 const UNTITLED_CARD_TITLE = "Untitled card";
 const DISPLAY_SUBTITLE_MAX_LENGTH = 92;
 const TECHNICAL_TITLE_PATTERN = /^(?:card|node|job)_[a-z0-9-]{8,}$/i;
 const TITLE_COUNTER_PATTERN = /^(.*?)(?:\s+(\d+))?$/;
+
+export type CardPreviewCapture = () => SelectedCardPreview | Promise<SelectedCardPreview>;
 
 export function hasPlayableMedia(cardHtml: string): boolean {
   return /<(video|audio)\b/i.test(cardHtml);
@@ -111,6 +123,151 @@ export function renameCardDocument(document: CardDocument, title: string): CardD
       title: displayTitle,
     },
   };
+}
+
+function estimateDataUrlBytes(dataUrl: string): number {
+  const base64 = dataUrl.split(",", 2)[1] ?? "";
+
+  return Math.ceil((base64.length * 3) / 4);
+}
+
+export function isDataUrlWithinLimit(dataUrl: string, maxBytes: number): boolean {
+  return estimateDataUrlBytes(dataUrl) <= maxBytes;
+}
+
+function readNumberAttribute(element: Element, attributeName: string): number | undefined {
+  const value = Number(element.getAttribute(attributeName));
+
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function readMimeType(element: Element, src: string): string | undefined {
+  const declaredType = element.getAttribute("type")?.trim();
+  if (declaredType) return declaredType;
+
+  const dataUrlMatch = src.match(/^data:([^;,]+)/);
+  return dataUrlMatch?.[1];
+}
+
+function createMediaAsset(
+  element: Element,
+  kind: SelectedCardMediaAsset["kind"],
+  assetBudget: { totalBytes: number },
+): SelectedCardMediaAsset {
+  const src = element.getAttribute("src")?.trim() || element.getAttribute("href")?.trim() || undefined;
+  const alt = element.getAttribute("alt")?.trim() || undefined;
+  const width = readNumberAttribute(element, "width");
+  const height = readNumberAttribute(element, "height");
+
+  if (!src) {
+    return {
+      kind,
+      alt,
+      width,
+      height,
+      omitted: true,
+      reason: "missing-source",
+    };
+  }
+
+  const baseAsset = {
+    kind,
+    src,
+    mimeType: readMimeType(element, src),
+    alt,
+    width,
+    height,
+  };
+
+  if (!src.startsWith("data:")) {
+    return baseAsset;
+  }
+
+  const dataUrlBytes = estimateDataUrlBytes(src);
+  const exceedsAssetLimit = dataUrlBytes > SELECTED_CARD_ASSET_MAX_BYTES;
+  const exceedsTotalLimit = assetBudget.totalBytes + dataUrlBytes > SELECTED_CARD_TOTAL_ASSET_MAX_BYTES;
+
+  if (exceedsAssetLimit || exceedsTotalLimit) {
+    return {
+      ...baseAsset,
+      omitted: true,
+      reason: "size-limit",
+    };
+  }
+
+  assetBudget.totalBytes += dataUrlBytes;
+
+  return {
+    ...baseAsset,
+    dataUrl: src,
+  };
+}
+
+export function extractSelectedCardMediaAssets(cardHtml: string): SelectedCardMediaAsset[] {
+  const parser = new DOMParser();
+  const parsedDocument = parser.parseFromString(cardHtml, "text/html");
+  const assetBudget = { totalBytes: 0 };
+  const selectors: Array<[string, SelectedCardMediaAsset["kind"]]> = [
+    ["img", "image"],
+    ["video", "video"],
+    ["audio", "audio"],
+    ["iframe", "iframe"],
+    ["source", "source"],
+    ["canvas", "canvas"],
+  ];
+
+  return selectors.flatMap(([selector, kind]) =>
+    Array.from(parsedDocument.querySelectorAll(selector)).map((element) =>
+      createMediaAsset(element, kind, assetBudget),
+    ),
+  );
+}
+
+function createUnavailablePreview(reason: Extract<SelectedCardPreview, { omitted: true }>["reason"]): SelectedCardPreview {
+  return {
+    source: "rendered-preview",
+    omitted: true,
+    reason,
+  };
+}
+
+export async function createSelectedCardSnapshots(
+  documents: CardDocument[],
+  selectedCardIds: string[],
+  previewCaptures: Map<string, CardPreviewCapture> = new Map(),
+): Promise<SelectedCardSnapshot[]> {
+  const documentsById = new Map(documents.map((document) => [document.id, document]));
+  const snapshots: SelectedCardSnapshot[] = [];
+
+  for (const cardId of selectedCardIds) {
+    const document = documentsById.get(cardId);
+    if (!document) continue;
+
+    const capturePreview = previewCaptures.get(cardId);
+    let preview: SelectedCardPreview = createUnavailablePreview("capture-unavailable");
+
+    if (capturePreview) {
+      try {
+        preview = await capturePreview();
+      } catch {
+        preview = createUnavailablePreview("capture-unavailable");
+      }
+    }
+
+    snapshots.push({
+      id: document.id,
+      name: document.name,
+      displayTitle: getCardDisplayTitle(document),
+      prompt: document.prompt,
+      html: document.html,
+      preview,
+      mediaAssets: extractSelectedCardMediaAssets(document.html),
+      sourceToolId: document.sourceToolId,
+      metadata: document.metadata,
+    });
+  }
+
+  return snapshots;
 }
 
 export function normalizeCardDocument(card: CardDocument): CardDocument {

@@ -34,7 +34,19 @@
           }
         },
         "params": {
-          "type": "object"
+          "type": "object",
+          "properties": {
+            "html": {
+              "type": "string",
+              "description": "Complete self-contained HTML authored by the model. For selected-card edits, this should be the transformed selected card artifact."
+            },
+            "cardHtml": {
+              "type": "string"
+            },
+            "outputHtml": {
+              "type": "string"
+            }
+          }
         }
       }
     },

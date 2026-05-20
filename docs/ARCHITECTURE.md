@@ -20,6 +20,7 @@ The frontend owns presentation and local workspace state:
 - Load available agents from the agent bridge.
 - Let the user select tools and selected canvas cards in the composer.
 - Submit prompts as agent runs through the agent bridge.
+- Include snapshots of selected canvas cards in agent run requests so selected cards can be used as model input.
 - Poll completed tool jobs and merge returned cards into the canvas.
 - Show the latest textual agent response in a right-side response popover.
 - Render each generated card from HTML.
@@ -121,6 +122,8 @@ Folder-based tool manifests get a runtime `workingDirectory` derived from their 
 
 Tools must separate operational instructions from visible output. `ToolInvocationRequest.prompt` preserves the exact original user request for card metadata. `params.toolPrompt` is only a runtime instruction and must not be rendered into card HTML. Visible card content should come from explicit fields such as `params.outputText`, `params.title`, `params.subtitle`, `params.body`, `params.footer`, or structured provider output.
 
+HTML-producing tools share an authored-artifact path: when the model can produce the desired card directly, it should pass complete self-contained HTML through `params.html`, `params.cardHtml`, or `params.outputHtml`. Tools should package that authored HTML as the card artifact and keep tool-specific templates or text extraction as fallbacks. For selected-card edits, the model is expected to transform `context.selectedCardSnapshots[*].html` itself and send the transformed HTML, instead of relying on the tool to infer creative changes from the prompt.
+
 ## Agent Contracts
 
 Agents are the base template for future user-created agents and built-in agents. The first contract-only version defines:
@@ -171,6 +174,15 @@ Agent run responses return text and references:
 - `responseText`: shown in the right-side response popover.
 - `toolJobIds`: jobs created by Pi custom tool calls.
 - `cardIds`: cards created by those jobs.
+
+Agent run requests keep `selectedCards` as the selected card id list and also send
+`selectedCardSnapshots` from frontend state. Each snapshot treats a selected card as a multimodal artifact: it includes
+the card id, display title, prompt, metadata, full HTML, detected media assets, and a rendered preview PNG when the
+frontend can capture one from the card preview canvas. The preview represents the artifact area only; canvas chrome such
+as selection borders, resize handles, editable titles, and subtitles is excluded. Inline previews and data assets are
+bounded by request-size limits; oversized payloads are marked as omitted with a reason while preserving source
+references when available. The bridge injects only a textual summary of selected cards into the agent prompt and forwards
+the complete snapshots to tool jobs as `context.selectedCardSnapshots`.
 
 Cards continue to flow through the existing tool-job polling contract.
 

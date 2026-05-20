@@ -29,10 +29,7 @@ class HtmlCardFactory:
         )
         html = f"""<section style="display:grid;width:100%;height:100%;place-items:center;background:#111111;color:#ffffff;font-family:DM Sans,Inter,Arial,sans-serif;">
   <div style="width:68%;min-height:52%;display:grid;place-items:center;border-radius:28px;background:linear-gradient(135deg,#245cff,#e9429f);text-align:center;padding:24px;">
-    <div>
-      <strong style="display:block;font-size:20px;line-height:1.4;">Canvas Output</strong>
-      <span style="display:block;margin-top:8px;color:rgba(255,255,255,.82);font-size:18px;line-height:1.5;">{escaped_output}</span>
-    </div>
+    <strong style="display:block;color:rgba(255,255,255,.92);font-size:24px;line-height:1.35;">{escaped_output}</strong>
   </div>
 </section>"""
 

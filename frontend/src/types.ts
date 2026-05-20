@@ -26,6 +26,47 @@ export type CardDocument = {
 
 export type GeneratedCard = CardDocument;
 
+export type SelectedCardPreview =
+  | {
+      source: "rendered-preview";
+      mimeType: "image/png";
+      dataUrl: string;
+      width: number;
+      height: number;
+      omitted?: false;
+    }
+  | {
+      source: "rendered-preview";
+      omitted: true;
+      reason: "capture-unavailable" | "iframe-fallback" | "size-limit" | "tainted-canvas";
+      width?: number;
+      height?: number;
+    };
+
+export type SelectedCardMediaAsset = {
+  kind: "image" | "video" | "audio" | "iframe" | "source" | "canvas";
+  src?: string;
+  dataUrl?: string;
+  mimeType?: string;
+  alt?: string;
+  width?: number;
+  height?: number;
+  omitted?: boolean;
+  reason?: "size-limit" | "missing-source";
+};
+
+export type SelectedCardSnapshot = {
+  id: string;
+  name: string;
+  displayTitle: string;
+  prompt: string;
+  html: string;
+  preview?: SelectedCardPreview;
+  mediaAssets: SelectedCardMediaAsset[];
+  sourceToolId?: string | null;
+  metadata?: CardMetadata;
+};
+
 export type CanvasNodeFrame = {
   width: number;
   x: number;
@@ -123,6 +164,7 @@ export type AgentRunRequest = {
   model: string;
   tools: string[];
   selectedCards: string[];
+  selectedCardSnapshots: SelectedCardSnapshot[];
   context: Record<string, unknown>;
 };
 

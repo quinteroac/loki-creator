@@ -12,9 +12,11 @@ import { useDismissablePopover } from "./hooks/useDismissablePopover";
 import {
   assignUniqueDisplayTitles,
   createCanvasNodeForDocument,
+  createSelectedCardSnapshots,
   getCardDisplayTitle,
   normalizeCardDocument,
   renameCardDocument,
+  type CardPreviewCapture,
 } from "./lib/cardDocuments";
 import {
   filterBySearch,
@@ -22,7 +24,7 @@ import {
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
-import type { AgentModel, AgentRunResponse, CanvasNodeFrame, CardDocument, ToolJob } from "./types";
+import type { AgentModel, AgentRunResponse, CanvasNodeFrame, CardDocument, SelectedCardPreview, ToolJob } from "./types";
 
 const fallbackModels: AgentModel[] = [
   {
@@ -50,6 +52,7 @@ export function App() {
   const [status, setStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const processedJobIdsRef = useRef<Set<string>>(new Set());
+  const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
   useDismissablePopover(openMenu, closePopover);
@@ -149,7 +152,6 @@ export function App() {
       return newNodes.length > 0 ? [...currentNodes, ...newNodes] : currentNodes;
     });
 
-    setSelectedCards([generatedCards[0].id]);
   }, [visibleToolIds]);
 
   useEffect(() => {
@@ -195,12 +197,18 @@ export function App() {
 
     try {
       setStatus("Running agent...");
+      const selectedCardSnapshots = await createSelectedCardSnapshots(
+        cardDocuments,
+        selectedCards,
+        previewCapturesRef.current,
+      );
       const agentRun = await createAgentRun({
         agentId: "base-agent",
         prompt: text,
         model: selectedModel,
         tools: selectedTools,
         selectedCards,
+        selectedCardSnapshots,
         context: {
           tools: selectedTools,
           model: selectedModel,
@@ -277,6 +285,16 @@ export function App() {
     );
   }
 
+  const registerPreviewCapture = useCallback((cardDocumentId: string, capturePreview: () => SelectedCardPreview) => {
+    previewCapturesRef.current.set(cardDocumentId, capturePreview);
+
+    return () => {
+      if (previewCapturesRef.current.get(cardDocumentId) === capturePreview) {
+        previewCapturesRef.current.delete(cardDocumentId);
+      }
+    };
+  }, []);
+
   function selectModel(model: string) {
     setSelectedModel(model);
     setOpenMenu(null);
@@ -294,6 +312,7 @@ export function App() {
         documentsById={documentsById}
         nodes={canvasNodes}
         onRenameDocument={renameDocument}
+        onRegisterPreviewCapture={registerPreviewCapture}
         onToggleNode={toggleCanvasNode}
         onUpdateNodeFrame={updateCanvasNodeFrame}
         selectedDocument={selectedDocument}
