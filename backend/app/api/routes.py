@@ -1,4 +1,8 @@
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import FileResponse
 
 from app.models import (
     InstructionRequest,
@@ -13,6 +17,8 @@ from app.services import InstructionService, ToolJobService, ToolRegistry
 router = APIRouter(prefix="/api")
 tool_registry = ToolRegistry()
 tool_job_service = ToolJobService(registry=tool_registry)
+repo_root = Path(__file__).resolve().parents[3]
+artifacts_root = Path(os.environ.get("LOKI_ARTIFACTS_ROOT", repo_root / ".loki")).resolve()
 
 
 def get_instruction_service() -> InstructionService:
@@ -113,3 +119,18 @@ def get_tool_job(
         raise HTTPException(status_code=404, detail="Tool job not found")
 
     return job
+
+
+@router.get("/artifacts/{artifact_path:path}")
+def get_artifact(artifact_path: str) -> FileResponse:
+    artifact = (artifacts_root / artifact_path).resolve()
+
+    try:
+        artifact.relative_to(artifacts_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found") from exc
+
+    if not artifact.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    return FileResponse(artifact)

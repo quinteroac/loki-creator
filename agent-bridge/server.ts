@@ -1,4 +1,4 @@
-import { mkdir, readlink, symlink } from "node:fs/promises";
+import { mkdir, readlink, readdir, symlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cors } from "@elysiajs/cors";
@@ -19,6 +19,7 @@ type LokiAgent = {
   name: string;
   description: string;
   defaultModel?: string | null;
+  defaultSkills: string[];
 };
 
 type LokiModel = {
@@ -96,14 +97,16 @@ const agents: LokiAgent[] = [
   {
     id: "base-agent",
     name: "Base Agent",
-    description: "Default Loki agent behavior without an additional specialized skill.",
+    description: "Default Loki agent behavior with core built-in creative skills.",
     defaultModel: "Loki Default",
+    defaultSkills: ["hyperframes", "hyperframes-cli", "hyperframes-registry", "gsap", "css-animations", "waapi"],
   },
   {
     id: "tool-builder",
     name: "Tool Builder",
     description: "Built-in agent specialized in designing Loki-compatible tools.",
     defaultModel: "Loki Default",
+    defaultSkills: [],
   },
 ];
 
@@ -126,19 +129,25 @@ function resolveSelectedModel(label: string) {
     .find((model) => `${model.name} (${model.provider})` === label || model.name === label || model.id === label);
 }
 
-async function ensureToolBuilderSkillSymlink() {
-  const target = resolve(repoRoot, "backend/builtin_agent_skills/tool-builder");
-  const link = resolve(repoRoot, ".agents/skills/tool-builder");
+async function ensureBuiltinSkillSymlinks() {
+  const sourceDir = resolve(repoRoot, "backend/builtin_agent_skills");
+  const linkDir = resolve(repoRoot, ".agents/skills");
+  await mkdir(linkDir, { recursive: true });
 
-  await mkdir(dirname(link), { recursive: true });
+  const skillFolders = await readdir(sourceDir, { withFileTypes: true });
+  for (const folder of skillFolders) {
+    if (!folder.isDirectory()) continue;
 
-  try {
-    const existingTarget = await readlink(link);
-    if (resolve(dirname(link), existingTarget) === target || existingTarget === target) {
-      return;
+    const target = resolve(sourceDir, folder.name);
+    const link = resolve(linkDir, folder.name);
+    try {
+      const existingTarget = await readlink(link);
+      if (resolve(dirname(link), existingTarget) === target || existingTarget === target) {
+        continue;
+      }
+    } catch {
+      await symlink(target, link, "dir");
     }
-  } catch {
-    await symlink(target, link, "dir");
   }
 }
 
@@ -180,6 +189,19 @@ function selectToolsForAgent(availableTools: LokiTool[], selectedTools: string[]
   });
 }
 
+function uniqueTools(tools: LokiTool[]) {
+  const seen = new Set<string>();
+  return tools.filter((tool) => {
+    if (seen.has(tool.id)) return false;
+    seen.add(tool.id);
+    return true;
+  });
+}
+
+function shouldExposeHyperframesTools(selectedTools: LokiTool[]) {
+  return selectedTools.some((tool) => hyperframesToolIds.has(tool.id));
+}
+
 async function runBrowserExtensionAction(params: Record<string, unknown>): Promise<BrowserExtensionResponse> {
   if (!activeBrowserExtension) {
     throw new Error("No browser extension is connected.");
@@ -213,14 +235,41 @@ async function waitForToolJob(jobId: string): Promise<LokiToolJob> {
 
 type LokiToolParams = {
   prompt: string;
-  outputText: string;
+  outputText?: string;
   title?: string;
   subtitle?: string;
   body?: string;
   footer?: string;
+  paramsJson?: string;
 };
 
+const hyperframesToolIds = new Set([
+  "hyperframes-runtime-check",
+  "hyperframes-project-create",
+  "hyperframes-composition-write",
+  "hyperframes-registry-add",
+  "hyperframes-lint",
+  "hyperframes-inspect",
+  "hyperframes-snapshot",
+  "hyperframes-render",
+  "hyperframes-tts",
+  "hyperframes-transcribe",
+  "hyperframes-remove-background",
+]);
+
+function parseToolParamsJson(value?: string) {
+  if (!value?.trim()) return {};
+
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("paramsJson must be a JSON object.");
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
 async function runLokiTool(tool: LokiTool, toolParams: LokiToolParams, request: AgentRunRequest) {
+  const structuredParams = parseToolParamsJson(toolParams.paramsJson);
   const createdJob = await requestJson<LokiToolJob>(`${backendApiUrl}/api/tool-jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -234,9 +283,10 @@ async function runLokiTool(tool: LokiTool, toolParams: LokiToolParams, request: 
       },
       selectedCards: request.selectedCards,
       params: {
+        ...structuredParams,
         model: request.model,
         toolPrompt: toolParams.prompt,
-        outputText: toolParams.outputText,
+        outputText: toolParams.outputText ?? request.prompt,
         title: toolParams.title,
         subtitle: toolParams.subtitle,
         body: toolParams.body,
@@ -255,24 +305,35 @@ async function runLokiTool(tool: LokiTool, toolParams: LokiToolParams, request: 
 }
 
 function createLokiPiTool(tool: LokiTool, request: AgentRunRequest, runState: { toolJobIds: string[]; cardIds: string[] }) {
+  const isHyperframesTool = hyperframesToolIds.has(tool.id);
+  const hyperframesDescription = isHyperframesTool
+    ? " For Hyperframes tools, pass tool-specific fields through paramsJson as a JSON object. Use a stable projectId across project-create, composition-write, lint, snapshot, and render. For composition-write, paramsJson must include html with the complete composition source. The root composition must include data-composition-id, data-start, data-duration, data-width, data-height, data-track-index, and synchronous window.__timelines registration."
+    : "";
+
   return defineTool({
     name: toPiToolName(tool),
     label: tool.name,
-    description: `${tool.description} Use this to create Loki canvas cards. Keep prompt as operational instructions and put the user-visible card content in outputText or structured visible fields.`,
-    promptSnippet: `${tool.name}: ${tool.description}. Use prompt for tool instructions. Use outputText/title/subtitle/body/footer for visible card content.`,
+    description: `${tool.description} Use this to create Loki canvas cards. Keep prompt as operational instructions and put the user-visible card content in outputText or structured visible fields.${hyperframesDescription}`,
+    promptSnippet: `${tool.name}: ${tool.description}. Use prompt for tool instructions. Use outputText/title/subtitle/body/footer for visible card content. Use paramsJson for structured tool params.${hyperframesDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
         description:
           "Operational instruction for the Loki tool. This is not user-visible card copy and must not be rendered as the final output.",
       }),
-      outputText: Type.String({
+      outputText: Type.Optional(Type.String({
         description:
           "User-visible content for the generated card. Do not include tool instructions, implementation notes, or reasoning.",
-      }),
+      })),
       title: Type.Optional(Type.String({ description: "Optional user-visible card title." })),
       subtitle: Type.Optional(Type.String({ description: "Optional user-visible card subtitle." })),
       body: Type.Optional(Type.String({ description: "Optional user-visible card body." })),
       footer: Type.Optional(Type.String({ description: "Optional user-visible card footer or note." })),
+      paramsJson: Type.Optional(
+        Type.String({
+          description:
+            'Optional JSON object string with structured tool params, for example {"projectId":"video-intro","html":"<html>...</html>","quality":"draft"}.',
+        }),
+      ),
     }),
     async execute(_toolCallId, params) {
       const { job, cardIds } = await runLokiTool(tool, params, request);
@@ -290,7 +351,9 @@ function createLokiPiTool(tool: LokiTool, request: AgentRunRequest, runState: { 
         content: [
           {
             type: "text",
-            text: `Loki tool ${tool.name} completed. Job ${job.id} created cards: ${cardIds.join(", ") || "none"}.`,
+            text: `Loki tool ${tool.name} completed. Job ${job.id} created cards: ${
+              cards.map((card) => `${card.name} (${card.id})`).join(", ") || "none"
+            }.`,
           },
         ],
         details: { jobId: job.id, status: job.status, cardIds },
@@ -343,16 +406,20 @@ function createBrowserPiTool(tool: LokiTool) {
 }
 
 async function createResourceLoader(agentId: string) {
+  const selectedAgent = agents.find((agent) => agent.id === agentId) ?? agents[0];
+  const allowedSkills = new Set(
+    agentId === "tool-builder" ? ["tool-builder"] : (selectedAgent?.defaultSkills ?? []),
+  );
   const loader = new DefaultResourceLoader({
     cwd: repoRoot,
     agentDir: getAgentDir(),
     skillsOverride: (current) => {
-      if (agentId !== "tool-builder") {
+      if (allowedSkills.size === 0) {
         return current;
       }
 
       return {
-        skills: current.skills.filter((skill) => skill.name === "tool-builder"),
+        skills: current.skills.filter((skill) => allowedSkills.has(skill.name)),
         diagnostics: current.diagnostics,
       };
     },
@@ -366,6 +433,21 @@ function buildAgentPrompt(request: AgentRunRequest, exposedTools: LokiTool[]) {
   const agentId = request.agentId ?? "base-agent";
   const toolNames = exposedTools.map((tool) => `${tool.name} (${toPiToolName(tool)})`).join(", ") || "none";
   const skillHint = agentId === "tool-builder" ? "\nUse the tool-builder skill for behavior and constraints." : "";
+  const hyperframesHint = exposedTools.some((tool) => hyperframesToolIds.has(tool.id))
+    ? `
+
+Hyperframes workflow:
+- Do not call hyperframes-render first.
+- Choose one stable projectId slug for the request and reuse it in paramsJson for every Hyperframes step.
+- Call hyperframes-project-create before authoring files.
+- Call hyperframes-composition-write with paramsJson containing the same projectId and a complete valid Hyperframes index.html string in html.
+- The main index.html must be a standalone Hyperframes composition: put the root element directly in body, not in template. The root element must include data-composition-id, data-start="0", data-duration, data-width, data-height, and data-track-index. Register a synchronous paused timeline as window.__timelines["<composition-id>"].
+- Run hyperframes-lint after writing the composition. Use hyperframes-snapshot when a visual check is useful.
+- If any tool response card name says "found issues", "failed", or "not ready", fix the composition and rerun that validation step before rendering.
+- Call hyperframes-render only after the project exists and the composition has been written.
+- Use quality "draft" unless the user explicitly asks for final/high quality.
+- Keep prompt as operational instructions. Put visible text or artifact summaries in outputText. Never render toolPrompt or implementation instructions inside the final card/video.`
+    : "";
 
   return `User request:
 ${request.prompt}
@@ -376,7 +458,7 @@ Loki context:
 - exposed Loki tools: ${toolNames}
 - selected canvas cards: ${request.selectedCards.join(", ") || "none"}
 
-Use the exposed Loki tools when the request requires producing canvas cards. Return a concise final response for the UI response panel.${skillHint}`;
+Use the exposed Loki tools when the request requires producing canvas cards. Return a concise final response for the UI response panel.${skillHint}${hyperframesHint}`;
 }
 
 async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
@@ -390,14 +472,20 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   try {
     const availableTools = await listFrontendTools();
     const selectedTools = selectToolsForAgent(availableTools, request.tools);
+    const hyperframesInternalTools = shouldExposeHyperframesTools(selectedTools)
+      ? availableTools.filter((tool) => hyperframesToolIds.has(tool.id))
+      : [];
     const browserTool = availableTools.find((tool) => tool.id === "browser-tool");
     const browserToolAvailable = Boolean(browserTool && activeBrowserExtension);
-    const exposedToolsForPrompt = [
+    const exposedToolsForPrompt = uniqueTools([
       ...selectedTools,
+      ...hyperframesInternalTools,
       ...(browserTool && browserToolAvailable ? [browserTool] : []),
-    ];
+    ]);
     const customTools = [
-      ...selectedTools.map((tool) => createLokiPiTool(tool, request, runState)),
+      ...uniqueTools([...selectedTools, ...hyperframesInternalTools]).map((tool) =>
+        createLokiPiTool(tool, request, runState),
+      ),
       ...(browserTool && browserToolAvailable ? [createBrowserPiTool(browserTool)] : []),
     ];
     const resourceLoader = await createResourceLoader(agentId);
@@ -448,7 +536,7 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   }
 }
 
-await ensureToolBuilderSkillSymlink();
+await ensureBuiltinSkillSymlinks();
 
 const app = new Elysia()
   .use(

@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-lint",
+    "slug": "hyperframes-lint",
+    "name": "Hyperframes Lint",
+    "description": "Runs hyperframes lint and returns a diagnostic Loki card.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "lint", "diagnostics"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 180
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

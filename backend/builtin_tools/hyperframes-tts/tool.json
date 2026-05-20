@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-tts",
+    "slug": "hyperframes-tts",
+    "name": "Hyperframes TTS",
+    "description": "Generates local narration audio for Hyperframes projects using the Hyperframes TTS command.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "tts", "audio"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 420
+    },
+    "permissions": {
+      "network": true,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

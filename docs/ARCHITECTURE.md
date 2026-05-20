@@ -134,6 +134,17 @@ Agent skills adopt the Agent Skills standard: a skill is a folder with a require
 
 Creation from canvas elements is intentionally reserved for a future implementation. There are no agent endpoints, registries, frontend flows, or `ToolJobService` integration in this version.
 
+The Base Agent inherits core built-in creative skills by default:
+
+- `hyperframes`
+- `hyperframes-cli`
+- `hyperframes-registry`
+- `gsap`
+- `css-animations`
+- `waapi`
+
+Additional Hyperframes-adjacent skills are installed as built-in skills but are not inherited by default: `hyperframes-media`, `three`, `lottie`, `animejs`, and `tailwind`.
+
 ## Agent Bridge
 
 The frontend calls an ElysiaJS bridge for agent runs instead of invoking Pi SDK in the browser. The bridge owns Pi SDK sessions, loads agent skills, exposes Loki tools as Pi custom tools, and delegates actual tool execution back to FastAPI through `POST /api/tool-jobs`.
@@ -183,6 +194,26 @@ The integration is intentionally diagnostic-only for now:
 - No image, video, audio, or model-download Comfy tools are implemented yet.
 
 Future Comfy tools should keep the existing async flow: `POST /api/tool-jobs`, registry resolution, invoker execution, `ComfyDiffusionService`, and `ToolResult.cards`. Pipeline outputs from `comfy-diffusion` should be converted to `GeneratedCard` HTML, with the exact user prompt preserved in the card description.
+
+## Hyperframes Runtime Preparation
+
+Loki integrates Hyperframes for HTML-authored video composition and rendering. Hyperframes runs as local CLI-backed built-in tools, not as an embedded Studio/editor surface. All projects and rendered artifacts live under `.loki/hyperframes/`.
+
+Hyperframes tools follow the existing async tool-job contract and return diagnostic, preview, or artifact cards:
+
+- `hyperframes-runtime-check`
+- `hyperframes-project-create`
+- `hyperframes-composition-write`
+- `hyperframes-registry-add`
+- `hyperframes-lint`
+- `hyperframes-inspect`
+- `hyperframes-snapshot`
+- `hyperframes-render`
+- `hyperframes-tts`
+- `hyperframes-transcribe`
+- `hyperframes-remove-background`
+
+The first integration intentionally excludes Hyperframes Studio/preview as an editing tool, publish, AWS Lambda rendering, and the full website-to-video pipeline. Those require additional UX and orchestration decisions beyond the current tool contract.
 
 ## Export And Import Preparation
 

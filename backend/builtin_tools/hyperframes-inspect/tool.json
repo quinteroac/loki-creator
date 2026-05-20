@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-inspect",
+    "slug": "hyperframes-inspect",
+    "name": "Hyperframes Inspect",
+    "description": "Runs Hyperframes visual inspection to find timeline layout issues.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "inspect", "diagnostics"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 240
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

@@ -30,6 +30,7 @@ export function App() {
   const [instruction, setInstruction] = useState("");
   const [canvasCards, setCanvasCards] = useState(initialCanvasCards);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [visibleToolIds, setVisibleToolIds] = useState<Set<string>>(new Set());
   const [selectedTools, setSelectedTools] = useState(["Auto"]);
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
@@ -55,10 +56,12 @@ export function App() {
         const tools = await listTools();
         if (isMounted) {
           setAvailableTools(tools.map((tool) => tool.name));
+          setVisibleToolIds(new Set(tools.map((tool) => tool.id)));
         }
       } catch {
         if (isMounted) {
           setAvailableTools([]);
+          setVisibleToolIds(new Set());
         }
       }
     }
@@ -100,10 +103,17 @@ export function App() {
   const addCardsFromJob = useCallback((job: ToolJob) => {
     if (processedJobIdsRef.current.has(job.id)) return;
 
-    const generatedCards = job.result?.cards ?? [];
-    if (job.status !== "succeeded" || generatedCards.length === 0) return;
+    if (job.status !== "succeeded") return;
 
     processedJobIdsRef.current.add(job.id);
+    if (!visibleToolIds.has(job.toolId)) return;
+
+    const generatedCards = (job.result?.cards ?? []).filter((card) => {
+      if (!card.sourceToolId) return true;
+      return visibleToolIds.has(card.sourceToolId);
+    });
+    if (generatedCards.length === 0) return;
+
     setCanvasCards((currentCards: GeneratedCard[]) => {
       const currentCardIds = new Set(currentCards.map((card) => card.id));
       const newCards = generatedCards.filter((card) => !currentCardIds.has(card.id));
@@ -113,7 +123,7 @@ export function App() {
     if (firstGeneratedCard) {
       setSelectedCards([firstGeneratedCard.id]);
     }
-  }, []);
+  }, [visibleToolIds]);
 
   useEffect(() => {
     let isMounted = true;

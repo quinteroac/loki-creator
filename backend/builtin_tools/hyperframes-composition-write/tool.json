@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-composition-write",
+    "slug": "hyperframes-composition-write",
+    "name": "Hyperframes Composition Write",
+    "description": "Writes or updates Hyperframes composition HTML inside a local project.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "html-composition", "video"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 60
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

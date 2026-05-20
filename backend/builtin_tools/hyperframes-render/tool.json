@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-render",
+    "slug": "hyperframes-render",
+    "name": "Hyperframes Render",
+    "description": "Renders a Hyperframes project to MP4, WebM, MOV, or PNG sequence.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "frontend",
+    "capabilities": ["hyperframes", "video-render", "html-card-output"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 720
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

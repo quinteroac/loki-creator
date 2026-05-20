@@ -270,6 +270,10 @@ button {
   pointer-events: none;
 }
 
+.canvas-card-preview.has-playable-media iframe {
+  pointer-events: auto;
+}
+
 .html-canvas-hidden {
   position: absolute;
   opacity: 0;

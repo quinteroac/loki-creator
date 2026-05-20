@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-project-create",
+    "slug": "hyperframes-project-create",
+    "name": "Hyperframes Project Create",
+    "description": "Creates a local Hyperframes project under .loki/hyperframes/projects.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "project-scaffold", "video"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 180
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

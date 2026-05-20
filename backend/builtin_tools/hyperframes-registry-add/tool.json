@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-registry-add",
+    "slug": "hyperframes-registry-add",
+    "name": "Hyperframes Registry Add",
+    "description": "Installs a Hyperframes registry block or component into a local project.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "registry", "video"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 180
+    },
+    "permissions": {
+      "network": true,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

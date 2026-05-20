@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-remove-background",
+    "slug": "hyperframes-remove-background",
+    "name": "Hyperframes Remove Background",
+    "description": "Creates transparent overlay assets from images or videos using Hyperframes background removal.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "background-removal", "video"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 720
+    },
+    "permissions": {
+      "network": true,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

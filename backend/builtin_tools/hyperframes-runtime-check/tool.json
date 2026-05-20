@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-runtime-check",
+    "slug": "hyperframes-runtime-check",
+    "name": "Hyperframes Runtime Check",
+    "description": "Checks local Hyperframes prerequisites: Node, FFmpeg, Hyperframes CLI, and browser readiness.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "diagnostics", "video"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 180
+    },
+    "permissions": {
+      "network": true,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-snapshot",
+    "slug": "hyperframes-snapshot",
+    "name": "Hyperframes Snapshot",
+    "description": "Captures Hyperframes PNG snapshots and returns a visual Loki card.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "frontend",
+    "capabilities": ["hyperframes", "snapshot", "html-card-output"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 240
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

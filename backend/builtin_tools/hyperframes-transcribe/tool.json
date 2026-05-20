@@ -1,0 +1,22 @@
+{
+  "tool": {
+    "id": "hyperframes-transcribe",
+    "slug": "hyperframes-transcribe",
+    "name": "Hyperframes Transcribe",
+    "description": "Generates word-level transcripts for Hyperframes captions.",
+    "sourceType": "cli-local",
+    "invocationVisibility": "internal",
+    "capabilities": ["hyperframes", "transcription", "captions"],
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.ts",
+      "command": ["bun", "run", "src/index.ts"],
+      "timeoutSeconds": 420
+    },
+    "permissions": {
+      "network": true,
+      "filesystem": true,
+      "allowedCommands": ["bun"]
+    }
+  }
+}

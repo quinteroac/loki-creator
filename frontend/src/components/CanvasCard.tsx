@@ -86,6 +86,10 @@ function createIframeSrcDoc(cardHtml: string): string {
 </html>`;
 }
 
+function hasPlayableMedia(cardHtml: string): boolean {
+  return /<(video|audio)\b/i.test(cardHtml);
+}
+
 export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFrame }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
@@ -100,12 +104,18 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
     mode: "drag" | "resize";
   } | null>(null);
   const suppressNextClickRef = useRef(false);
-  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [useIframeFallback, setUseIframeFallback] = useState(() => hasPlayableMedia(card.html));
   const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const htmlElement = htmlRef.current;
+    const shouldUseIframe = hasPlayableMedia(card.html);
+
+    if (shouldUseIframe) {
+      setUseIframeFallback(true);
+      return undefined;
+    }
 
     if (!canvas) return undefined;
     const activeCanvas = canvas;
@@ -252,12 +262,19 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
       }}
     >
       <button
-        className="canvas-card-preview"
+        className={`canvas-card-preview ${hasPlayableMedia(card.html) ? "has-playable-media" : ""}`}
         type="button"
         aria-label={`Select ${card.name}`}
         aria-pressed={isSelected}
       >
-        {useIframeFallback && <iframe title={card.name} srcDoc={createIframeSrcDoc(card.html)} sandbox="" loading="lazy" />}
+        {useIframeFallback && (
+          <iframe
+            title={card.name}
+            srcDoc={createIframeSrcDoc(card.html)}
+            sandbox="allow-same-origin"
+            loading="lazy"
+          />
+        )}
         <canvas className={useIframeFallback ? "html-canvas-hidden" : undefined} ref={canvasRef} layoutsubtree="">
           <div
             className="html-canvas-source"
