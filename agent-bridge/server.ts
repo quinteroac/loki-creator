@@ -42,7 +42,12 @@ type LokiToolJob = {
   toolId: string;
   status: "queued" | "running" | "succeeded" | "failed";
   result?: {
-    cards?: Array<{ id: string; name: string; sourceToolId?: string | null }>;
+    cards?: Array<{
+      id: string;
+      name: string;
+      sourceToolId?: string | null;
+      metadata?: Record<string, unknown> | null;
+    }>;
   } | null;
   error?: string | null;
 };
@@ -300,6 +305,7 @@ async function runLokiTool(tool: LokiTool, toolParams: LokiToolParams, request: 
 
   return {
     job: completedJob,
+    cards,
     cardIds: cards.map((card) => card.id),
   };
 }
@@ -336,7 +342,7 @@ function createLokiPiTool(tool: LokiTool, request: AgentRunRequest, runState: { 
       ),
     }),
     async execute(_toolCallId, params) {
-      const { job, cardIds } = await runLokiTool(tool, params, request);
+      const { job, cards, cardIds } = await runLokiTool(tool, params, request);
       runState.toolJobIds.push(job.id);
       runState.cardIds.push(...cardIds);
 

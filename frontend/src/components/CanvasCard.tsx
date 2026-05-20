@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent } from "react";
-import type { GeneratedCard } from "../types";
+import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import { getCardDisplaySubtitle, getCardDisplayTitle, hasPlayableMedia } from "../lib/cardDocuments";
+import type { CardDocument, CanvasNode, CanvasNodeFrame } from "../types";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
   drawElementImage?: (element: Element, x: number, y: number, width: number, height: number) => void;
@@ -9,17 +10,12 @@ type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
 type HtmlCanvasDrawStatus = "drawn" | "pending" | "unsupported";
 
 type CanvasCardProps = {
-  card: GeneratedCard;
-  frame: CanvasCardFrame;
+  document: CardDocument;
+  node: CanvasNode;
   isSelected: boolean;
-  onUpdateFrame: (cardId: string, frame: CanvasCardFrame) => void;
-  onToggleSelect: (cardId: string) => void;
-};
-
-export type CanvasCardFrame = {
-  width: number;
-  x: number;
-  y: number;
+  onRenameDocument: (cardDocumentId: string, title: string) => void;
+  onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
+  onToggleSelect: (nodeId: string) => void;
 };
 
 function resizeCanvas(canvas: HTMLCanvasElement) {
@@ -86,13 +82,21 @@ function createIframeSrcDoc(cardHtml: string): string {
 </html>`;
 }
 
-function hasPlayableMedia(cardHtml: string): boolean {
-  return /<(video|audio)\b/i.test(cardHtml);
+function shouldUsePlayableMediaFallback(document: CardDocument): boolean {
+  return document.metadata?.playableMedia ?? hasPlayableMedia(document.html);
 }
 
-export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFrame }: CanvasCardProps) {
+export function CanvasCard({
+  document,
+  node,
+  isSelected,
+  onRenameDocument,
+  onToggleSelect,
+  onUpdateFrame,
+}: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
     startClientX: number;
@@ -104,13 +108,18 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
     mode: "drag" | "resize";
   } | null>(null);
   const suppressNextClickRef = useRef(false);
-  const [useIframeFallback, setUseIframeFallback] = useState(() => hasPlayableMedia(card.html));
+  const [useIframeFallback, setUseIframeFallback] = useState(() => shouldUsePlayableMediaFallback(document));
   const [isDragging, setIsDragging] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const accessibleTitle = getCardDisplayTitle(document);
+  const caption = getCardDisplaySubtitle(document);
+  const [titleDraft, setTitleDraft] = useState(accessibleTitle);
+  const frame = node.frame;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const htmlElement = htmlRef.current;
-    const shouldUseIframe = hasPlayableMedia(card.html);
+    const shouldUseIframe = shouldUsePlayableMediaFallback(document);
 
     if (shouldUseIframe) {
       setUseIframeFallback(true);
@@ -156,7 +165,20 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
       activeCanvas.removeEventListener("paint", scheduleRender);
       window.removeEventListener("resize", scheduleRender);
     };
-  }, [card.html]);
+  }, [document]);
+
+  useEffect(() => {
+    if (!isEditingTitle) {
+      setTitleDraft(accessibleTitle);
+    }
+  }, [accessibleTitle, isEditingTitle]);
+
+  useEffect(() => {
+    if (isEditingTitle) {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }
+  }, [isEditingTitle]);
 
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
@@ -203,7 +225,7 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
     dragState.didDrag ||= hasMoved;
 
     if (hasMoved && dragState.mode === "drag") {
-      onUpdateFrame(card.id, {
+      onUpdateFrame(node.id, {
         width: dragState.startWidth,
         x: Math.max(0, dragState.startX + deltaX),
         y: Math.max(0, dragState.startY + deltaY),
@@ -211,7 +233,7 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
     }
 
     if (hasMoved && dragState.mode === "resize") {
-      onUpdateFrame(card.id, {
+      onUpdateFrame(node.id, {
         width: dragState.startWidth + Math.max(deltaX, deltaY * 0.75),
         x: dragState.startX,
         y: dragState.startY,
@@ -245,7 +267,45 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
       return;
     }
 
-    onToggleSelect(card.id);
+    onToggleSelect(node.id);
+  }
+
+  function stopCardInteraction(event: MouseEvent<HTMLElement> | PointerEvent<HTMLElement>) {
+    event.stopPropagation();
+  }
+
+  function startTitleEditing(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setTitleDraft(accessibleTitle);
+    setIsEditingTitle(true);
+  }
+
+  function commitTitleEdit() {
+    onRenameDocument(document.id, titleDraft);
+    setIsEditingTitle(false);
+  }
+
+  function cancelTitleEdit() {
+    setTitleDraft(accessibleTitle);
+    setIsEditingTitle(false);
+  }
+
+  function handleTitleInputChange(event: ChangeEvent<HTMLInputElement>) {
+    setTitleDraft(event.target.value);
+  }
+
+  function handleTitleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitTitleEdit();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelTitleEdit();
+    }
   }
 
   return (
@@ -262,15 +322,15 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
       }}
     >
       <button
-        className={`canvas-card-preview ${hasPlayableMedia(card.html) ? "has-playable-media" : ""}`}
+        className={`canvas-card-preview ${shouldUsePlayableMediaFallback(document) ? "has-playable-media" : ""}`}
         type="button"
-        aria-label={`Select ${card.name}`}
+        aria-label={`Select ${accessibleTitle}`}
         aria-pressed={isSelected}
       >
         {useIframeFallback && (
           <iframe
-            title={card.name}
-            srcDoc={createIframeSrcDoc(card.html)}
+            title={accessibleTitle}
+            srcDoc={createIframeSrcDoc(document.html)}
             sandbox="allow-same-origin"
             loading="lazy"
           />
@@ -279,15 +339,41 @@ export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFr
           <div
             className="html-canvas-source"
             ref={htmlRef}
-            dangerouslySetInnerHTML={{ __html: card.html }}
+            dangerouslySetInnerHTML={{ __html: document.html }}
           />
         </canvas>
       </button>
-      <p>{card.prompt}</p>
+      <div className="canvas-card-meta">
+        {isEditingTitle ? (
+          <input
+            ref={titleInputRef}
+            className="canvas-card-title-input"
+            value={titleDraft}
+            onBlur={commitTitleEdit}
+            onChange={handleTitleInputChange}
+            onClick={stopCardInteraction}
+            onKeyDown={handleTitleInputKeyDown}
+            onPointerDown={stopCardInteraction}
+            aria-label={`Rename ${accessibleTitle}`}
+          />
+        ) : (
+          <button
+            className="canvas-card-title"
+            type="button"
+            onClick={startTitleEditing}
+            onDoubleClick={startTitleEditing}
+            onPointerDown={stopCardInteraction}
+            title="Rename card"
+          >
+            {accessibleTitle}
+          </button>
+        )}
+        {caption && <p>{caption}</p>}
+      </div>
       <button
         className="canvas-card-resize"
         type="button"
-        aria-label={`Resize ${card.name}`}
+        aria-label={`Resize ${accessibleTitle}`}
         onPointerDown={handleResizePointerDown}
       />
     </article>

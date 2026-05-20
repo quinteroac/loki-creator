@@ -1,3 +1,4 @@
-import type { GeneratedCard } from "../types";
+import type { CanvasNode, CardDocument } from "../types";
 
-export const initialCanvasCards: GeneratedCard[] = [];
+export const initialCardDocuments: CardDocument[] = [];
+export const initialCanvasNodes: CanvasNode[] = [];

@@ -1,9 +1,41 @@
-export type GeneratedCard = {
+export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive";
+
+export type CardAspectRatio = "1:1" | "4:3" | "16:9" | "auto";
+
+export type CardMetadata = {
+  kind?: CardKind;
+  title?: string;
+  description?: string;
+  thumbnailUrl?: string;
+  artifactUrl?: string;
+  createdAt?: string;
+  tags?: string[];
+  capabilities?: string[];
+  preferredAspectRatio?: CardAspectRatio;
+  playableMedia?: boolean;
+};
+
+export type CardDocument = {
   id: string;
   name: string;
   prompt: string;
   html: string;
   sourceToolId?: string | null;
+  metadata?: CardMetadata;
+};
+
+export type GeneratedCard = CardDocument;
+
+export type CanvasNodeFrame = {
+  width: number;
+  x: number;
+  y: number;
+};
+
+export type CanvasNode = {
+  id: string;
+  cardDocumentId: string;
+  frame: CanvasNodeFrame;
 };
 
 export type ToolDefinition = {
@@ -58,7 +90,7 @@ export type ToolJob = {
   createdAt: string;
   updatedAt: string;
   result?: {
-    cards: GeneratedCard[];
+    cards: CardDocument[];
   } | null;
   error?: string | null;
 };

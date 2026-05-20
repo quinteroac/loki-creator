@@ -1,6 +1,7 @@
 import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
+import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
 import type { AgentModel, GeneratedCard } from "../types";
 
 type AgentComposerProps = {
@@ -162,15 +163,20 @@ export function AgentComposer({
           <div className="tool-list">
             {canvasNodes.map((node) => {
               const isSelected = selectedCards.includes(node.id);
+              const title = getCardDisplayTitle(node);
+              const subtitle = getCardDisplaySubtitle(node);
 
               return (
                 <button
-                  className={`tool-option ${isSelected ? "selected" : ""}`}
+                  className={`tool-option card-option ${isSelected ? "selected" : ""}`}
                   key={node.id}
                   type="button"
                   onClick={() => onToggleCard(node.id)}
                 >
-                  <span>{node.id}</span>
+                  <span>
+                    <strong>{title}</strong>
+                    {subtitle && <small>{subtitle}</small>}
+                  </span>
                   {isSelected && <Check size={14} strokeWidth={2} />}
                 </button>
               );

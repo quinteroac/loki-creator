@@ -1,4 +1,5 @@
 import type { GeneratedCard } from "../types";
+import { getCardDisplayTitle } from "./cardDocuments";
 
 export function filterBySearch(items: string[], searchValue: string): string[] {
   const query = searchValue.trim().toLowerCase();
@@ -36,5 +37,5 @@ export function getFirstSelectedCardLabel(
 ): string {
   const selectedCard = cards.find((card) => selectedCardIds.includes(card.id));
 
-  return selectedCard?.name ?? selectedCard?.id ?? fallbackLabel;
+  return selectedCard ? getCardDisplayTitle(selectedCard) : fallbackLabel;
 }

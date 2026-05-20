@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createAgentRun, listAgentModels } from "./api/agentRuns";
 import { listToolJobs, waitForToolJob } from "./api/toolJobs";
@@ -7,15 +7,22 @@ import { AgentComposer } from "./components/AgentComposer";
 import { AgentResponsePanel } from "./components/AgentResponsePanel";
 import { CanvasStage } from "./components/CanvasStage";
 import { Topbar } from "./components/Topbar";
-import { initialCanvasCards } from "./data/workspace";
+import { initialCanvasNodes, initialCardDocuments } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
+import {
+  assignUniqueDisplayTitles,
+  createCanvasNodeForDocument,
+  getCardDisplayTitle,
+  normalizeCardDocument,
+  renameCardDocument,
+} from "./lib/cardDocuments";
 import {
   filterBySearch,
   getFirstSelectedCardLabel,
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
-import type { AgentModel, AgentRunResponse, GeneratedCard, ToolJob } from "./types";
+import type { AgentModel, AgentRunResponse, CanvasNodeFrame, CardDocument, ToolJob } from "./types";
 
 const fallbackModels: AgentModel[] = [
   {
@@ -28,7 +35,8 @@ const fallbackModels: AgentModel[] = [
 
 export function App() {
   const [instruction, setInstruction] = useState("");
-  const [canvasCards, setCanvasCards] = useState(initialCanvasCards);
+  const [cardDocuments, setCardDocuments] = useState(initialCardDocuments);
+  const [canvasNodes, setCanvasNodes] = useState(initialCanvasNodes);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [visibleToolIds, setVisibleToolIds] = useState<Set<string>>(new Set());
   const [selectedTools, setSelectedTools] = useState(["Auto"]);
@@ -111,18 +119,37 @@ export function App() {
     const generatedCards = (job.result?.cards ?? []).filter((card) => {
       if (!card.sourceToolId) return true;
       return visibleToolIds.has(card.sourceToolId);
-    });
+    }).map(normalizeCardDocument);
     if (generatedCards.length === 0) return;
 
-    setCanvasCards((currentCards: GeneratedCard[]) => {
-      const currentCardIds = new Set(currentCards.map((card) => card.id));
-      const newCards = generatedCards.filter((card) => !currentCardIds.has(card.id));
-      return [...currentCards, ...newCards];
+    const canvasWidth = window.innerWidth;
+
+    setCardDocuments((currentDocuments: CardDocument[]) => {
+      const currentDocumentIds = new Set(currentDocuments.map((document) => document.id));
+      const newDocuments = generatedCards.filter((document, index, documents) => {
+        const isFirstOccurrence = documents.findIndex((candidate) => candidate.id === document.id) === index;
+        return isFirstOccurrence && !currentDocumentIds.has(document.id);
+      });
+      if (newDocuments.length === 0) return currentDocuments;
+
+      return [...currentDocuments, ...assignUniqueDisplayTitles(newDocuments, currentDocuments)];
     });
-    const firstGeneratedCard = generatedCards[0];
-    if (firstGeneratedCard) {
-      setSelectedCards([firstGeneratedCard.id]);
-    }
+
+    const newDocumentsForNodes = generatedCards.filter((document, index, documents) => {
+      const isFirstOccurrence = documents.findIndex((candidate) => candidate.id === document.id) === index;
+      return isFirstOccurrence;
+    });
+
+    setCanvasNodes((currentNodes) => {
+      const currentDocumentIds = new Set(currentNodes.map((node) => node.cardDocumentId));
+      const newNodes = newDocumentsForNodes
+        .filter((document) => !currentDocumentIds.has(document.id))
+        .map((document, index) => createCanvasNodeForDocument(document, currentNodes.length + index, canvasWidth));
+
+      return newNodes.length > 0 ? [...currentNodes, ...newNodes] : currentNodes;
+    });
+
+    setSelectedCards([generatedCards[0].id]);
   }, [visibleToolIds]);
 
   useEffect(() => {
@@ -148,10 +175,14 @@ export function App() {
     };
   }, [addCardsFromJob]);
 
-  const selectedNode = canvasCards.find((card) => card.id === selectedCards[0]);
+  const documentsById = useMemo(
+    () => Object.fromEntries(cardDocuments.map((document) => [document.id, document])),
+    [cardDocuments],
+  );
+  const selectedDocument = cardDocuments.find((document) => document.id === selectedCards[0]);
   const filteredTools = filterBySearch(availableTools, toolSearch);
   const toolButtonLabel = selectedTools[0] ?? "Auto";
-  const selectedCardLabel = getFirstSelectedCardLabel(canvasCards, selectedCards, "Selected cards");
+  const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
 
   async function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -174,7 +205,7 @@ export function App() {
           tools: selectedTools,
           model: selectedModel,
           agentId: "base-agent",
-          selectedElement: selectedNode?.name ?? null,
+          selectedElement: selectedDocument ? getCardDisplayTitle(selectedDocument) : null,
         },
       });
 
@@ -225,6 +256,27 @@ export function App() {
     setSelectedCards((currentCards) => toggleMultiSelection(currentCards, cardId));
   }
 
+  function toggleCanvasNode(nodeId: string) {
+    const node = canvasNodes.find((candidate) => candidate.id === nodeId);
+    if (node) {
+      toggleCard(node.cardDocumentId);
+    }
+  }
+
+  function updateCanvasNodeFrame(nodeId: string, frame: CanvasNodeFrame) {
+    setCanvasNodes((currentNodes) =>
+      currentNodes.map((node) => (node.id === nodeId ? { ...node, frame } : node)),
+    );
+  }
+
+  function renameDocument(cardDocumentId: string, title: string) {
+    setCardDocuments((currentDocuments) =>
+      currentDocuments.map((document) =>
+        document.id === cardDocumentId ? renameCardDocument(document, title) : document,
+      ),
+    );
+  }
+
   function selectModel(model: string) {
     setSelectedModel(model);
     setOpenMenu(null);
@@ -239,13 +291,16 @@ export function App() {
         response={latestAgentResponse}
       />
       <CanvasStage
-        cards={canvasCards}
-        onToggleCard={toggleCard}
-        selectedCards={selectedCards}
-        selectedNode={selectedNode}
+        documentsById={documentsById}
+        nodes={canvasNodes}
+        onRenameDocument={renameDocument}
+        onToggleNode={toggleCanvasNode}
+        onUpdateNodeFrame={updateCanvasNodeFrame}
+        selectedDocument={selectedDocument}
+        selectedIds={selectedCards}
       />
       <AgentComposer
-        canvasNodes={canvasCards}
+        canvasNodes={cardDocuments}
         availableModels={availableModels}
         fileInputRef={fileInputRef}
         filteredTools={filteredTools}

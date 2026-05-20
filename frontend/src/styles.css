@@ -290,12 +290,63 @@ button {
   isolation: isolate;
 }
 
-.canvas-card p {
+.canvas-card-meta {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  align-content: start;
+}
+
+.canvas-card-title {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  color: var(--dark-text);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.canvas-card-title:focus-visible {
+  outline: 2px solid var(--brand-blue-deep);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.canvas-card-title-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 3px 8px;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--brand-blue-deep);
+  border-radius: 6px;
+  outline: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.canvas-card-meta p {
   margin: 0;
   color: var(--dark-text-soft);
   font-size: 13px;
   line-height: 1.7;
   overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .icon-button {
@@ -655,6 +706,41 @@ textarea::placeholder {
   grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
   gap: 12px;
+}
+
+.tool-option > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-option.card-option > span {
+  display: grid;
+  gap: 2px;
+  white-space: normal;
+}
+
+.tool-option.card-option strong,
+.tool-option.card-option small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-option.card-option strong {
+  color: var(--dark-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.tool-option.card-option small {
+  color: var(--dark-text-soft);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
 }
 
 .tool-option.selected {
