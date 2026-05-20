@@ -1,0 +1,63 @@
+{
+  "manifestVersion": "1",
+  "tool": {
+    "id": "builtin-react-note",
+    "slug": "builtin-react-note",
+    "name": "Built-in React Note",
+    "description": "Creates a Loki canvas note card using a built-in React server-rendered tool.",
+    "version": "0.1.0",
+    "author": "Loki",
+    "origin": "built-in",
+    "sourceType": "cli-local",
+    "invocationVisibility": "frontend",
+    "capabilities": ["react", "node", "html-card-output"],
+    "inputSchema": {
+      "type": "object",
+      "required": ["prompt"],
+      "properties": {
+        "prompt": { "type": "string" },
+        "context": { "type": "object" },
+        "selectedCards": { "type": "array", "items": { "type": "string" } },
+        "params": { "type": "object" }
+      }
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": ["cards"],
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "prompt", "html"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "prompt": { "type": "string" },
+              "html": { "type": "string" },
+              "sourceToolId": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "exportable": false,
+    "runtime": {
+      "sourceType": "cli-local",
+      "entrypoint": "src/index.tsx",
+      "command": ["bun", "run", "src/index.tsx"],
+      "method": "POST",
+      "timeoutSeconds": 30
+    },
+    "permissions": {
+      "network": false,
+      "filesystem": true,
+      "envVars": [],
+      "allowedCommands": ["bun"]
+    },
+    "configuration": []
+  },
+  "assets": [],
+  "secretsRequired": [],
+  "integrity": {}
+}

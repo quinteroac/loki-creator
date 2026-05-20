@@ -3,6 +3,7 @@ import re
 import subprocess
 from abc import ABC, abstractmethod
 from html import escape
+from pathlib import Path
 from urllib import request
 
 from app.models import ToolDefinition, ToolInvocationRequest, ToolResult
@@ -88,8 +89,7 @@ class BuiltinToolInvoker(ToolInvoker):
             if isinstance(value, str) and value.strip():
                 return value.strip()
 
-        tool_prompt = payload.params.get("toolPrompt")
-        prompt = tool_prompt.strip() if isinstance(tool_prompt, str) and tool_prompt.strip() else payload.prompt.strip()
+        prompt = payload.prompt.strip()
         if not prompt:
             return fallback
 
@@ -210,6 +210,7 @@ class CliToolInvoker(ToolInvoker):
             input=json.dumps(payload.model_dump(by_alias=True)),
             capture_output=True,
             check=False,
+            cwd=self._resolve_working_directory(tool),
             encoding="utf-8",
             timeout=tool.runtime.timeout_seconds,
         )
@@ -218,6 +219,17 @@ class CliToolInvoker(ToolInvoker):
             raise ToolInvocationError(completed_process.stderr.strip() or "CLI tool failed.")
 
         return ToolResult.model_validate_json(completed_process.stdout)
+
+    def _resolve_working_directory(self, tool: ToolDefinition) -> str | None:
+        if not tool.runtime.working_directory:
+            return None
+
+        working_directory = Path(tool.runtime.working_directory).expanduser()
+        if working_directory.is_absolute():
+            return str(working_directory)
+
+        backend_dir = Path(__file__).resolve().parents[2]
+        return str(backend_dir / working_directory)
 
 
 class ToolInvokerFactory:

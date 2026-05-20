@@ -211,7 +211,16 @@ async function waitForToolJob(jobId: string): Promise<LokiToolJob> {
   throw new Error(`Timed out waiting for tool job ${jobId}`);
 }
 
-async function runLokiTool(tool: LokiTool, prompt: string, request: AgentRunRequest) {
+type LokiToolParams = {
+  prompt: string;
+  outputText: string;
+  title?: string;
+  subtitle?: string;
+  body?: string;
+  footer?: string;
+};
+
+async function runLokiTool(tool: LokiTool, toolParams: LokiToolParams, request: AgentRunRequest) {
   const createdJob = await requestJson<LokiToolJob>(`${backendApiUrl}/api/tool-jobs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -226,7 +235,12 @@ async function runLokiTool(tool: LokiTool, prompt: string, request: AgentRunRequ
       selectedCards: request.selectedCards,
       params: {
         model: request.model,
-        toolPrompt: prompt,
+        toolPrompt: toolParams.prompt,
+        outputText: toolParams.outputText,
+        title: toolParams.title,
+        subtitle: toolParams.subtitle,
+        body: toolParams.body,
+        footer: toolParams.footer,
       },
     }),
   });
@@ -244,13 +258,24 @@ function createLokiPiTool(tool: LokiTool, request: AgentRunRequest, runState: { 
   return defineTool({
     name: toPiToolName(tool),
     label: tool.name,
-    description: `${tool.description} Use this to create Loki canvas cards through the existing backend tool runtime.`,
-    promptSnippet: `${tool.name}: ${tool.description}`,
+    description: `${tool.description} Use this to create Loki canvas cards. Keep prompt as operational instructions and put the user-visible card content in outputText or structured visible fields.`,
+    promptSnippet: `${tool.name}: ${tool.description}. Use prompt for tool instructions. Use outputText/title/subtitle/body/footer for visible card content.`,
     parameters: Type.Object({
-      prompt: Type.String({ description: "Instruction to pass to the Loki tool." }),
+      prompt: Type.String({
+        description:
+          "Operational instruction for the Loki tool. This is not user-visible card copy and must not be rendered as the final output.",
+      }),
+      outputText: Type.String({
+        description:
+          "User-visible content for the generated card. Do not include tool instructions, implementation notes, or reasoning.",
+      }),
+      title: Type.Optional(Type.String({ description: "Optional user-visible card title." })),
+      subtitle: Type.Optional(Type.String({ description: "Optional user-visible card subtitle." })),
+      body: Type.Optional(Type.String({ description: "Optional user-visible card body." })),
+      footer: Type.Optional(Type.String({ description: "Optional user-visible card footer or note." })),
     }),
     async execute(_toolCallId, params) {
-      const { job, cardIds } = await runLokiTool(tool, params.prompt, request);
+      const { job, cardIds } = await runLokiTool(tool, params, request);
       runState.toolJobIds.push(job.id);
       runState.cardIds.push(...cardIds);
 

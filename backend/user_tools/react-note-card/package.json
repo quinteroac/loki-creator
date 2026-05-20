@@ -1,0 +1,9 @@
+{
+  "name": "@loki-user/react-note-card",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  }
+}

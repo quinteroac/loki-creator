@@ -38,6 +38,8 @@ Tool inputs must remain compatible with `ToolInvocationRequest`:
 - `selectedCards`
 - `params`
 
+`prompt` must preserve the exact original user request. `params.toolPrompt` is only an operational instruction for the tool runtime and must never be rendered directly as visible card output. Visible card copy must come from explicit output fields in `params`, such as `outputText`, `title`, `subtitle`, `body`, `footer`, or from structured provider output.
+
 Tool execution output must remain compatible with `ToolResult`:
 
 - `cards`
@@ -61,5 +63,7 @@ Each generated card must remain compatible with `GeneratedCard`:
 - Prefer built-in source type when the tool is implemented by Loki.
 - Require explicit permissions for network, filesystem, environment variables, and allowed commands.
 - Keep generated HTML self-contained and safe to render in a canvas card.
+- Never leak planning prompts, tool instructions, implementation notes, or model reasoning into `GeneratedCard.html`.
+- Keep `GeneratedCard.prompt` as the exact user prompt and render only final user-visible output inside the card HTML.
 - Keep user-created tool manifests exportable, but built-in tools non-exportable.
 - Preserve the existing async tool-job contract until the runtime supports richer structured outputs.

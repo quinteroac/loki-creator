@@ -17,6 +17,7 @@ class ToolRuntime(BaseModel):
     command: list[str] = Field(default_factory=list)
     method: str = "POST"
     timeout_seconds: int = Field(default=120, alias="timeoutSeconds")
+    working_directory: str | None = Field(default=None, alias="workingDirectory")
 
     model_config = ConfigDict(populate_by_name=True)
 

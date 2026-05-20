@@ -22,6 +22,13 @@ Runtime and access fields:
 - `permissions`
 - `configuration`
 
+Input/output separation:
+
+- `ToolInvocationRequest.prompt` is the exact original user request.
+- `params.toolPrompt` is an operational instruction for the tool runtime only.
+- Visible card content must use explicit params such as `outputText`, `title`, `subtitle`, `body`, and `footer`, or structured provider output.
+- `GeneratedCard.html` must not render `params.toolPrompt`, planning notes, implementation instructions, or model reasoning.
+
 Schema and packaging fields:
 
 - `capabilities`

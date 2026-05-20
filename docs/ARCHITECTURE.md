@@ -93,7 +93,9 @@ If the browser does not support this API, the same HTML is rendered inside an if
 The registry is hybrid:
 
 - Built-in tools are Python contracts in `backend/app/services/builtin_tools.py`.
+- Built-in manifest tools can live in `backend/builtin_tools/<tool-id>/tool.json`.
 - User-created tools will be local JSON manifests in `backend/user_tools/*.json`.
+- User-created folder tools can live in `backend/user_tools/<tool-id>/tool.json`.
 - Both are exposed as `ToolDefinition`.
 
 Built-in tools may be:
@@ -103,6 +105,12 @@ Built-in tools may be:
 
 `GET /api/tools` returns only frontend-visible tools.  
 `GET /api/tools?include_internal=true` includes internal tools such as `Browser Tool`.
+
+Node/React tools use the existing `cli-local` runtime. They receive `ToolInvocationRequest` JSON on stdin and must write a `ToolResult` JSON object to stdout. React tools render to self-contained HTML, typically through server rendering, and place that HTML in `GeneratedCard.html`; the frontend does not mount or hydrate tool-provided React components in this version.
+
+Folder-based tool manifests get a runtime `workingDirectory` derived from their containing folder. Built-in manifest tools are always normalized to `origin: "built-in"` and `exportable: false`; user manifest tools are normalized to `origin: "user"` and `exportable: true`.
+
+Tools must separate operational instructions from visible output. `ToolInvocationRequest.prompt` preserves the exact original user request for card metadata. `params.toolPrompt` is only a runtime instruction and must not be rendered into card HTML. Visible card content should come from explicit fields such as `params.outputText`, `params.title`, `params.subtitle`, `params.body`, `params.footer`, or structured provider output.
 
 ## Agent Contracts
 

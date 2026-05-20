@@ -11,7 +11,35 @@
     "sourceType": "builtin",
     "invocationVisibility": "frontend",
     "capabilities": [],
-    "inputSchema": {},
+    "inputSchema": {
+      "type": "object",
+      "required": ["prompt"],
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "Exact original user request. Preserve it as card prompt metadata."
+        },
+        "context": { "type": "object" },
+        "selectedCards": { "type": "array", "items": { "type": "string" } },
+        "params": {
+          "type": "object",
+          "properties": {
+            "toolPrompt": {
+              "type": "string",
+              "description": "Operational tool instruction. Never render this directly as visible output."
+            },
+            "outputText": {
+              "type": "string",
+              "description": "Final user-visible text for card HTML."
+            },
+            "title": { "type": "string" },
+            "subtitle": { "type": "string" },
+            "body": { "type": "string" },
+            "footer": { "type": "string" }
+          }
+        }
+      }
+    },
     "outputSchema": {},
     "exportable": true,
     "runtime": {

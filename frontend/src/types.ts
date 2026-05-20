@@ -29,6 +29,7 @@ export type ToolDefinition = {
     command: string[];
     method: string;
     timeoutSeconds: number;
+    workingDirectory?: string | null;
   };
   permissions: {
     network: boolean;
