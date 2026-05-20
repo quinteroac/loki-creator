@@ -14,10 +14,24 @@ export type GeneratedCard = {
   prompt: string;
   html: string;
   sourceToolId: string;
+  metadata?: CardMetadata;
 };
 
 export type ToolResult = {
   cards: GeneratedCard[];
+};
+
+export type CardMetadata = {
+  kind?: "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive";
+  title?: string;
+  description?: string;
+  thumbnailUrl?: string;
+  artifactUrl?: string;
+  createdAt?: string;
+  tags?: string[];
+  capabilities?: string[];
+  preferredAspectRatio?: "1:1" | "4:3" | "16:9" | "auto";
+  playableMedia?: boolean;
 };
 
 export type CommandResult = {
@@ -62,6 +76,7 @@ export async function runTool(
             title: "Hyperframes tool failed",
             body: message,
             tone: "error",
+            metadata: { kind: "diagnostic", tags: ["hyperframes", "error"] },
           }),
         ],
       }),
@@ -177,6 +192,7 @@ export function createCard(input: {
   videoUrl?: string;
   artifactPath?: string;
   tone?: "ok" | "warn" | "error";
+  metadata?: CardMetadata;
 }) {
   const toneColor =
     input.tone === "error" ? "#ff5a3d" : input.tone === "warn" ? "#e9429f" : "#245cff";
@@ -198,6 +214,17 @@ export function createCard(input: {
     name: input.name,
     prompt: input.prompt,
     sourceToolId: input.sourceToolId,
+    metadata: {
+      kind: "artifact",
+      title: input.title,
+      description: input.body,
+      artifactUrl: input.artifactPath,
+      thumbnailUrl: input.imageDataUrl,
+      preferredAspectRatio: input.videoUrl ? "16:9" : "1:1",
+      playableMedia: Boolean(input.videoUrl),
+      tags: ["hyperframes"],
+      ...input.metadata,
+    },
     html: `<section style="display:grid;width:100%;height:100%;background:#111111;color:#ffffff;font-family:DM Sans,Inter,Arial,sans-serif;overflow:hidden;">
   <article style="display:grid;grid-template-rows:auto 1fr;gap:18px;width:100%;height:100%;padding:28px;background:#202020;">
     <header>
@@ -271,6 +298,7 @@ function missingProjectResult(
         body: `Project ${projectId} does not have an index.html yet. Create the project and write the composition before running this step.`,
         artifactPath: projectDir,
         tone: "warn",
+        metadata: { kind: "diagnostic", tags: ["hyperframes", "missing-project"] },
       }),
     ],
   } satisfies ToolResult;
@@ -305,6 +333,7 @@ export async function runtimeCheck(payload: ToolInvocationRequest, sourceToolId:
           "\n\n---\n\n",
         ),
         tone: ok ? "ok" : "warn",
+        metadata: { kind: "diagnostic", tags: ["hyperframes", "runtime"] },
       }),
     ],
   } satisfies ToolResult;
@@ -341,6 +370,7 @@ export async function projectCreate(payload: ToolInvocationRequest, sourceToolId
         artifactPath: projectDir,
         details: commandSummary(result),
         tone: result.ok ? "ok" : "error",
+        metadata: { kind: "artifact", tags: ["hyperframes", "project"] },
       }),
     ],
   } satisfies ToolResult;
@@ -371,6 +401,7 @@ export async function compositionWrite(payload: ToolInvocationRequest, sourceToo
           : `Updated ${compositionPath} in project ${projectId}.`,
         artifactPath: target,
         tone: hasIssues ? "warn" : "ok",
+        metadata: { kind: "artifact", tags: ["hyperframes", "composition"] },
       }),
     ],
   } satisfies ToolResult;
@@ -399,6 +430,7 @@ export async function registryAdd(payload: ToolInvocationRequest, sourceToolId: 
         artifactPath: projectDir,
         details: commandSummary(result),
         tone: result.ok ? "ok" : "error",
+        metadata: { kind: "artifact", tags: ["hyperframes", "registry"] },
       }),
     ],
   } satisfies ToolResult;
@@ -459,6 +491,7 @@ export async function snapshotProject(payload: ToolInvocationRequest, sourceTool
         imageDataUrl,
         details: commandSummary(result),
         tone: result.ok ? "ok" : "error",
+        metadata: { kind: "image", preferredAspectRatio: "1:1", tags: ["hyperframes", "snapshot"] },
       }),
     ],
   } satisfies ToolResult;
@@ -493,6 +526,13 @@ export async function renderProject(payload: ToolInvocationRequest, sourceToolId
         videoUrl: result.ok && format !== "png-sequence" ? artifactUrl(output) : undefined,
         details: commandSummary(result),
         tone: result.ok ? "ok" : "error",
+        metadata: {
+          kind: "video",
+          artifactUrl: artifactUrl(output),
+          playableMedia: result.ok && format !== "png-sequence",
+          preferredAspectRatio: "16:9",
+          tags: ["hyperframes", "render"],
+        },
       }),
     ],
   } satisfies ToolResult;
@@ -563,6 +603,7 @@ function diagnosticResult(
         artifactPath: projectDir,
         details: commandSummary(result),
         tone: result.ok ? "ok" : "warn",
+        metadata: { kind: "diagnostic", tags: ["hyperframes", "diagnostic"] },
       }),
     ],
   } satisfies ToolResult;
@@ -587,6 +628,7 @@ function artifactCommandResult(
         artifactPath,
         details: commandSummary(result),
         tone: result.ok ? "ok" : "error",
+        metadata: { kind: name.includes("TTS") ? "audio" : "artifact", tags: ["hyperframes", "artifact"] },
       }),
     ],
   } satisfies ToolResult;

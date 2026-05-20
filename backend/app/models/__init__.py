@@ -1,5 +1,5 @@
 from app.models.agents import AgentDefinition, AgentSkillDefinition, AgentSkillStep
-from app.models.instructions import GeneratedCard, InstructionRequest, InstructionResponse
+from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
 from app.models.tools import (
     ToolDefinition,
     ToolConfigurationField,
@@ -15,6 +15,7 @@ __all__ = [
     "AgentDefinition",
     "AgentSkillDefinition",
     "AgentSkillStep",
+    "CardMetadata",
     "GeneratedCard",
     "InstructionRequest",
     "InstructionResponse",

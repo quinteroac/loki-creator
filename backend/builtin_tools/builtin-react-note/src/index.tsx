@@ -68,6 +68,12 @@ process.stdout.write(
         prompt,
         html,
         sourceToolId: "builtin-react-note",
+        metadata: {
+          kind: "generic",
+          title: "Built-in React Note",
+          description: prompt,
+          preferredAspectRatio: "1:1",
+        },
       },
     ],
   }),

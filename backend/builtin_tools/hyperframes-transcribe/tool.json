@@ -6,17 +6,120 @@
     "description": "Generates word-level transcripts for Hyperframes captions.",
     "sourceType": "cli-local",
     "invocationVisibility": "internal",
-    "capabilities": ["hyperframes", "transcription", "captions"],
+    "capabilities": [
+      "hyperframes",
+      "transcription",
+      "captions"
+    ],
     "runtime": {
       "sourceType": "cli-local",
       "entrypoint": "src/index.ts",
-      "command": ["bun", "run", "src/index.ts"],
+      "command": [
+        "bun",
+        "run",
+        "src/index.ts"
+      ],
       "timeoutSeconds": 420
     },
     "permissions": {
       "network": true,
       "filesystem": true,
-      "allowedCommands": ["bun"]
+      "allowedCommands": [
+        "bun"
+      ]
+    },
+    "outputSchema": {
+      "type": "object",
+      "required": [
+        "cards"
+      ],
+      "properties": {
+        "cards": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "prompt",
+              "html"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "html": {
+                "type": "string"
+              },
+              "sourceToolId": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "generic",
+                      "image",
+                      "video",
+                      "audio",
+                      "diagnostic",
+                      "artifact",
+                      "interactive"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "thumbnailUrl": {
+                    "type": "string"
+                  },
+                  "artifactUrl": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "preferredAspectRatio": {
+                    "type": "string",
+                    "enum": [
+                      "1:1",
+                      "4:3",
+                      "16:9",
+                      "auto"
+                    ]
+                  },
+                  "playableMedia": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

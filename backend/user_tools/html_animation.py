@@ -99,6 +99,13 @@ def main() -> None:
                 "prompt": prompt,
                 "html": build_card_html(prompt),
                 "sourceToolId": "html-animation",
+                "metadata": {
+                    "kind": "interactive",
+                    "title": "HTML Animation",
+                    "description": prompt,
+                    "preferredAspectRatio": "1:1",
+                    "tags": ["html", "animation"],
+                },
             }
         ]
     }

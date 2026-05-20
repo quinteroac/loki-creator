@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,6 +14,25 @@ class InstructionRequest(BaseModel):
     selected_element: str | None = Field(default=None, alias="selectedElement")
 
 
+CardKind = Literal["generic", "image", "video", "audio", "diagnostic", "artifact", "interactive"]
+CardAspectRatio = Literal["1:1", "4:3", "16:9", "auto"]
+
+
+class CardMetadata(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    kind: CardKind | None = None
+    title: str | None = None
+    description: str | None = None
+    thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl")
+    artifact_url: str | None = Field(default=None, alias="artifactUrl")
+    created_at: str | None = Field(default=None, alias="createdAt")
+    tags: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list)
+    preferred_aspect_ratio: CardAspectRatio | None = Field(default=None, alias="preferredAspectRatio")
+    playable_media: bool | None = Field(default=None, alias="playableMedia")
+
+
 class GeneratedCard(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -22,6 +41,7 @@ class GeneratedCard(BaseModel):
     prompt: str
     html: str
     source_tool_id: str | None = Field(default=None, alias="sourceToolId")
+    metadata: CardMetadata | None = None
 
 
 class InstructionResponse(BaseModel):

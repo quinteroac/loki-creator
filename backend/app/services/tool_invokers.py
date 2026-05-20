@@ -38,6 +38,12 @@ class BuiltinToolInvoker(ToolInvoker):
                 prompt=payload.prompt,
                 source_tool_id=tool.id,
                 name=payload.params.get("name") or "Generated Image",
+                metadata={
+                    "kind": "image",
+                    "title": payload.params.get("name") or "Generated Image",
+                    "description": payload.prompt,
+                    "preferredAspectRatio": "1:1",
+                },
             )
             escaped_prompt = escape(payload.prompt)
             escaped_image_data_url = escape(image_data_url, quote=True)
@@ -61,6 +67,12 @@ class BuiltinToolInvoker(ToolInvoker):
                 prompt=payload.prompt,
                 source_tool_id=tool.id,
                 name="Hello World",
+                metadata={
+                    "kind": "generic",
+                    "title": "Hello World",
+                    "description": message,
+                    "preferredAspectRatio": "1:1",
+                },
             )
             escaped_message = escape(message)
             card = card.model_copy(
@@ -80,6 +92,12 @@ class BuiltinToolInvoker(ToolInvoker):
             source_tool_id=tool.id,
             name=f"{tool.name} card",
             output_text=self._resolve_card_output_text(payload, fallback=payload.prompt),
+            metadata={
+                "kind": "generic",
+                "title": f"{tool.name} card",
+                "description": payload.prompt,
+                "preferredAspectRatio": "1:1",
+            },
         )
         return ToolResult(cards=[card])
 
@@ -143,6 +161,13 @@ class BuiltinToolInvoker(ToolInvoker):
             prompt=payload.prompt,
             source_tool_id=tool.id,
             name="Comfy Runtime Check",
+            metadata={
+                "kind": "diagnostic",
+                "title": "Comfy Runtime Check",
+                "description": "comfy-diffusion diagnostic for future ComfyUI tools.",
+                "tags": ["comfyui", "runtime"],
+                "preferredAspectRatio": "1:1",
+            },
         )
         card = card.model_copy(
             update={

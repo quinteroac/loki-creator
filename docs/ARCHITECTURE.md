@@ -73,20 +73,29 @@ This polling/reconciliation behavior is not a temporary bridge. It is the curren
 
 ## Card Rendering
 
-The backend returns card HTML as the primary visual output. A card has:
+The backend returns card documents as the primary visual output. A `CardDocument` keeps HTML free-form and adds optional metadata around it. The legacy `GeneratedCard` name remains compatible. A card document has:
 
 - `id`
 - `name`
 - `prompt`
 - `html`
 - `sourceToolId`
+- optional `metadata`
 
-`CanvasCard` attempts to render HTML into a real `<canvas>` using the experimental HTML-in-Canvas API:
+The frontend places card documents on the workspace as `CanvasNode` instances. A canvas node owns:
+
+- `id`
+- `cardDocumentId`
+- `frame` (`x`, `y`, `width`)
+
+The first version keeps a one-to-one relationship between card documents and canvas nodes, but keeps the concepts separate so layout state is no longer mixed with tool output.
+
+`CanvasCard` attempts to render `CardDocument.html` into a real `<canvas>` using the experimental HTML-in-Canvas API:
 
 - `<canvas layoutsubtree>`
 - `drawElementImage(...)`
 
-If the browser does not support this API, the same HTML is rendered inside an iframe fallback. This is expected in Firefox and most browsers without the Chromium flag enabled.
+If the browser does not support this API, or when `metadata.playableMedia` indicates playable media, the same HTML is rendered inside an iframe fallback. This is expected in Firefox and most browsers without the Chromium flag enabled.
 
 ## Tool Registry
 
@@ -106,7 +115,7 @@ Built-in tools may be:
 `GET /api/tools` returns only frontend-visible tools.  
 `GET /api/tools?include_internal=true` includes internal tools such as `Browser Tool`.
 
-Node/React tools use the existing `cli-local` runtime. They receive `ToolInvocationRequest` JSON on stdin and must write a `ToolResult` JSON object to stdout. React tools render to self-contained HTML, typically through server rendering, and place that HTML in `GeneratedCard.html`; the frontend does not mount or hydrate tool-provided React components in this version.
+Node/React tools use the existing `cli-local` runtime. They receive `ToolInvocationRequest` JSON on stdin and must write a `ToolResult` JSON object to stdout. React tools render to self-contained HTML, typically through server rendering, and place that HTML in `GeneratedCard.html`; they may add optional `GeneratedCard.metadata`. The frontend does not mount or hydrate tool-provided React components in this version.
 
 Folder-based tool manifests get a runtime `workingDirectory` derived from their containing folder. Built-in manifest tools are always normalized to `origin: "built-in"` and `exportable: false`; user manifest tools are normalized to `origin: "user"` and `exportable: true`.
 

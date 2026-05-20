@@ -28,6 +28,7 @@ Input/output separation:
 - `params.toolPrompt` is an operational instruction for the tool runtime only.
 - Visible card content must use explicit params such as `outputText`, `title`, `subtitle`, `body`, and `footer`, or structured provider output.
 - `GeneratedCard.html` must not render `params.toolPrompt`, planning notes, implementation instructions, or model reasoning.
+- `GeneratedCard.metadata` is optional but recommended for card kind, title, description, aspect ratio, playable media, tags, and artifact/thumbnail URLs.
 
 Schema and packaging fields:
 

@@ -10,32 +10,122 @@
     "origin": "user",
     "sourceType": "cli-local",
     "invocationVisibility": "frontend",
-    "capabilities": ["html", "animation", "html-card-output"],
+    "capabilities": [
+      "html",
+      "animation",
+      "html-card-output"
+    ],
     "inputSchema": {
       "type": "object",
-      "required": ["prompt"],
+      "required": [
+        "prompt"
+      ],
       "properties": {
-        "prompt": { "type": "string" },
-        "context": { "type": "object" },
-        "selectedCards": { "type": "array", "items": { "type": "string" } },
-        "params": { "type": "object" }
+        "prompt": {
+          "type": "string"
+        },
+        "context": {
+          "type": "object"
+        },
+        "selectedCards": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "params": {
+          "type": "object"
+        }
       }
     },
     "outputSchema": {
       "type": "object",
-      "required": ["cards"],
+      "required": [
+        "cards"
+      ],
       "properties": {
         "cards": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["id", "name", "prompt", "html"],
+            "required": [
+              "id",
+              "name",
+              "prompt",
+              "html"
+            ],
             "properties": {
-              "id": { "type": "string" },
-              "name": { "type": "string" },
-              "prompt": { "type": "string" },
-              "html": { "type": "string" },
-              "sourceToolId": { "type": "string" }
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "html": {
+                "type": "string"
+              },
+              "sourceToolId": {
+                "type": "string"
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "generic",
+                      "image",
+                      "video",
+                      "audio",
+                      "diagnostic",
+                      "artifact",
+                      "interactive"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "thumbnailUrl": {
+                    "type": "string"
+                  },
+                  "artifactUrl": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "preferredAspectRatio": {
+                    "type": "string",
+                    "enum": [
+                      "1:1",
+                      "4:3",
+                      "16:9",
+                      "auto"
+                    ]
+                  },
+                  "playableMedia": {
+                    "type": "boolean"
+                  }
+                }
+              }
             }
           }
         }
@@ -45,7 +135,12 @@
     "runtime": {
       "sourceType": "cli-local",
       "entrypoint": "user_tools/html_animation.py",
-      "command": ["uv", "run", "python", "user_tools/html_animation.py"],
+      "command": [
+        "uv",
+        "run",
+        "python",
+        "user_tools/html_animation.py"
+      ],
       "method": "POST",
       "timeoutSeconds": 30
     },
@@ -53,7 +148,9 @@
       "network": false,
       "filesystem": true,
       "envVars": [],
-      "allowedCommands": ["uv"]
+      "allowedCommands": [
+        "uv"
+      ]
     },
     "configuration": []
   },

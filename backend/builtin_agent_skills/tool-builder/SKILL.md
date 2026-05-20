@@ -25,7 +25,7 @@ Tool Builder helps create tools that follow Loki Creator contracts. Use this ski
 
 3. Build the preview output.
    - Return operational output through `ToolResult.cards`.
-   - Each card must be a `GeneratedCard` with `id`, `name`, `prompt`, `html`, and `sourceToolId`.
+   - Each card must be a `GeneratedCard` with `id`, `name`, `prompt`, `html`, `sourceToolId`, and optional descriptive `metadata`.
    - If the structured draft cannot yet travel as first-class data, render it inside a review card as formatted JSON.
 
 ## Loki Contracts
@@ -51,6 +51,7 @@ Each generated card must remain compatible with `GeneratedCard`:
 - `prompt`
 - `html`
 - `sourceToolId`
+- optional `metadata` (`kind`, `title`, `description`, `preferredAspectRatio`, `playableMedia`, tags/artifact fields)
 
 ## Built-In Tools Used By This Skill
 

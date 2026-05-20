@@ -68,6 +68,12 @@ process.stdout.write(
         prompt,
         html,
         sourceToolId: "react-note-card",
+        metadata: {
+          kind: "generic",
+          title: "React Note Card",
+          description: prompt,
+          preferredAspectRatio: "1:1",
+        },
       },
     ],
   }),
