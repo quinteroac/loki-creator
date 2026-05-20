@@ -69,3 +69,36 @@ export type ToolJobRequest = {
   selectedCards: string[];
   params: Record<string, unknown>;
 };
+
+export type AgentDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  defaultModel?: string | null;
+};
+
+export type AgentModel = {
+  id: string;
+  provider: string;
+  name: string;
+  label: string;
+};
+
+export type AgentRunRequest = {
+  prompt: string;
+  agentId: string | null;
+  model: string;
+  tools: string[];
+  selectedCards: string[];
+  context: Record<string, unknown>;
+};
+
+export type AgentRunResponse = {
+  id: string;
+  agentId: string;
+  status: "succeeded" | "failed";
+  responseText: string;
+  toolJobIds: string[];
+  cardIds: string[];
+  error?: string;
+};

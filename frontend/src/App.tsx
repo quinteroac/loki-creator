@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
-import { createToolJob, listToolJobs, waitForToolJob } from "./api/toolJobs";
+import { createAgentRun, listAgentModels } from "./api/agentRuns";
+import { listToolJobs, waitForToolJob } from "./api/toolJobs";
 import { listTools } from "./api/tools";
 import { AgentComposer } from "./components/AgentComposer";
+import { AgentResponsePanel } from "./components/AgentResponsePanel";
 import { CanvasStage } from "./components/CanvasStage";
-import { availableModels } from "./data/models";
 import { Topbar } from "./components/Topbar";
 import { initialCanvasCards } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
@@ -14,15 +15,27 @@ import {
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
-import type { GeneratedCard, ToolJob } from "./types";
+import type { AgentModel, AgentRunResponse, GeneratedCard, ToolJob } from "./types";
+
+const fallbackModels: AgentModel[] = [
+  {
+    id: "loki-default",
+    provider: "loki",
+    name: "Loki Default",
+    label: "Loki Default",
+  },
+];
 
 export function App() {
   const [instruction, setInstruction] = useState("");
   const [canvasCards, setCanvasCards] = useState(initialCanvasCards);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [selectedTools, setSelectedTools] = useState(["Auto"]);
-  const [selectedModel, setSelectedModel] = useState(availableModels[0]);
+  const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
+  const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
+  const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
+  const [isAgentResponseOpen, setIsAgentResponseOpen] = useState(false);
   const [toolSearch, setToolSearch] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -31,6 +44,8 @@ export function App() {
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
   useDismissablePopover(openMenu, closePopover);
+  const closeAgentResponse = useCallback(() => setIsAgentResponseOpen(false), []);
+  useDismissablePopover(isAgentResponseOpen ? "agent-response" : null, closeAgentResponse);
 
   useEffect(() => {
     let isMounted = true;
@@ -49,6 +64,33 @@ export function App() {
     }
 
     loadTools();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadModels() {
+      try {
+        const models = await listAgentModels();
+        if (!isMounted || models.length === 0) return;
+
+        setAvailableModels(models);
+        setSelectedModel((currentModel) =>
+          models.some((model) => model.label === currentModel) ? currentModel : models[0].label,
+        );
+      } catch {
+        if (isMounted) {
+          setAvailableModels(fallbackModels);
+          setSelectedModel((currentModel) => currentModel || fallbackModels[0].label);
+        }
+      }
+    }
+
+    loadModels();
 
     return () => {
       isMounted = false;
@@ -111,33 +153,38 @@ export function App() {
     }
 
     try {
-      setStatus("Running tool job...");
-      const createdJob = await createToolJob({
-        toolId: toolButtonLabel,
+      setStatus("Running agent...");
+      const agentRun = await createAgentRun({
+        agentId: "base-agent",
         prompt: text,
+        model: selectedModel,
+        tools: selectedTools,
+        selectedCards,
         context: {
           tools: selectedTools,
           model: selectedModel,
+          agentId: "base-agent",
           selectedElement: selectedNode?.name ?? null,
         },
-        selectedCards,
-        params: {
-          model: selectedModel,
-        },
       });
-      const completedJob = await waitForToolJob(createdJob.id);
 
-      if (completedJob.status === "failed") {
-        setStatus(completedJob.error || "Tool job failed.");
+      setLatestAgentResponse(agentRun);
+      setIsAgentResponseOpen(false);
+
+      if (agentRun.status === "failed") {
+        setStatus(agentRun.error || "Agent run failed.");
         return;
       }
 
-      addCardsFromJob(completedJob);
+      for (const jobId of agentRun.toolJobIds) {
+        const completedJob = await waitForToolJob(jobId);
+        addCardsFromJob(completedJob);
+      }
 
       setInstruction("");
-      setStatus(`Tool job completed with ${selectedTools.join(", ")}.`);
+      setStatus("Agent completed.");
     } catch {
-      setStatus("Could not connect to the backend.");
+      setStatus("Could not connect to the agent bridge.");
     }
   }
 
@@ -176,6 +223,11 @@ export function App() {
   return (
     <main className="workspace" aria-label="Loki workspace">
       <Topbar />
+      <AgentResponsePanel
+        isOpen={isAgentResponseOpen}
+        onToggle={() => setIsAgentResponseOpen((current) => !current)}
+        response={latestAgentResponse}
+      />
       <CanvasStage
         cards={canvasCards}
         onToggleCard={toggleCard}

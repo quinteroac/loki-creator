@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { MouseEvent, PointerEvent } from "react";
 import type { GeneratedCard } from "../types";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
@@ -9,8 +10,16 @@ type HtmlCanvasDrawStatus = "drawn" | "pending" | "unsupported";
 
 type CanvasCardProps = {
   card: GeneratedCard;
+  frame: CanvasCardFrame;
   isSelected: boolean;
+  onUpdateFrame: (cardId: string, frame: CanvasCardFrame) => void;
   onToggleSelect: (cardId: string) => void;
+};
+
+export type CanvasCardFrame = {
+  width: number;
+  x: number;
+  y: number;
 };
 
 function resizeCanvas(canvas: HTMLCanvasElement) {
@@ -77,10 +86,22 @@ function createIframeSrcDoc(cardHtml: string): string {
 </html>`;
 }
 
-export function CanvasCard({ card, isSelected, onToggleSelect }: CanvasCardProps) {
+export function CanvasCard({ card, frame, isSelected, onToggleSelect, onUpdateFrame }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startClientX: number;
+    startClientY: number;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    didDrag: boolean;
+    mode: "drag" | "resize";
+  } | null>(null);
+  const suppressNextClickRef = useRef(false);
   const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -127,14 +148,114 @@ export function CanvasCard({ card, isSelected, onToggleSelect }: CanvasCardProps
     };
   }, [card.html]);
 
+  function handlePointerDown(event: PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: frame.x,
+      startY: frame.y,
+      startWidth: frame.width,
+      didDrag: false,
+      mode: "drag",
+    };
+    setIsDragging(true);
+  }
+
+  function handleResizePointerDown(event: PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: frame.x,
+      startY: frame.y,
+      startWidth: frame.width,
+      didDrag: false,
+      mode: "resize",
+    };
+    setIsDragging(true);
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLElement>) {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - dragState.startClientX;
+    const deltaY = event.clientY - dragState.startClientY;
+    const hasMoved = Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3;
+    dragState.didDrag ||= hasMoved;
+
+    if (hasMoved && dragState.mode === "drag") {
+      onUpdateFrame(card.id, {
+        width: dragState.startWidth,
+        x: Math.max(0, dragState.startX + deltaX),
+        y: Math.max(0, dragState.startY + deltaY),
+      });
+    }
+
+    if (hasMoved && dragState.mode === "resize") {
+      onUpdateFrame(card.id, {
+        width: dragState.startWidth + Math.max(deltaX, deltaY * 0.75),
+        x: dragState.startX,
+        y: dragState.startY,
+      });
+    }
+  }
+
+  function handlePointerUp(event: PointerEvent<HTMLElement>) {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    dragStateRef.current = null;
+    setIsDragging(false);
+    event.currentTarget.releasePointerCapture(event.pointerId);
+
+    suppressNextClickRef.current = dragState.didDrag;
+  }
+
+  function handlePointerCancel(event: PointerEvent<HTMLElement>) {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    dragStateRef.current = null;
+    setIsDragging(false);
+  }
+
+  function handleClick(event: MouseEvent<HTMLElement>) {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      event.preventDefault();
+      return;
+    }
+
+    onToggleSelect(card.id);
+  }
+
   return (
-    <article className={`canvas-card ${isSelected ? "selected" : ""}`}>
+    <article
+      className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
+      onClick={handleClick}
+      onPointerCancel={handlePointerCancel}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      style={{
+        transform: `translate3d(${frame.x}px, ${frame.y}px, 0)`,
+        width: `${frame.width}px`,
+      }}
+    >
       <button
         className="canvas-card-preview"
         type="button"
         aria-label={`Select ${card.name}`}
         aria-pressed={isSelected}
-        onClick={() => onToggleSelect(card.id)}
       >
         {useIframeFallback && <iframe title={card.name} srcDoc={createIframeSrcDoc(card.html)} sandbox="" loading="lazy" />}
         <canvas className={useIframeFallback ? "html-canvas-hidden" : undefined} ref={canvasRef} layoutsubtree="">
@@ -146,6 +267,12 @@ export function CanvasCard({ card, isSelected, onToggleSelect }: CanvasCardProps
         </canvas>
       </button>
       <p>{card.prompt}</p>
+      <button
+        className="canvas-card-resize"
+        type="button"
+        aria-label={`Resize ${card.name}`}
+        onPointerDown={handleResizePointerDown}
+      />
     </article>
   );
 }

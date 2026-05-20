@@ -208,7 +208,7 @@ BUILTIN_TOOLS = [
     create_builtin_tool(
         tool_id="hello-world",
         name="Hello World",
-        description="Dummy built-in tool that returns a simple Hello World HTML canvas card.",
+        description="Simple built-in tool that returns an HTML canvas card with the requested greeting text.",
         capabilities=["dummy", "html-card-output"],
     ),
     create_builtin_tool(

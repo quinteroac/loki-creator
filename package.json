@@ -5,6 +5,13 @@
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "dev:frontend": "bun run --cwd frontend dev",
-    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload"
+    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload",
+    "dev:agent-bridge": "bun run agent-bridge/server.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "^0.75.3",
+    "@elysiajs/cors": "^1.4.2",
+    "elysia": "^1.4.28",
+    "typebox": "^1.1.38"
   }
 }

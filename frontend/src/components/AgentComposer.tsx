@@ -1,9 +1,10 @@
 import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Wrench } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
-import type { GeneratedCard } from "../types";
+import type { AgentModel, GeneratedCard } from "../types";
 
 type AgentComposerProps = {
-  availableModels: string[];
+  availableModels: AgentModel[];
   canvasNodes: GeneratedCard[];
   filteredTools: string[];
   instruction: string;
@@ -57,6 +58,23 @@ export function AgentComposer({
   toolSearch,
   fileInputRef,
 }: AgentComposerProps) {
+  const [modelSearch, setModelSearch] = useState("");
+  const filteredModels = useMemo(() => {
+    const query = modelSearch.trim().toLowerCase();
+
+    if (!query) return availableModels;
+
+    return availableModels.filter((model) =>
+      [model.label, model.name, model.provider, model.id].some((value) => value.toLowerCase().includes(query)),
+    );
+  }, [availableModels, modelSearch]);
+
+  useEffect(() => {
+    if (openMenu !== "model-picker") {
+      setModelSearch("");
+    }
+  }, [openMenu]);
+
   return (
     <section className="composer-wrap" aria-label="Agent instructions">
       {openMenu === "agents" && (
@@ -105,22 +123,36 @@ export function AgentComposer({
 
       {openMenu === "model-picker" && (
         <div className="popover model-popover" data-popover aria-label="Select model">
+          <label className="tool-search">
+            <Search size={14} strokeWidth={2} />
+            <input
+              type="search"
+              value={modelSearch}
+              onChange={(event) => setModelSearch(event.target.value)}
+              placeholder="Search models"
+              aria-label="Search models"
+              autoFocus
+            />
+          </label>
           <div className="tool-list">
-            {availableModels.map((model) => {
-              const isSelected = selectedModel === model;
+            {filteredModels.map((model) => {
+              const isSelected = selectedModel === model.label;
 
               return (
                 <button
                   className={`tool-option ${isSelected ? "selected" : ""}`}
-                  key={model}
+                  key={`${model.provider}:${model.id}`}
                   type="button"
-                  onClick={() => onSelectModel(model)}
+                  onClick={() => onSelectModel(model.label)}
                 >
-                  <span>{model}</span>
+                  <span>{model.label}</span>
                   {isSelected && <Check size={14} strokeWidth={2} />}
                 </button>
               );
             })}
+            {filteredModels.length === 0 && (
+              <p className="tool-empty">{modelSearch.trim() ? "No matching models" : "No models available"}</p>
+            )}
           </div>
         </div>
       )}

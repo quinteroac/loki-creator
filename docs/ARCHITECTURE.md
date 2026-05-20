@@ -6,6 +6,7 @@ Loki Creator is split into a React frontend and a FastAPI backend.
 
 - Frontend: React + Vite running with Bun in `frontend/`.
 - Backend: FastAPI running with uv in `backend/`.
+- Agent bridge: ElysiaJS + Pi SDK running with Bun in `agent-bridge/`.
 - The main user experience is a dark creative workspace with a dotted canvas and a bottom agent composer.
 - The frontend does not execute tools directly. It sends intent to the backend/agent layer and reconciles async tool job results.
 
@@ -16,17 +17,21 @@ The current backend stores jobs in memory. This is intentional for the first ver
 The frontend owns presentation and local workspace state:
 
 - Load frontend-visible tools from `GET /api/tools`.
+- Load available agents from the agent bridge.
 - Let the user select tools and selected canvas cards in the composer.
-- Submit prompts as async tool jobs.
+- Submit prompts as agent runs through the agent bridge.
 - Poll completed tool jobs and merge returned cards into the canvas.
+- Show the latest textual agent response in a right-side response popover.
 - Render each generated card from HTML.
 
 Important modules:
 
 - `frontend/src/App.jsx`: workspace orchestration and state composition.
 - `frontend/src/components/AgentComposer.jsx`: prompt composer, popovers, selected tools/cards controls.
+- `frontend/src/components/AgentResponsePanel.jsx`: right-side response popover for the latest agent run.
 - `frontend/src/components/CanvasStage.jsx`: canvas surface.
 - `frontend/src/components/CanvasCard.jsx`: card rendering using HTML-in-Canvas when available, iframe fallback otherwise.
+- `frontend/src/api/agentRuns.js`: agent bridge client.
 - `frontend/src/api/toolJobs.js`: async job client.
 - `frontend/src/api/tools.js`: tools registry client.
 
@@ -121,6 +126,26 @@ Agent skills adopt the Agent Skills standard: a skill is a folder with a require
 
 Creation from canvas elements is intentionally reserved for a future implementation. There are no agent endpoints, registries, frontend flows, or `ToolJobService` integration in this version.
 
+## Agent Bridge
+
+The frontend calls an ElysiaJS bridge for agent runs instead of invoking Pi SDK in the browser. The bridge owns Pi SDK sessions, loads agent skills, exposes Loki tools as Pi custom tools, and delegates actual tool execution back to FastAPI through `POST /api/tool-jobs`.
+
+Bridge endpoints:
+
+- `GET /api/health`
+- `GET /api/agents`
+- `POST /api/agent-runs`
+
+The bridge creates `.agents/skills/tool-builder` as a development symlink to `backend/builtin_agent_skills/tool-builder` when it starts. The backend skill folder remains the source of truth; `.agents/` is a runtime discovery path and is ignored by git.
+
+Agent run responses return text and references:
+
+- `responseText`: shown in the right-side response popover.
+- `toolJobIds`: jobs created by Pi custom tool calls.
+- `cardIds`: cards created by those jobs.
+
+Cards continue to flow through the existing tool-job polling contract.
+
 ## Export And Import Preparation
 
 The contract includes `ToolPackage` for future export/import:
@@ -154,6 +179,12 @@ Current backend endpoints:
 - `GET /api/tool-jobs/{job_id}`
 - `POST /api/instructions`
 
+Current agent bridge endpoints:
+
+- `GET /api/health`
+- `GET /api/agents`
+- `POST /api/agent-runs`
+
 `POST /api/instructions` is legacy-compatible and currently returns one generated card. The preferred architecture for agent/tool execution is the async tool-job flow.
 
 ## Architectural Decisions
@@ -165,5 +196,6 @@ Current backend endpoints:
 - Separate tool contracts from tool implementations.
 - Define agent contracts before implementing user-created agent persistence, canvas creation, or execution.
 - Store agent skills as Agent Skills standard folders with `SKILL.md`, not as JSON manifests.
+- Keep Pi SDK on the server-side agent bridge; do not expose Pi credentials or SDK runtime in React.
 - Prepare for user tool export/import with manifests and package contracts before adding UI.
 - Keep SOLID boundaries: schemas, registry, invokers, services, routes, and UI components remain separate.
