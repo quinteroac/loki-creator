@@ -1,12 +1,12 @@
 ## Overview
 
-MiniMax stages itself as a Chinese AI infrastructure brand with a sophisticated dual identity. Marketing surfaces and platform pages anchor in stark white canvas with deep-black typographic emphasis — the brand voice is confident, technical, almost editorial. But each model release gets its own vibrant gradient identity card: M2.7 in volcanic coral-red, Music 2.6 in magenta-pink, Hailuo in deep blue, Speech 2.8 in saturated orange-purple. Together these vibrant tiles read like album covers laid out on the homepage — each one declaring its own product personality.
+Loki stages itself as a creative AI builder platform with a sophisticated dual identity. Marketing surfaces and platform pages anchor in stark white canvas with deep-black typographic emphasis — the brand voice is confident, technical, and editorial without feeling sterile. Core builder surfaces stay quiet and legible, while each major Loki capability gets its own vibrant gradient identity card: Creator in volcanic coral-red, HyperFrames in magenta-pink, Tools in deep blue, and Agents in saturated orange-purple. Together these vibrant tiles read like launch cards for a creative operating system — each one declaring its own workflow personality.
 
 DM Sans anchors every surface from oversized 80px hero displays down to 12px micro labels. The geometric, slightly humanist character of the face suits both the dense documentation surfaces (where 14px body type carries 1.5 line-height for long-form prose) and the high-impact marketing displays (where -2px letter-spacing tightens 80px headlines). Buttons are universally pill-shaped (`rounded-full`) with a sharp two-tier system: black-pill primary (the dominant CTA) and outline-pill secondary. Cards split into two distinct families: vibrant gradient product showcases (32px corner softening) and quiet white documentation cards (16px corner softening).
 
 **Key Characteristics:**
 - Stark monochrome palette — black ({colors.primary}) and white ({colors.canvas}) — broken open by saturated brand-color gradient cards
-- Distinct product-color encoding: each model line has its own vibrant brand color (coral M2.7, magenta Music 2.6, blue Hailuo, orange Speech 2.8)
+- Distinct product-color encoding: each Loki capability has its own vibrant brand color (coral Creator, magenta HyperFrames, blue Tools, purple Agents)
 - DM Sans across the entire system; Inter as fallback
 - Pill-shaped buttons ({rounded.full}) and pill-shaped tabs everywhere; rectangular forms only inside data tables and dense docs
 - Hero typography uses tight 1.10 line-height with -2px letter-spacing for impact
@@ -15,17 +15,17 @@ DM Sans anchors every surface from oversized 80px hero displays down to 12px mic
 
 ## Colors
 
-> Source pages: minimax.io/ (homepage), /models/text/m27 (product showcase), platform.minimax.io/docs/guides/models-intro (documentation), /subscribe/token-plan (pricing). Token coverage was identical across all four pages.
+> Source pages: Loki marketing, creator workspace, HyperFrames documentation, and subscription surfaces. Token coverage should remain identical across all primary Loki surfaces.
 
 ### Brand & Accent
-- **Brand Coral** ({colors.brand-coral}): Signature high-impact accent. Used on M2.7 product card, "Token Plan" hero band, promo CTA strips, and "NEW" badges. Carries the brand's most attention-grabbing energy.
-- **Brand Magenta** ({colors.brand-magenta}): Secondary product-card identity (Music 2.6); used for music/audio product encoding.
-- **Brand Blue** ({colors.brand-blue}): Hailuo video product identity; primary blue accent across the system.
+- **Brand Coral** ({colors.brand-coral}): Signature high-impact accent. Used on Creator product cards, subscription hero bands, promo CTA strips, and "NEW" badges. Carries the brand's most attention-grabbing energy.
+- **Brand Magenta** ({colors.brand-magenta}): Secondary product-card identity; used for HyperFrames, motion, and media workflow encoding.
+- **Brand Blue** ({colors.brand-blue}): Tool builder and runtime product identity; primary blue accent across the system.
 - **Brand Blue Deep** ({colors.brand-blue-deep}): Form-control activation, link emphasis.
 - **Brand Blue 700** ({colors.brand-blue-700}): Documentation tag and reference text color.
 - **Brand Cyan** ({colors.brand-cyan}): Atmospheric blue for product gradients and decorative wash.
 - **Brand Blue 200** ({colors.brand-blue-200}): Code badges, info-tag backgrounds.
-- **Brand Purple** ({colors.brand-purple}): Speech 2.8 and minor purple-product identity; gradient mate for magenta cards.
+- **Brand Purple** ({colors.brand-purple}): Agent orchestration and experimental workflow identity; gradient mate for magenta cards.
 
 ### Surface
 - **Canvas White** ({colors.canvas}): Primary page background and card surface.
@@ -59,10 +59,10 @@ DM Sans was chosen for its dual fluency: it scales cleanly from 80px hero displa
 
 | Token | Size | Weight | Line Height | Letter Spacing | Use |
 |---|---|---|---|---|---|
-| `{typography.hero-display}` | 80px | 600 | 1.10 | -2px | Homepage hero ("MiniMax Music 2.6") |
+| `{typography.hero-display}` | 80px | 600 | 1.10 | -2px | Homepage hero ("Loki Creator") |
 | `{typography.display-lg}` | 56px | 600 | 1.10 | -1.5px | Section openers, major page heroes |
-| `{typography.heading-lg}` | 40px | 600 | 1.20 | -1px | Sub-page headlines ("Token Plan", "Models Overview") |
-| `{typography.heading-md}` | 32px | 600 | 1.25 | -0.5px | Subsection headers ("Full-Stack Model Matrix") |
+| `{typography.heading-lg}` | 40px | 600 | 1.20 | -1px | Sub-page headlines ("Subscription", "Creator Overview") |
+| `{typography.heading-md}` | 32px | 600 | 1.25 | -0.5px | Subsection headers ("Full-Stack Creator Matrix") |
 | `{typography.heading-sm}` | 24px | 600 | 1.30 | 0 | Card titles, feature headers |
 | `{typography.card-title}` | 20px | 600 | 1.40 | 0 | Product-card titles, feature-tile headers |
 | `{typography.subtitle}` | 18px | 500 | 1.50 | 0 | Section subtitles, lead body |
@@ -76,7 +76,7 @@ DM Sans was chosen for its dual fluency: it scales cleanly from 80px hero displa
 | `{typography.button-md}` | 14px | 600 | 1.40 | 0 | Pill button labels |
 
 ### Principles
-- **Tight hero leading** (1.10) and aggressive negative letter-spacing on display sizes create a magazine-quality typographic display unique to MiniMax.
+- **Tight hero leading** (1.10) and aggressive negative letter-spacing on display sizes create a magazine-quality typographic display unique to Loki.
 - **Generous body leading** (1.50) keeps long-form documentation comfortable; captions push to 1.70 for scientific-paper-grade clarity.
 - **Weight discipline:** 400 (body), 500 (medium emphasis), 600 (headings/buttons), 700 (strong inline emphasis). Heavier weights are not used.
 - **Single typeface** strategy — never mix DM Sans with another sans-serif. Code samples (when shown) use a system monospace fallback, but no second typeface enters the brand canvas.
@@ -92,9 +92,9 @@ DM Sans was chosen for its dual fluency: it scales cleanly from 80px hero displa
 ### Grid & Container
 - Marketing pages use a 1280px max-width with 32px gutters.
 - Homepage product matrix renders as a 4-column row of 32px-rounded gradient cards, each ~280–320px wide.
-- AI Product Matrix below uses a 4-column grid with 16px-rounded white cards.
+- Loki Product Matrix below uses a 4-column grid with 16px-rounded white cards.
 - Documentation surfaces use a 3-column layout: left sidebar nav (~220px), center prose body (~720px max-width), right TOC (~180px). Sidebar persists on desktop; collapses to drawer below 1024px.
-- Token Plan / pricing pages use 2-column tabs above a 3-column tier card grid.
+- Subscription / pricing pages use 2-column tabs above a 3-column tier card grid.
 
 ### Whitespace Philosophy
 Marketing pages give product photography and color cards generous breathing room — `{spacing.hero}` (96px) above-the-fold creates visual oxygen for the 80px hero display. Inside documentation, whitespace tightens dramatically: section gaps drop to `{spacing.xxl}` (32px), table rows pack down to `{spacing.md}` (16px), and the sidebar nav uses `{spacing.xs}` (8px) vertical rhythm.
@@ -162,20 +162,20 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 
 ### Vibrant Product Cards
 
-**`product-card-coral`** — M2.7 / Token Plan signature card.
+**`product-card-coral`** — Loki Creator / subscription signature card.
 - Background `{colors.brand-coral}`, text `{colors.on-dark}`, rounded `{rounded.hero}` (32px), padding `{spacing.xxl}`.
-- Hosts the M2.7 wordmark in massive `{typography.display-lg}` with white tagline.
+- Hosts the Loki Creator wordmark in massive `{typography.display-lg}` with white tagline.
 
-**`product-card-magenta`** — Music 2.6 product showcase.
+**`product-card-magenta`** — HyperFrames product showcase.
 - Background `{colors.brand-magenta}`, text `{colors.on-dark}`, rounded `{rounded.hero}`, padding `{spacing.xxl}`.
 
-**`product-card-blue`** — Hailuo Video product showcase.
+**`product-card-blue`** — Tool Builder product showcase.
 - Background `{colors.brand-blue}`, text `{colors.on-dark}`, rounded `{rounded.hero}`, padding `{spacing.xxl}`.
 
-**`product-card-purple`** — Speech 2.8 / variant product showcase.
+**`product-card-purple`** — Agents / orchestration product showcase.
 - Background `{colors.brand-purple}`, text `{colors.on-dark}`, rounded `{rounded.hero}`, padding `{spacing.xxl}`.
 
-**`product-card-photo`** — Dark portrait product card (homepage S2 placement, video-emotion product).
+**`product-card-photo`** — Dark portrait product card for cinematic creator or agent moments.
 - Background `{colors.primary}` (black with overlaid product photo), text `{colors.on-dark}`, rounded `{rounded.hero}`, padding `{spacing.xxl}`.
 
 ### Cards & Containers
@@ -192,7 +192,7 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 **`promo-cta-card`** — Bright orange "Refunds of 10%..." promo strip with embedded CTA pill.
 - Background `{colors.brand-coral}`, text `{colors.on-dark}`, rounded `{rounded.hero}`, padding `{spacing.section}`. Embedded button uses `button-tertiary` (white pill on coral) for the "Join Now" action.
 
-**`ai-product-tile`** — White card in the AI Product Matrix grid (Agent, Hailuo Video, MiniMax Audio).
+**`ai-product-tile`** — White card in the Loki Product Matrix grid (Creator, HyperFrames, Tools, Agents).
 - Background `{colors.canvas}`, rounded `{rounded.xxxl}`, padding `{spacing.xl}`, border `1px solid {colors.hairline}`. Carries an icon/illustration top, title `{typography.card-title}`, description `{typography.body-sm}`.
 
 ### Inputs & Forms
@@ -211,10 +211,10 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 
 ### Tabs
 
-**`segmented-tab`** + **`segmented-tab-active`** — Underline-style tab navigation (Benchmark / Self-Evaluation / Multi-Agent Collaboration on the M2.7 page).
+**`segmented-tab`** + **`segmented-tab-active`** — Underline-style tab navigation (Overview / Examples / Agent Collaboration on Loki product pages).
 - Inactive: text `{colors.steel}`, transparent background, padding `{spacing.md} {spacing.lg}`. Active: text shifts to `{colors.ink}`, 2px bottom border in `{colors.ink}`.
 
-**`pill-tab`** + **`pill-tab-active`** — Pricing-page tab nav (Token Plan / Audio Subscription / Video Package).
+**`pill-tab`** + **`pill-tab-active`** — Pricing-page tab nav (Subscription / Creator Credits / Render Package).
 - Inactive: background `{colors.canvas}`, text `{colors.steel}`, border `1px solid {colors.hairline}`, padding `{spacing.xs} {spacing.md}`, rounded `{rounded.full}`.
 - Active: background `{colors.primary}`, text `{colors.on-primary}`, no border (or matching black border).
 
@@ -237,7 +237,7 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 
 ### Data Tables
 
-**`data-table`** — Documentation models comparison table.
+**`data-table`** — Documentation capabilities comparison table.
 - Background `{colors.canvas}`, text `{colors.ink}`, typography `{typography.body-sm}`, rounded `{rounded.md}`, border `1px solid {colors.hairline}`.
 
 **`data-table-header`** — Top header row of the data table.
@@ -250,7 +250,7 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 
 **Top Navigation (Marketing)** — Sticky white bar with logo, link list, and right-side CTAs.
 - Background `{colors.canvas}`, height ~64px, bottom border `1px solid {colors.hairline-soft}`.
-- Left: MiniMax wordmark + horizontal link list (Models, Product, API, Company).
+- Left: Loki wordmark + horizontal link list (Creator, HyperFrames, Tools, Docs).
 - Right: black-pill "Contact Us" + outlined-pill "Login".
 
 **Top Navigation (Documentation/Platform)** — Compressed nav with center search-pill and right-side account/upgrade CTAs.
@@ -268,14 +268,14 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 **`hero-band-marketing`** — Centered hero with massive 80px display + dual-CTA pair.
 - Layout: centered headline in `{typography.hero-display}` ({colors.ink}), centered subtitle in `{typography.subtitle}` ({colors.steel}), centered button row (`button-primary` + `button-secondary`).
 
-**`product-matrix-grid`** — 4-column horizontal scroll of vibrant gradient product cards (homepage "Full-Stack Model Matrix").
+**`product-matrix-grid`** — 4-column horizontal scroll of vibrant gradient product cards (homepage "Full-Stack Creator Matrix").
 - Each tile uses one of the `product-card-*` variants (coral, magenta, blue, purple, photo).
-- Card title in `{typography.display-lg}` (M2.7 wordmark) or `{typography.heading-lg}` (Music 2.6).
+- Card title in `{typography.display-lg}` (Loki Creator wordmark) or `{typography.heading-lg}` (HyperFrames).
 - Below the wordmark: thin tagline in `{typography.body-sm}` 80% white opacity.
 - Optional badge top-right: `badge-new`.
 - Card heights are uniform (~360–400px); the row scrolls horizontally on mobile.
 
-**`ai-product-matrix`** — 4-column grid of white product tiles below the vibrant matrix (Agent / Hailuo Video / Audio / Video).
+**`ai-product-matrix`** — 4-column grid of white product tiles below the vibrant matrix (Creator / HyperFrames / Tools / Agents).
 - Each tile is `ai-product-tile` chrome.
 - Top: 100px-tall illustration zone (often line-art icon or 3D mark).
 - Below: title in `{typography.card-title}`, description in `{typography.body-sm}` `{colors.steel}`.
@@ -284,15 +284,15 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 - Max-width ~720px, centered. Body in `{typography.body-md}` `{colors.charcoal}` line-height 1.6.
 - Inline code in `{typography.body-md}` monospace fallback with `{colors.surface}` background and `{rounded.xs}` corners.
 
-**`models-comparison-table`** — Documentation table comparing model sizes and features.
-- Uses `data-table` chrome. Each row carries a model name (linkified, in `{colors.ink}` body-sm-medium), a description column (`{colors.charcoal}`), and a features bullet list column.
+**`capabilities-comparison-table`** — Documentation table comparing Loki capabilities and features.
+- Uses `data-table` chrome. Each row carries a capability name (linkified, in `{colors.ink}` body-sm-medium), a description column (`{colors.charcoal}`), and a features bullet list column.
 
 **`testimonial-stat-row`** — Stats strip ("214,000+ Enterprise Clients & Developers", "0+ Countries Served").
 - Horizontal row of 4 stat cells, each cell with a large number in `{typography.heading-lg}` `{colors.ink}` and a label below in `{typography.body-sm}` `{colors.steel}`.
 
 **`footer-region`** — Dense black-canvas multi-column footer.
 - Background `{colors.footer-bg}`, padding `{spacing.section} {spacing.xxl}`.
-- Top row: MiniMax wordmark ("intelligence with everyone" tagline) and social icons (X, Twitter, GitHub, etc.).
+- Top row: Loki wordmark, short platform tagline, and social icons (X, GitHub, etc.).
 - Body: 4-column link grid (Research / Product / API / Company / News).
 - Section headers in `{typography.body-sm-medium}` `{colors.on-dark}`.
 
@@ -307,7 +307,7 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 - Pair `{rounded.hero}` (32px) gradient cards with `{rounded.xl}` (16px) white cards in the same viewport — the radius contrast is the visual signature.
 - Apply `{rounded.full}` to every button, every pill tab, every badge.
 - Use `{typography.hero-display}` (80px) with -2px letter-spacing for hero displays — never compromise the leading or letter-spacing.
-- Treat each model/product line as a distinct color identity. M2.7 is coral, Music is magenta, Hailuo is blue. These are brand assignments, not free choices.
+- Treat each Loki capability as a distinct color identity. Creator is coral, HyperFrames is magenta, Tools are blue, Agents are purple. These are brand assignments, not free choices.
 
 ### Don't
 - Don't use brand-coral or brand-magenta on body text or large surfaces — they lose meaning when overused.
@@ -339,7 +339,7 @@ The system runs predominantly flat. Elevation is reserved for sticky panels, dro
 - **Top nav** below 1024px collapses to hamburger; horizontal links move into drawer.
 - **Documentation grid**: 3-column desktop → sidebar-drawer at < 1024px → single-column with collapsible sidebar at < 768px.
 - **Product matrix**: 4-column desktop → horizontal-scroll at < 1024px (carousel-style with snap points).
-- **AI Product Matrix**: 4-column → 2-column at tablet → 1-column at mobile.
+- **Loki Product Matrix**: 4-column → 2-column at tablet → 1-column at mobile.
 - **Hero typography**: `{typography.hero-display}` (80px) → 56px at < 1024px → 40px at < 768px → 32px at < 480px.
 - **Stats strip**: 4-column → 2×2 at < 768px → 1-column at < 480px.
 
