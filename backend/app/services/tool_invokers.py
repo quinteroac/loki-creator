@@ -7,6 +7,7 @@ from urllib import request
 
 from app.models import ToolDefinition, ToolInvocationRequest, ToolResult
 from app.services.card_factory import HtmlCardFactory
+from app.services.comfy_diffusion import ComfyDiffusionService
 
 
 class ToolInvocationError(RuntimeError):
@@ -24,6 +25,9 @@ class BuiltinToolInvoker(ToolInvoker):
         self._card_factory = card_factory or HtmlCardFactory()
 
     def invoke(self, tool: ToolDefinition, payload: ToolInvocationRequest) -> ToolResult:
+        if tool.id == "comfy-runtime-check":
+            return self._invoke_comfy_runtime_check(tool, payload)
+
         if tool.id == "image" and isinstance(payload.params.get("imageDataUrl"), str):
             image_data_url = payload.params["imageDataUrl"]
             if not image_data_url.startswith("data:image/"):
@@ -106,6 +110,67 @@ class BuiltinToolInvoker(ToolInvoker):
                 return message
 
         return fallback
+
+    def _invoke_comfy_runtime_check(self, tool: ToolDefinition, payload: ToolInvocationRequest) -> ToolResult:
+        service = ComfyDiffusionService()
+        runtime_info = service.get_runtime_info()
+        status = "error" if runtime_info.get("error") else "ok"
+        status_label = "Runtime error" if status == "error" else "Runtime ready"
+
+        rows = [
+            ("Status", status_label),
+            ("ComfyUI version", runtime_info.get("comfyui_version") or "Unknown"),
+            ("Device", runtime_info.get("device") or "Unknown"),
+            ("VRAM total", self._format_megabytes(runtime_info.get("vram_total_mb"))),
+            ("VRAM free", self._format_megabytes(runtime_info.get("vram_free_mb"))),
+            ("Python", runtime_info.get("python_version") or "Unknown"),
+            ("Models dir", runtime_info.get("modelsDir") or "Unknown"),
+            ("Models dir exists", str(runtime_info.get("modelsDirExists", False))),
+        ]
+        if runtime_info.get("error"):
+            rows.append(("Error", runtime_info["error"]))
+
+        rows_html = "\n".join(
+            f"""      <div style="display:grid;grid-template-columns:132px 1fr;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);">
+        <dt style="color:rgba(255,255,255,.56);">{escape(label)}</dt>
+        <dd style="margin:0;color:#ffffff;word-break:break-word;">{escape(str(value))}</dd>
+      </div>"""
+            for label, value in rows
+        )
+        raw_json = escape(json.dumps(runtime_info, indent=2, sort_keys=True), quote=False)
+
+        card = self._card_factory.create(
+            prompt=payload.prompt,
+            source_tool_id=tool.id,
+            name="Comfy Runtime Check",
+        )
+        card = card.model_copy(
+            update={
+                "html": f"""<section style="display:grid;width:100%;height:100%;background:#111111;color:#ffffff;font-family:DM Sans,Inter,Arial,sans-serif;overflow:hidden;">
+  <article style="display:grid;grid-template-rows:auto 1fr auto;gap:18px;width:100%;height:100%;padding:28px;background:#202020;">
+    <header>
+      <span style="display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:6px 10px;color:rgba(255,255,255,.72);font-size:12px;">{escape(status)}</span>
+      <h1 style="margin:14px 0 0;font-size:28px;line-height:1.16;">Comfy Runtime Check</h1>
+      <p style="margin:8px 0 0;color:rgba(255,255,255,.68);font-size:14px;line-height:1.45;">comfy-diffusion diagnostic for future ComfyUI tools.</p>
+    </header>
+    <dl style="min-height:0;margin:0;overflow:auto;font-size:13px;line-height:1.4;">
+{rows_html}
+    </dl>
+    <details style="border-top:1px solid rgba(255,255,255,.1);padding-top:12px;color:rgba(255,255,255,.68);font-size:12px;">
+      <summary>Raw runtime info</summary>
+      <pre style="overflow:auto;max-height:120px;margin:10px 0 0;color:rgba(255,255,255,.76);white-space:pre-wrap;">{raw_json}</pre>
+    </details>
+  </article>
+</section>"""
+            }
+        )
+
+        return ToolResult(cards=[card])
+
+    def _format_megabytes(self, value: object) -> str:
+        if isinstance(value, int | float):
+            return f"{value:,.0f} MB"
+        return "Unknown"
 
 
 class HttpToolInvoker(ToolInvoker):

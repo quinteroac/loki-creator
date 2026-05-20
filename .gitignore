@@ -21,6 +21,7 @@ backend/.venv/
 .env.*
 !.env.example
 .agents/
+.loki/
 
 # Logs
 *.log

@@ -163,6 +163,19 @@ The extension has separate Chrome and Firefox builds generated from shared sourc
 
 The agent bridge exposes `browser-tool` to Pi only when an extension is connected. Direct browser results are returned to the agent as tool details and text observations. Extracted image data URLs can be passed through the existing `image` tool to produce normal Loki canvas cards.
 
+## ComfyUI Runtime Preparation
+
+Loki prepares for local/cloud generation tools through `comfy-diffusion`, a Python package that exposes ComfyUI runtime capabilities without running the ComfyUI web server. The dependency lives in the FastAPI backend because backend tool jobs own generation, tool invocation, and card normalization.
+
+The integration is intentionally diagnostic-only for now:
+
+- `ComfyDiffusionService` is the backend boundary for lazy `comfy-diffusion` imports, runtime checks, and model directory resolution.
+- `LOKI_COMFY_MODELS_DIR` can override the model directory; the default is a local `.loki/comfy-models` path ignored by git.
+- `comfy-runtime-check` is an internal built-in tool that reports runtime readiness as a normal Loki card.
+- No image, video, audio, or model-download Comfy tools are implemented yet.
+
+Future Comfy tools should keep the existing async flow: `POST /api/tool-jobs`, registry resolution, invoker execution, `ComfyDiffusionService`, and `ToolResult.cards`. Pipeline outputs from `comfy-diffusion` should be converted to `GeneratedCard` HTML, with the exact user prompt preserved in the card description.
+
 ## Export And Import Preparation
 
 The contract includes `ToolPackage` for future export/import:

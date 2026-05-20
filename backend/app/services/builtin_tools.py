@@ -227,4 +227,11 @@ BUILTIN_TOOLS = [
             )
         ],
     ),
+    create_builtin_tool(
+        tool_id="comfy-runtime-check",
+        name="Comfy Runtime Check",
+        description="Internal diagnostic capability that reports comfy-diffusion and ComfyUI runtime readiness.",
+        capabilities=["comfyui", "runtime-diagnostics", "agent-internal"],
+        invocation_visibility="internal",
+    ),
 ]
