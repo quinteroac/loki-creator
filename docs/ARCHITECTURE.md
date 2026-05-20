@@ -146,6 +146,23 @@ Agent run responses return text and references:
 
 Cards continue to flow through the existing tool-job polling contract.
 
+## Browser Extension
+
+`browser-tool` is an internal agent capability backed by a user-installed browser extension, not by Selenium/WebDriver. The extension connects outbound to the agent bridge over WebSocket, so the hosted bridge does not need direct network access to the user's machine.
+
+The extension has separate Chrome and Firefox builds generated from shared source in `browser-extension/`. It operates on the user's real browser tabs and existing sessions. Initial actions are intentionally small:
+
+- `open_url`
+- `get_active_tab`
+- `extract_state`
+- `click`
+- `type`
+- `press`
+- `screenshot`
+- `extract_images`
+
+The agent bridge exposes `browser-tool` to Pi only when an extension is connected. Direct browser results are returned to the agent as tool details and text observations. Extracted image data URLs can be passed through the existing `image` tool to produce normal Loki canvas cards.
+
 ## Export And Import Preparation
 
 The contract includes `ToolPackage` for future export/import:
@@ -184,6 +201,9 @@ Current agent bridge endpoints:
 - `GET /api/health`
 - `GET /api/agents`
 - `POST /api/agent-runs`
+- `GET /api/browser-extension/status`
+- `POST /api/browser-extension/actions`
+- `WS /api/browser-extension/connect`
 
 `POST /api/instructions` is legacy-compatible and currently returns one generated card. The preferred architecture for agent/tool execution is the async tool-job flow.
 

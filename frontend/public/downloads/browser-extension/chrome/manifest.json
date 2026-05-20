@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Loki Browser Connector",
+  "version": "0.1.0",
+  "description": "Connects Loki agents to the user's real browser tabs.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Loki Browser Connector"
+  }
+}

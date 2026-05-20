@@ -65,6 +65,16 @@ type AgentRunResponse = {
   error?: string;
 };
 
+type BrowserExtensionResponse = {
+  ok: boolean;
+  action: string;
+  url: string | null;
+  title: string | null;
+  observation: string;
+  screenshotBase64?: string;
+  error?: string;
+};
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const backendApiUrl = process.env.LOKI_BACKEND_URL ?? "http://127.0.0.1:8000";
@@ -72,6 +82,15 @@ const port = Number(process.env.LOKI_AGENT_BRIDGE_PORT ?? 8787);
 const allowedOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+):\d+$/;
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
+let activeBrowserExtension: { id: string; ws: { send: (data: string) => unknown } } | null = null;
+const pendingBrowserExtensionCommands = new Map<
+  string,
+  {
+    resolve: (result: BrowserExtensionResponse) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }
+>();
 
 const agents: LokiAgent[] = [
   {
@@ -134,7 +153,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 async function listFrontendTools(): Promise<LokiTool[]> {
-  return requestJson<LokiTool[]>(`${backendApiUrl}/api/tools`);
+  return requestJson<LokiTool[]>(`${backendApiUrl}/api/tools?include_internal=true`);
 }
 
 function normalizeToolName(value: string) {
@@ -158,6 +177,24 @@ function selectToolsForAgent(availableTools: LokiTool[], selectedTools: string[]
   return eligibleTools.filter((tool) => {
     const candidates = [tool.id, tool.slug, tool.name].map(normalizeToolName);
     return candidates.some((candidate) => normalizedSelected.includes(candidate));
+  });
+}
+
+async function runBrowserExtensionAction(params: Record<string, unknown>): Promise<BrowserExtensionResponse> {
+  if (!activeBrowserExtension) {
+    throw new Error("No browser extension is connected.");
+  }
+
+  const id = crypto.randomUUID();
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      pendingBrowserExtensionCommands.delete(id);
+      reject(new Error(`Timed out waiting for browser extension command ${id}.`));
+    }, Number(params.timeoutMs ?? 60000));
+
+    pendingBrowserExtensionCommands.set(id, { resolve, reject, timeout });
+    activeBrowserExtension?.ws.send(JSON.stringify({ type: "command", id, params }));
   });
 }
 
@@ -237,6 +274,49 @@ function createLokiPiTool(tool: LokiTool, request: AgentRunRequest, runState: { 
   });
 }
 
+function createBrowserPiTool(tool: LokiTool) {
+  return defineTool({
+    name: toPiToolName(tool),
+    label: tool.name,
+    description:
+      "Control the user's connected browser extension. Use it for real browser tabs with the user's existing sessions.",
+    promptSnippet:
+      "Browser Tool: open URLs, inspect active tabs, extract page state, click selectors, type text, press keys, capture screenshots, and extract page images.",
+    parameters: Type.Object({
+      action: Type.String({
+        description: "One of open_url, get_active_tab, extract_state, click, type, press, screenshot, extract_images.",
+      }),
+      url: Type.Optional(Type.String({ description: "URL for open_url." })),
+      selector: Type.Optional(Type.String({ description: "CSS selector for click/type." })),
+      text: Type.Optional(Type.String({ description: "Text for type." })),
+      key: Type.Optional(Type.String({ description: "Key name for press, such as Enter or Tab." })),
+      clear: Type.Optional(Type.Boolean({ description: "Whether type should clear the field first." })),
+      timeoutMs: Type.Optional(Type.Number({ description: "Optional timeout in milliseconds." })),
+    }),
+    async execute(_toolCallId, params) {
+      try {
+        const result = await runBrowserExtensionAction(params);
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Browser extension completed ${result.action}. URL: ${result.url ?? "n/a"}. Observation: ${result.observation}`,
+            },
+          ],
+          details: result,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown browser extension error";
+        return {
+          content: [{ type: "text", text: `Browser extension failed: ${message}` }],
+          details: { status: "failed", error: message },
+        };
+      }
+    },
+  });
+}
+
 async function createResourceLoader(agentId: string) {
   const loader = new DefaultResourceLoader({
     cwd: repoRoot,
@@ -285,7 +365,16 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   try {
     const availableTools = await listFrontendTools();
     const selectedTools = selectToolsForAgent(availableTools, request.tools);
-    const customTools = selectedTools.map((tool) => createLokiPiTool(tool, request, runState));
+    const browserTool = availableTools.find((tool) => tool.id === "browser-tool");
+    const browserToolAvailable = Boolean(browserTool && activeBrowserExtension);
+    const exposedToolsForPrompt = [
+      ...selectedTools,
+      ...(browserTool && browserToolAvailable ? [browserTool] : []),
+    ];
+    const customTools = [
+      ...selectedTools.map((tool) => createLokiPiTool(tool, request, runState)),
+      ...(browserTool && browserToolAvailable ? [createBrowserPiTool(browserTool)] : []),
+    ];
     const resourceLoader = await createResourceLoader(agentId);
     const model = resolveSelectedModel(request.model);
 
@@ -308,7 +397,7 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       }
     });
 
-    await session.prompt(buildAgentPrompt(request, selectedTools), { source: "api" });
+    await session.prompt(buildAgentPrompt(request, exposedToolsForPrompt), { source: "api" });
 
     return {
       id,
@@ -351,6 +440,67 @@ const app = new Elysia()
   .get("/api/health", () => ({ status: "ok" }))
   .get("/api/agents", () => agents)
   .get("/api/models", () => listAvailableModels())
+  .get("/api/browser-extension/status", () => ({
+    connected: Boolean(activeBrowserExtension),
+    extensionId: activeBrowserExtension?.id ?? null,
+  }))
+  .post(
+    "/api/browser-extension/actions",
+    async ({ body }) => runBrowserExtensionAction(body),
+    {
+      body: t.Record(t.String(), t.Unknown()),
+    },
+  )
+  .ws("/api/browser-extension/connect", {
+    open(ws) {
+      const extensionId = crypto.randomUUID();
+      activeBrowserExtension = { id: extensionId, ws };
+      ws.send(JSON.stringify({ type: "connected", extensionId }));
+      console.log(`Browser extension connected: ${extensionId}`);
+    },
+    message(ws, message) {
+      let parsed: { type?: string; id?: string; result?: BrowserExtensionResponse; error?: string };
+
+      try {
+        parsed = typeof message === "string" ? JSON.parse(message) : message;
+      } catch {
+        return;
+      }
+
+      if (parsed.type === "hello") {
+        return;
+      }
+
+      if ((parsed.type === "result" || parsed.type === "error") && parsed.id) {
+        const pending = pendingBrowserExtensionCommands.get(parsed.id);
+        if (!pending) return;
+
+        clearTimeout(pending.timeout);
+        pendingBrowserExtensionCommands.delete(parsed.id);
+
+        if (parsed.type === "error") {
+          pending.reject(new Error(parsed.error ?? parsed.result?.error ?? "Browser extension command failed."));
+          return;
+        }
+
+        if (parsed.result) {
+          pending.resolve(parsed.result);
+        }
+      }
+    },
+    close(ws) {
+      if (activeBrowserExtension?.ws === ws) {
+        console.log(`Browser extension disconnected: ${activeBrowserExtension.id}`);
+        activeBrowserExtension = null;
+
+        for (const [id, pending] of pendingBrowserExtensionCommands) {
+          clearTimeout(pending.timeout);
+          pending.reject(new Error("Browser extension disconnected."));
+          pendingBrowserExtensionCommands.delete(id);
+        }
+      }
+    },
+  })
   .post(
     "/api/agent-runs",
     async ({ body }) => runAgent(body),

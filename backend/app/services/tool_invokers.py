@@ -24,6 +24,32 @@ class BuiltinToolInvoker(ToolInvoker):
         self._card_factory = card_factory or HtmlCardFactory()
 
     def invoke(self, tool: ToolDefinition, payload: ToolInvocationRequest) -> ToolResult:
+        if tool.id == "image" and isinstance(payload.params.get("imageDataUrl"), str):
+            image_data_url = payload.params["imageDataUrl"]
+            if not image_data_url.startswith("data:image/"):
+                raise ToolInvocationError("imageDataUrl must be a data:image URL.")
+
+            card = self._card_factory.create(
+                prompt=payload.prompt,
+                source_tool_id=tool.id,
+                name=payload.params.get("name") or "Generated Image",
+            )
+            escaped_prompt = escape(payload.prompt)
+            escaped_image_data_url = escape(image_data_url, quote=True)
+            card = card.model_copy(
+                update={
+                    "html": f"""<section style="display:grid;width:100%;height:100%;place-items:center;background:#111111;color:#ffffff;font-family:DM Sans,Inter,Arial,sans-serif;overflow:hidden;">
+  <figure style="display:grid;width:100%;height:100%;grid-template-rows:1fr auto;margin:0;background:#202020;">
+    <div style="display:grid;min-height:0;place-items:center;padding:18px;">
+      <img src="{escaped_image_data_url}" alt="{escaped_prompt}" style="display:block;max-width:100%;max-height:100%;object-fit:contain;border-radius:16px;" />
+    </div>
+    <figcaption style="padding:14px 18px 18px;color:rgba(255,255,255,.72);font-size:14px;line-height:1.45;">{escaped_prompt}</figcaption>
+  </figure>
+</section>"""
+                }
+            )
+            return ToolResult(cards=[card])
+
         if tool.id == "hello-world":
             message = self._resolve_card_output_text(payload, fallback="Hello world")
             card = self._card_factory.create(
