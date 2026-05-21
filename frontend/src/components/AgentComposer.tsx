@@ -1,19 +1,22 @@
-import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles } from "lucide-react";
+import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
+import { formatFileSize } from "../lib/attachments";
 import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
-import type { AgentModel, AgentQuestion, GeneratedCard } from "../types";
+import type { AgentAttachment, AgentModel, AgentQuestion, GeneratedCard } from "../types";
 
 type AgentComposerProps = {
+  attachments: AgentAttachment[];
   availableModels: AgentModel[];
   canvasNodes: GeneratedCard[];
   filteredSkills: string[];
   instruction: string;
-  onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void;
+  onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onQuestionOption: (answer: string) => void;
+  onRemoveAttachment: (attachmentId: string) => void;
   onSelectModel: (model: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
@@ -35,6 +38,7 @@ type AgentComposerProps = {
 };
 
 export function AgentComposer({
+  attachments,
   availableModels,
   canvasNodes,
   filteredSkills,
@@ -44,6 +48,7 @@ export function AgentComposer({
   onInstructionChange,
   onInstructionKeyDown,
   onQuestionOption,
+  onRemoveAttachment,
   onSelectModel,
   onSubmit,
   onToggleCard,
@@ -212,6 +217,28 @@ export function AgentComposer({
 
       <form className="composer" onSubmit={onSubmit}>
         <div className="composer-main">
+          {attachments.length > 0 && (
+            <div className="attachment-tray" aria-label="Attached files">
+              {attachments.map((attachment) => (
+                <span className={`attachment-chip ${attachment.omitted ? "omitted" : ""}`} key={attachment.id}>
+                  <Paperclip size={13} strokeWidth={2} />
+                  <span className="attachment-chip-label" title={attachment.name}>
+                    {attachment.name}
+                  </span>
+                  <small>{attachment.omitted ? attachment.reason : formatFileSize(attachment.size)}</small>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${attachment.name}`}
+                    title="Remove attachment"
+                    onClick={() => onRemoveAttachment(attachment.id)}
+                  >
+                    <X size={12} strokeWidth={2.2} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+
           <textarea
             name="instruction"
             rows={1}

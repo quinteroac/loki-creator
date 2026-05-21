@@ -83,9 +83,39 @@ def write_data_url_image(data_url: str, destination: Path) -> Path | None:
     return destination
 
 
+def resolve_artifact_src(src: str) -> Path | None:
+    if not src.startswith("/api/artifacts/"):
+        return None
+
+    artifact_path = (artifacts_root() / src.removeprefix("/api/artifacts/")).resolve()
+    try:
+        artifact_path.relative_to(artifacts_root())
+    except ValueError:
+        return None
+
+    return artifact_path if artifact_path.is_file() else None
+
+
 def materialize_selected_images(payload: dict, inputs_dir: Path) -> list[Path]:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     materialized: list[Path] = []
+    attachments = payload.get("attachments")
+    if isinstance(attachments, list):
+        for attachment_index, attachment in enumerate(attachments, start=1):
+            if not isinstance(attachment, dict) or attachment.get("omitted"):
+                continue
+            if attachment.get("kind") != "image":
+                continue
+            data_url = first_text(attachment.get("dataUrl"))
+            if not data_url.startswith("data:image/"):
+                continue
+            try:
+                image_path = write_data_url_image(data_url, inputs_dir / f"attachment-{attachment_index:02d}")
+            except Exception:
+                image_path = None
+            if image_path is not None:
+                materialized.append(image_path)
+
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
         return materialized
@@ -103,7 +133,10 @@ def materialize_selected_images(payload: dict, inputs_dir: Path) -> list[Path]:
                 if asset.get("kind") != "image":
                     continue
                 data_url = first_text(asset.get("dataUrl"), asset.get("src"))
-                if data_url.startswith("data:image/"):
+                artifact_path = resolve_artifact_src(data_url)
+                if artifact_path is not None:
+                    materialized.append(artifact_path)
+                elif data_url.startswith("data:image/"):
                     image_data_urls.append(data_url)
 
         if not image_data_urls:

@@ -9,6 +9,7 @@ import { CanvasStage } from "./components/CanvasStage";
 import { Topbar } from "./components/Topbar";
 import { initialCanvasNodes, initialCardDocuments } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
+import { createAgentAttachments } from "./lib/attachments";
 import {
   assignUniqueDisplayTitles,
   createCanvasNodeForDocument,
@@ -25,6 +26,7 @@ import {
   toggleMultiSelection,
 } from "./lib/selection";
 import type {
+  AgentAttachment,
   AgentModel,
   AgentQuestion,
   AgentRunRequest,
@@ -54,6 +56,7 @@ export function App() {
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<AgentQuestion | null>(null);
   const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
@@ -204,6 +207,11 @@ export function App() {
     setIsAgentResponseOpen(false);
 
     if (agentRun.status === "needs_input" && agentRun.question && agentRun.conversationId) {
+      for (const runId of agentRun.skillRunIds) {
+        const completedRun = await waitForSkillRun(runId);
+        addCardsFromRun(completedRun);
+      }
+
       setPendingQuestion(agentRun.question);
       setPendingConversationId(agentRun.conversationId);
       setPendingCollectedArgs(agentRun.collectedArgs ?? {});
@@ -225,10 +233,15 @@ export function App() {
 
     for (const runId of agentRun.skillRunIds) {
       const completedRun = await waitForSkillRun(runId);
+      if (completedRun.status === "failed") {
+        setStatus(completedRun.error || "Skill run failed.");
+        return;
+      }
       addCardsFromRun(completedRun);
     }
 
     setInstruction("");
+    setAttachments([]);
     setStatus("Agent completed.");
   }
 
@@ -246,11 +259,13 @@ export function App() {
       skills: selectedSkills,
       selectedCards,
       selectedCardSnapshots,
+      attachments,
       context: {
         skills: selectedSkills,
         model: selectedModel,
         agentId: "base-agent",
         selectedElement: selectedDocument ? getCardDisplayTitle(selectedDocument) : null,
+        attachments,
       },
     };
   }
@@ -318,11 +333,50 @@ export function App() {
     }
   }
 
-  function handleFiles(event: ChangeEvent<HTMLInputElement>) {
-    const count = event.target.files?.length ?? 0;
-    if (count > 0) {
-      setStatus(count === 1 ? "1 file attached." : `${count} files attached.`);
+  async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      const currentAttachmentBytes = attachments
+        .filter((attachment) => !attachment.omitted)
+        .reduce((totalBytes, attachment) => totalBytes + attachment.size, 0);
+      const nextAttachments = await createAgentAttachments(files, currentAttachmentBytes);
+      setAttachments((currentAttachments) => {
+        const updatedAttachments = [...currentAttachments, ...nextAttachments];
+        setPendingAgentRequest((currentRequest) =>
+          currentRequest
+            ? {
+              ...currentRequest,
+              attachments: updatedAttachments,
+              context: { ...currentRequest.context, attachments: updatedAttachments },
+            }
+            : currentRequest,
+        );
+
+        return updatedAttachments;
+      });
+      setStatus(nextAttachments.length === 1 ? "1 file attached." : `${nextAttachments.length} files attached.`);
+    } finally {
+      event.target.value = "";
     }
+  }
+
+  function removeAttachment(attachmentId: string) {
+    setAttachments((currentAttachments) => {
+      const updatedAttachments = currentAttachments.filter((attachment) => attachment.id !== attachmentId);
+      setPendingAgentRequest((currentRequest) =>
+        currentRequest
+          ? {
+            ...currentRequest,
+            attachments: updatedAttachments,
+            context: { ...currentRequest.context, attachments: updatedAttachments },
+          }
+          : currentRequest,
+      );
+
+      return updatedAttachments;
+    });
   }
 
   function handleCreateAgent() {
@@ -393,6 +447,7 @@ export function App() {
         selectedIds={selectedCards}
       />
       <AgentComposer
+        attachments={attachments}
         canvasNodes={cardDocuments}
         availableModels={availableModels}
         fileInputRef={fileInputRef}
@@ -403,6 +458,7 @@ export function App() {
         onInstructionChange={setInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
         onQuestionOption={answerPendingQuestion}
+        onRemoveAttachment={removeAttachment}
         onSelectModel={selectModel}
         onSubmit={submitInstruction}
         onToggleCard={toggleCard}

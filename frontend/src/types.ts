@@ -53,7 +53,7 @@ export type SelectedCardMediaAsset = {
   width?: number;
   height?: number;
   omitted?: boolean;
-  reason?: "size-limit" | "missing-source";
+  reason?: "size-limit" | "missing-source" | "fetch-error";
 };
 
 export type SelectedCardSnapshot = {
@@ -67,6 +67,20 @@ export type SelectedCardSnapshot = {
   sourceSkillId?: string | null;
   sourceActionId?: string | null;
   metadata?: CardMetadata;
+};
+
+export type AgentAttachmentKind = "image" | "video" | "audio" | "text" | "json" | "pdf" | "artifact";
+
+export type AgentAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: AgentAttachmentKind;
+  dataUrl?: string;
+  text?: string;
+  omitted?: boolean;
+  reason?: "size-limit" | "read-error";
 };
 
 export type CanvasNodeFrame = {
@@ -140,6 +154,7 @@ export type SkillRunRequest = {
   context: Record<string, unknown>;
   selectedCards: string[];
   selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
   params: Record<string, unknown>;
 };
 
@@ -164,6 +179,7 @@ export type AgentRunRequest = {
   skills: string[];
   selectedCards: string[];
   selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
   context: Record<string, unknown>;
   conversationId?: string;
   answers?: Record<string, string>;

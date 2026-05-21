@@ -435,6 +435,24 @@ button {
   white-space: pre-wrap;
 }
 
+.agent-response-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-response-options span {
+  min-height: 28px;
+  padding: 6px 10px;
+  color: var(--brand-blue);
+  background: var(--brand-blue-200);
+  border: 1px solid var(--brand-blue-deep);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
 .agent-response-popover dl {
   display: grid;
   gap: 4px;
@@ -533,6 +551,62 @@ button {
 
 .composer-actions::-webkit-scrollbar {
   display: none;
+}
+
+.attachment-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  min-height: 30px;
+  padding: 6px 8px 6px 10px;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.attachment-chip.omitted {
+  color: var(--dark-text-soft);
+  border-color: var(--brand-coral);
+}
+
+.attachment-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip small {
+  color: var(--dark-text-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.attachment-chip button {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 0;
+  color: var(--dark-text-soft);
+  background: var(--charcoal);
+  border: 0;
+  border-radius: 9999px;
 }
 
 .send-orb {

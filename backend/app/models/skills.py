@@ -75,6 +75,7 @@ class SkillRunRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     selected_cards: list[str] = Field(default_factory=list, alias="selectedCards")
     selected_card_snapshots: list[dict[str, Any]] = Field(default_factory=list, alias="selectedCardSnapshots")
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)

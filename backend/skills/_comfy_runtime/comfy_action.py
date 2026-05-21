@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from PIL import Image
+
 
 IMAGE_MIME_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp"}
 AUDIO_MIME_TYPES = {"audio/wav": ".wav", "audio/x-wav": ".wav", "audio/mpeg": ".mp3", "audio/mp3": ".mp3", "audio/flac": ".flac"}
@@ -78,9 +80,40 @@ def write_data_url(data_url: str, destination: Path) -> Path | None:
     return path
 
 
+def resolve_artifact_src(src: str) -> Path | None:
+    if not src.startswith("/api/artifacts/"):
+        return None
+
+    artifact_path = (artifacts_root() / src.removeprefix("/api/artifacts/")).resolve()
+    try:
+        artifact_path.relative_to(artifacts_root())
+    except ValueError:
+        return None
+
+    return artifact_path if artifact_path.is_file() else None
+
+
 def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dict[str, list[Path]]:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     media: dict[str, list[Path]] = {"image": [], "audio": [], "video": []}
+    attachments = payload.get("attachments")
+    if isinstance(attachments, list):
+        for attachment_index, attachment in enumerate(attachments, start=1):
+            if not isinstance(attachment, dict) or attachment.get("omitted"):
+                continue
+            kind = first_text(attachment.get("kind"))
+            if kind not in media:
+                continue
+            data_url = first_text(attachment.get("dataUrl"))
+            if not data_url.startswith(f"data:{kind}/"):
+                continue
+            try:
+                path = write_data_url(data_url, inputs_dir / f"attachment-{attachment_index:02d}-{kind}")
+            except Exception:
+                path = None
+            if path is not None:
+                media[kind].append(path)
+
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
         return media
@@ -98,12 +131,14 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
                 if kind not in media:
                     continue
                 data_url = first_text(asset.get("dataUrl"), asset.get("src"))
-                if not data_url.startswith(f"data:{kind}/"):
-                    continue
-                try:
-                    path = write_data_url(data_url, inputs_dir / f"{snapshot_index:02d}-{asset_index:02d}-{kind}")
-                except Exception:
-                    path = None
+                path = resolve_artifact_src(data_url)
+                if path is None:
+                    if not data_url.startswith(f"data:{kind}/"):
+                        continue
+                    try:
+                        path = write_data_url(data_url, inputs_dir / f"{snapshot_index:02d}-{asset_index:02d}-{kind}")
+                    except Exception:
+                        path = None
                 if path is not None:
                     media[kind].append(path)
 
@@ -150,6 +185,33 @@ def dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
         return width, height
     aspect_ratio = first_text(params.get("aspectRatio"))
     return ASPECT_DIMENSIONS.get(aspect_ratio, (width, height))
+
+
+def normalize_model_profile(value: str) -> str:
+    aliases = {
+        "qwen-image-edit-2511": "qwen-edit2511",
+        "qwen-image-edit": "qwen-edit2511",
+        "qwen-edit-2511": "qwen-edit2511",
+        "flux-klein-snofs": "flux-klein-9b-snofs",
+        "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
+    }
+    return aliases.get(value, value)
+
+
+def divisible_by_16(value: int) -> int:
+    lower = max(16, value - (value % 16))
+    upper = lower if value % 16 == 0 else lower + 16
+    return lower if abs(value - lower) <= abs(upper - value) else upper
+
+
+def image_dimensions(path: Path | None) -> tuple[int | None, int | None]:
+    if path is None:
+        return None, None
+    try:
+        with Image.open(path) as image:
+            return image.size
+    except Exception:
+        return None, None
 
 
 def selected_input(media: dict[str, list[Path]], kind: str) -> Path | None:
@@ -271,7 +333,7 @@ def build_imagegen_command(
     skill_label: str,
 ) -> tuple[list[str], Path]:
     model_dir = models_dir()
-    model_profile = first_text(params.get("modelProfile"), params.get("profile"))
+    model_profile = normalize_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
     aspect_ratio = first_text(params.get("aspectRatio"))
 
     if require_model_profile and not model_profile:
@@ -296,6 +358,11 @@ def build_imagegen_command(
             command.extend(["--input", image_input])
 
     width, height = dimensions(params)
+    image_input_path = selected_input(media, "image")
+    if mode == "edit" and model_profile == "flux-klein-9b-snofs" and (not width or not height):
+        input_width, input_height = image_dimensions(image_input_path)
+        if input_width and input_height:
+            width, height = divisible_by_16(input_width), divisible_by_16(input_height)
     if width and height and mode == "generate":
         command.extend(["--width", str(width), "--height", str(height)])
     if width and height and mode == "edit" and model_profile == "flux-klein-9b-snofs":

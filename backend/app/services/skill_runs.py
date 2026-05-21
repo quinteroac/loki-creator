@@ -62,6 +62,7 @@ class SkillRunService:
                     "context": payload.context,
                     "selectedCards": payload.selected_cards,
                     "selectedCardSnapshots": payload.selected_card_snapshots,
+                    "attachments": payload.attachments,
                     "params": payload.params,
                 },
             )

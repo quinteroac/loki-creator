@@ -21,6 +21,13 @@ export function AgentResponsePanel({ isOpen, onToggle, response }: AgentResponse
             <small>{response.status}</small>
           </div>
           <p>{response.responseText}</p>
+          {response.question && response.question.options.length > 0 && (
+            <div className="agent-response-options">
+              {response.question.options.map((option) => (
+                <span key={option.value}>{option.label ?? option.value}</span>
+              ))}
+            </div>
+          )}
           {(response.skillRunIds.length > 0 || response.cardIds.length > 0) && (
             <dl>
               {response.skillRunIds.length > 0 && (

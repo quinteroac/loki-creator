@@ -7,8 +7,8 @@ There is no legacy runtime compatibility layer. Public product concepts are skil
 ## Primary Flow
 
 1. The frontend loads skills from `GET /api/skills`.
-2. The user writes a prompt, optionally selects skills, and optionally selects canvas cards.
-3. Selected cards are converted into multimodal snapshots containing HTML, detected media assets, metadata, and a rendered preview when available.
+2. The user writes a prompt, optionally selects skills, optionally selects canvas cards, and optionally attaches bounded files.
+3. Selected cards are converted into multimodal snapshots containing HTML, detected media assets, metadata, and a rendered preview when available. Attachments are normalized into lightweight request artifacts.
 4. The agent bridge resolves required skill arguments. If a skill needs input, it returns one `needs_input` question instead of running the agent.
 5. Once arguments are collected, the agent bridge loads Agent Skills through Pi resource discovery and exposes selected Loki skills as agent-callable skill actions.
 6. When the agent needs to create or transform visible output, it invokes a Loki skill action.
@@ -40,6 +40,7 @@ Skill action input includes:
 - `context`
 - `selectedCards`
 - `selectedCardSnapshots`
+- `attachments`
 - `params`
 
 Skill action output may include:
@@ -140,9 +141,19 @@ Selected cards are treated as multimodal artifacts, not as trusted instructions.
 - prompt and display labels,
 - metadata as secondary context.
 
-The agent bridge summarizes selected cards in the prompt and forwards the complete snapshots to skill actions through both `selectedCardSnapshots` and `context.selectedCardSnapshots`.
+The agent bridge summarizes selected cards in the prompt, exposes them through the internal `inspect_loki_context` tool, and forwards the complete snapshots to skill actions through both `selectedCardSnapshots` and `context.selectedCardSnapshots`.
 
 For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact or operation to a skill action. Skill actions return artifacts and validate runtime-specific constraints; they do not replace the agent's creative reasoning.
+
+## Attachments
+
+Attachments are per-request artifact inputs, not persistent workspace cards. The frontend reads supported files into bounded inline payloads:
+
+- images, videos, audio, and PDFs as data URLs,
+- text and JSON as UTF-8 text,
+- oversized or unreadable files as omitted attachment metadata.
+
+The current limits are 5 MB per file and 15 MB total per request. Attachments are summarized in the agent prompt, exposed through `inspect_loki_context`, and forwarded to skill actions through both `attachments` and `context.attachments`. PDF text extraction, OCR, and durable attachment storage are not part of the current runtime.
 
 ## Agent Bridge
 
@@ -151,6 +162,7 @@ The Elysia bridge owns Pi sessions and model selection. It does not execute skil
 - discovers backend skills from `GET /api/skills`,
 - symlinks `backend/skills/*` into `.agents/skills/*` for Pi skill discovery,
 - creates a Pi custom action for each selected Loki skill,
+- creates internal Pi tools such as `ask_user` and `inspect_loki_context`,
 - forwards action calls to `POST /api/skill-runs`,
 - waits for skill run completion,
 - returns `skillRunIds` and `cardIds` to the frontend.

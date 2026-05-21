@@ -16,6 +16,7 @@ export const CANVAS_PADDING = 24;
 export const SELECTED_CARD_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 export const SELECTED_CARD_ASSET_MAX_BYTES = 5 * 1024 * 1024;
 export const SELECTED_CARD_TOTAL_ASSET_MAX_BYTES = 10 * 1024 * 1024;
+const API_URL = import.meta.env.VITE_API_URL ?? "";
 const UNTITLED_CARD_TITLE = "Untitled card";
 const DISPLAY_SUBTITLE_MAX_LENGTH = 92;
 const TECHNICAL_TITLE_PATTERN = /^(?:card|node|job)_[a-z0-9-]{8,}$/i;
@@ -265,6 +266,96 @@ export function extractSelectedCardMediaAssets(cardHtml: string): SelectedCardMe
   );
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("Could not read artifact"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function artifactFetchCandidates(src: string): string[] {
+  if (src.startsWith("data:")) return [];
+  if (src.startsWith("http://") || src.startsWith("https://")) return [src];
+  if (!src.startsWith("/api/artifacts/")) return [];
+
+  return [
+    API_URL ? `${API_URL}${src}` : "",
+    src,
+    `http://127.0.0.1:8000${src}`,
+  ].filter((candidate, index, candidates) => Boolean(candidate) && candidates.indexOf(candidate) === index);
+}
+
+async function fetchArtifactDataUrl(src: string): Promise<{ dataUrl: string; mimeType?: string } | null> {
+  for (const candidate of artifactFetchCandidates(src)) {
+    try {
+      const response = await fetch(candidate);
+      if (!response.ok) continue;
+
+      const blob = await response.blob();
+      const dataUrl = await blobToDataUrl(blob);
+
+      return {
+        dataUrl,
+        mimeType: blob.type || undefined,
+      };
+    } catch {
+      // Try the next candidate; artifact URLs may be served by either Vite proxy or backend origin.
+    }
+  }
+
+  return null;
+}
+
+async function hydrateMediaAssets(
+  assets: SelectedCardMediaAsset[],
+  initialTotalBytes = 0,
+): Promise<SelectedCardMediaAsset[]> {
+  const assetBudget = { totalBytes: initialTotalBytes };
+  const hydratedAssets: SelectedCardMediaAsset[] = [];
+
+  for (const asset of assets) {
+    if (asset.dataUrl || asset.omitted || !asset.src || !["image", "video", "audio"].includes(asset.kind)) {
+      hydratedAssets.push(asset);
+      continue;
+    }
+
+    const fetched = await fetchArtifactDataUrl(asset.src);
+    if (!fetched) {
+      hydratedAssets.push({
+        ...asset,
+        omitted: true,
+        reason: "fetch-error",
+      });
+      continue;
+    }
+
+    const dataUrlBytes = estimateDataUrlBytes(fetched.dataUrl);
+    const exceedsAssetLimit = dataUrlBytes > SELECTED_CARD_ASSET_MAX_BYTES;
+    const exceedsTotalLimit = assetBudget.totalBytes + dataUrlBytes > SELECTED_CARD_TOTAL_ASSET_MAX_BYTES;
+    if (exceedsAssetLimit || exceedsTotalLimit) {
+      hydratedAssets.push({
+        ...asset,
+        mimeType: asset.mimeType ?? fetched.mimeType,
+        omitted: true,
+        reason: "size-limit",
+      });
+      continue;
+    }
+
+    assetBudget.totalBytes += dataUrlBytes;
+    hydratedAssets.push({
+      ...asset,
+      mimeType: asset.mimeType ?? fetched.mimeType,
+      dataUrl: fetched.dataUrl,
+    });
+  }
+
+  return hydratedAssets;
+}
+
 function createUnavailablePreview(reason: Extract<SelectedCardPreview, { omitted: true }>["reason"]): SelectedCardPreview {
   return {
     source: "rendered-preview",
@@ -303,7 +394,7 @@ export async function createSelectedCardSnapshots(
       prompt: document.prompt,
       html: document.html,
       preview,
-      mediaAssets: extractSelectedCardMediaAssets(document.html),
+      mediaAssets: await hydrateMediaAssets(extractSelectedCardMediaAssets(document.html)),
       sourceSkillId: document.sourceSkillId,
       sourceActionId: document.sourceActionId,
       metadata: document.metadata,
