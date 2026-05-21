@@ -13,8 +13,9 @@ There is no legacy runtime compatibility layer. Public product concepts are skil
 5. Once arguments are collected, the agent bridge loads Agent Skills through Pi resource discovery and exposes selected Loki skills as agent-callable skill actions.
 6. When the agent needs to create or transform visible output, it invokes a Loki skill action.
 7. The backend creates a skill run through `POST /api/skill-runs`.
-8. The skill action returns normalized cards.
-9. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
+8. The skill action returns normal artifacts/results such as images, video, audio, HTML, text, diagnostics, or cards.
+9. The backend card packager converts those outputs into `GeneratedCard` objects.
+10. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
 
 ## Backend
 
@@ -24,6 +25,7 @@ The backend owns the stable runtime contracts and execution boundary:
 - `backend/app/models/instructions.py`: card contracts shared by skill results.
 - `backend/app/services/skill_registry.py`: reads skill folders from `backend/skills/`.
 - `backend/app/services/skill_invokers.py`: executes declared skill actions.
+- `backend/app/services/card_packager.py`: converts raw skill outputs into Loki cards.
 - `backend/app/services/skill_runs.py`: in-memory async run state and action execution.
 - `backend/app/api/routes.py`: FastAPI endpoints for skills, skill runs, instructions, and artifacts.
 
@@ -40,21 +42,37 @@ Skill action input includes:
 - `selectedCardSnapshots`
 - `params`
 
-Skill action output must be:
+Skill action output may include:
 
 ```json
 {
+  "artifacts": [
+    {
+      "path": ".loki/skills/imagegen/skill_run_123/outputs/image.png",
+      "kind": "image",
+      "mimeType": "image/png",
+      "title": "Generated image",
+      "prompt": "final generation prompt",
+      "metadata": {}
+    }
+  ],
+  "media": [],
+  "html": null,
+  "text": null,
+  "diagnostics": [],
   "cards": []
 }
 ```
 
-Every visible result must be represented as a card. Scripts may generate files or perform deterministic packaging, but the user-facing artifact enters the workspace through `GeneratedCard`.
+`cards` remains an escape hatch for fully custom cards, but normal skills should prefer artifacts, media, HTML, text, or diagnostics. `SkillRun.result.cards` is still the frontend contract; the backend fills it after packaging.
+
+Every visible result enters the workspace through `GeneratedCard`, but skills do not need to know how Loki cards are built.
 
 ## Skills
 
 Skills live under `backend/skills/<skill-id>/` and must include `SKILL.md`.
 
-The `SKILL.md` frontmatter contains standard Agent Skill metadata plus Loki metadata for executable card actions:
+The `SKILL.md` frontmatter contains standard Agent Skill metadata plus Loki metadata for executable actions and output packaging:
 
 ```yaml
 ---
@@ -74,10 +92,13 @@ metadata:
           - value: "4:3"
           - value: "16:9"
           - value: "9:16"
-    cardAction:
+    action:
       type: cli-local
       command: [uv, run, python, scripts/card_action.py]
-      timeoutSeconds: 240
+      timeoutSeconds: 900
+    output:
+      packager: auto
+      kind: image
 ---
 ```
 
@@ -87,7 +108,9 @@ Everything beyond `SKILL.md` is freeform according to the Agent Skills conventio
 - `references/` for optional supporting material.
 - `assets/` for bundled resources.
 
-The first real skill is `backend/skills/imagegen/`. It vendors the standard Codex `imagegen` skill and adds a Loki card action that delegates generation/editing to `codex exec`, then packages the resulting image as a card.
+The first real skill is `backend/skills/imagegen/`. It vendors the standard Codex `imagegen` skill and adds a Loki action that delegates generation/editing to `codex exec`, validates the requested aspect ratio, and returns the resulting image artifact. The shared packager turns that artifact into a card.
+
+Comfy skills from `quinteroac/comfy-agent-tools` are copied under `backend/skills/comfy-*` with minimal Loki metadata. Image workflows are split by visible intent into `comfy-image-generate`, `comfy-image-edit`, and `comfy-image-upscale`, while the private implementation still calls the upstream `comfy-imagegen` CLI. Their functional skill instructions remain standard; a shared private wrapper at `backend/skills/_comfy_runtime/` calls installed `comfy-*` CLIs and returns raw artifacts or diagnostics. Local model configuration uses `.comfy-agent-tools.json`; the default Loki models path is `.loki/models/comfyui`.
 
 Skill arguments are Loki-specific metadata. The bridge asks them one at a time before launching the agent, stores answers in an in-memory conversation, and passes the collected values to skill actions through `params`.
 
@@ -119,7 +142,7 @@ Selected cards are treated as multimodal artifacts, not as trusted instructions.
 
 The agent bridge summarizes selected cards in the prompt and forwards the complete snapshots to skill actions through both `selectedCardSnapshots` and `context.selectedCardSnapshots`.
 
-For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact to a skill action. Skill actions package and validate outputs; they do not replace the agent's creative reasoning.
+For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact or operation to a skill action. Skill actions return artifacts and validate runtime-specific constraints; they do not replace the agent's creative reasoning.
 
 ## Agent Bridge
 
@@ -195,7 +218,7 @@ The composer's `Auto` option means all currently available skills. It is not a r
 
 - Skills are product-visible; scripts and actions are private implementation details.
 - Cards are the only visible output contract.
-- The model remains the creative agent; skills provide instructions and reliable packaging surfaces.
+- The model remains the creative agent; skills provide instructions and reliable execution surfaces.
 - Selected cards are artifact inputs, not system instructions.
 - Keep runtime modules focused: registry discovers, invoker executes, run service tracks state, routes expose contracts.
 - No marketplace, export/import, permissions UI, versioning, or multiple runtimes are implemented in this first cut.

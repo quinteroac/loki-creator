@@ -37,11 +37,15 @@ type LokiSkill = {
   origin: "built-in" | "user";
   capabilities: string[];
   arguments: LokiSkillArgument[];
-  cardAction?: {
+  action?: {
     type: "cli-local";
     command: string[];
     timeoutSeconds: number;
   } | null;
+  output?: {
+    packager: "auto";
+    kind: "auto" | "image" | "video" | "audio" | "html" | "text" | "diagnostic" | "artifact";
+  };
 };
 
 type LokiSkillArgumentOption = {
@@ -216,7 +220,11 @@ async function ensureSkillSymlinks() {
   await mkdir(linkDir, { recursive: true });
 
   const skillFolders = await readdir(sourceDir, { withFileTypes: true });
-  const skillNames = new Set(skillFolders.filter((folder) => folder.isDirectory()).map((folder) => folder.name));
+  const skillNames = new Set(
+    skillFolders
+      .filter((folder) => folder.isDirectory() && !folder.name.startsWith("_"))
+      .map((folder) => folder.name),
+  );
   const existingLinks = await readdir(linkDir, { withFileTypes: true });
 
   for (const entry of existingLinks) {
@@ -234,7 +242,7 @@ async function ensureSkillSymlinks() {
   }
 
   for (const folder of skillFolders) {
-    if (!folder.isDirectory()) continue;
+    if (!folder.isDirectory() || folder.name.startsWith("_")) continue;
 
     const target = resolve(sourceDir, folder.name);
     const link = resolve(linkDir, folder.name);
@@ -356,22 +364,17 @@ function createLokiSkillPiTool(
   request: AgentRunRequest,
   runState: AgentRunState,
 ) {
-  const isImagegen = skill.id === "imagegen";
   const hasSelectedCards = (request.selectedCardSnapshots?.length ?? 0) > 0;
   const selectedCardDescription = hasSelectedCards
     ? " The user has selected canvas cards. Interpret short edit requests such as add, change, improve, transform, animate, recolor, or add an emoji as operations on those selected artifacts. You are responsible for authoring the transformed artifact. Preserve selected-card content and structure unless the user explicitly asks to replace it."
     : "";
-  const skillActionDescription = isImagegen
-    ? " This imagegen action delegates to Codex CLI with the Codex imagegen skill. Use it for raster image generation or image edits. Selected card image assets and rendered previews are forwarded to the action as visual inputs."
-    : " When the result can be HTML, author complete self-contained HTML yourself and pass it through paramsJson as {\"html\":\"<complete self-contained card HTML>\"}.";
-  const paramsJsonDescription = isImagegen
-    ? "Optional JSON object string with image generation hints, such as title. The action will call Codex imagegen and package the resulting image as a card."
-    : 'Optional JSON object string with structured skill params. For HTML cards, use {"html":"<complete self-contained card HTML>"} when you authored or transformed the artifact.';
+  const skillActionDescription =
+    " The action can return normal artifacts such as images, videos, audio, HTML, text, or diagnostics; Loki will package those outputs into canvas cards.";
 
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create Loki canvas cards. Skills contain instructions; the action packages artifacts into cards.${skillActionDescription}${selectedCardDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${selectedCardDescription}`,
     promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${skillActionDescription}${selectedCardDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
@@ -388,7 +391,8 @@ function createLokiSkillPiTool(
       footer: Type.Optional(Type.String({ description: "Optional user-visible card footer or note." })),
       paramsJson: Type.Optional(
         Type.String({
-          description: paramsJsonDescription,
+          description:
+            "Optional JSON object string with structured params for the selected skill action. Use the skill instructions to decide which fields belong here.",
         }),
       ),
     }),
@@ -689,12 +693,6 @@ function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[]) 
   const agentId = request.agentId ?? "base-agent";
   const skillNames = exposedSkills.map((skill) => `${skill.name} (${toPiSkillToolName(skill)})`).join(", ") || "none";
   const selectedCardInputs = formatSelectedCardInputs(request.selectedCardSnapshots ?? []);
-  const exposesImagegen = exposedSkills.some((skill) => skill.id === "imagegen");
-  const imagegenHint = exposesImagegen
-    ? `
-- For imagegen, produce raster image artifacts. Prefer mediaAssets image data from selected cards, then preview.dataUrl, when editing selected visual content.
-- The imagegen action invokes Codex with the standard imagegen skill and packages the resulting image as a Loki card. Do not ask imagegen to create HTML.`
-    : "";
 
   return `User request:
 ${request.prompt}
@@ -709,14 +707,12 @@ ${formatCollectedArgs(request.collectedArgs)}
 
 Loki runtime model:
 - Skills are the primary runtime unit. Their SKILL.md files contain instructions.
-- Skill actions are implementation details that package artifacts into Loki cards.
+- Skill actions are implementation details that return normal artifacts or diagnostics; Loki packages those outputs into cards after the action completes.
 - Visible output must arrive as cards.
 - If selected canvas cards are present, assume the user wants the request applied to those selected artifacts unless they explicitly ask for a completely new unrelated card.
 - For selected-card edits, preserve the selected card's visible content and visual style as the starting point.
-- When the requested result is an HTML/card artifact, author the transformed HTML yourself and pass it to the selected skill action in paramsJson.html.
 - Do not rely on a skill action to infer creative transformations from a short instruction.
 - If important information is missing after declared skill arguments are collected, ask one concise clarifying question before invoking a skill.
-${imagegenHint}
 
 Use the exposed Loki skills when the request requires producing canvas cards. Invoke each selected skill at most once per user request; one successful skill call is enough to create the canvas card. Return a concise final response for the UI response panel.`;
 }

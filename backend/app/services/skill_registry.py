@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from app.models import SkillArgumentDefinition, SkillCardAction, SkillDefinition
+from app.models import SkillArgumentDefinition, SkillCardAction, SkillDefinition, SkillOutputConfig, SkillRuntimeConfig
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_DIR.parent
@@ -41,9 +41,12 @@ class SkillRegistry:
         name = str(frontmatter.get("name") or skill_dir.name)
         metadata = frontmatter.get("metadata") if isinstance(frontmatter.get("metadata"), dict) else {}
         loki_metadata = metadata.get("loki") if isinstance(metadata.get("loki"), dict) else {}
-        card_action_data = loki_metadata.get("cardAction") if isinstance(loki_metadata.get("cardAction"), dict) else None
+        action_data = loki_metadata.get("action") if isinstance(loki_metadata.get("action"), dict) else None
+        output_data = loki_metadata.get("output") if isinstance(loki_metadata.get("output"), dict) else None
+        runtime_data = loki_metadata.get("runtime") if isinstance(loki_metadata.get("runtime"), dict) else None
         capabilities = loki_metadata.get("capabilities") if isinstance(loki_metadata.get("capabilities"), list) else []
         arguments_data = loki_metadata.get("arguments") if isinstance(loki_metadata.get("arguments"), list) else []
+        action = SkillCardAction.model_validate(action_data) if action_data else None
 
         return SkillDefinition(
             id=self._normalize_skill_id(name),
@@ -52,7 +55,9 @@ class SkillRegistry:
             path=str(skill_dir.relative_to(REPO_ROOT)),
             origin="built-in",
             capabilities=[str(capability) for capability in capabilities],
-            card_action=SkillCardAction.model_validate(card_action_data) if card_action_data else None,
+            action=action,
+            output=SkillOutputConfig.model_validate(output_data) if output_data else SkillOutputConfig(),
+            runtime=SkillRuntimeConfig.model_validate(runtime_data) if runtime_data else SkillRuntimeConfig(),
             arguments=[
                 SkillArgumentDefinition.model_validate(argument)
                 for argument in arguments_data

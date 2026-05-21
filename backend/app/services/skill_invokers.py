@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.models import SkillDefinition, SkillResult
+from app.models import SkillDefinition, SkillRawResult
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -16,13 +16,14 @@ class SkillInvocationError(RuntimeError):
 
 
 class SkillActionInvoker:
-    def invoke(self, skill: SkillDefinition, payload: dict[str, Any]) -> SkillResult:
-        if skill.card_action is None:
-            raise SkillInvocationError(f"Skill {skill.id} does not declare a card action")
-        if skill.card_action.type != "cli-local":
-            raise SkillInvocationError(f"Unsupported skill action type: {skill.card_action.type}")
-        if not skill.card_action.command:
-            raise SkillInvocationError(f"Skill {skill.id} card action has no command")
+    def invoke(self, skill: SkillDefinition, payload: dict[str, Any]) -> SkillRawResult:
+        action = skill.action
+        if action is None:
+            raise SkillInvocationError(f"Skill {skill.id} does not declare an action")
+        if action.type != "cli-local":
+            raise SkillInvocationError(f"Unsupported skill action type: {action.type}")
+        if not action.command:
+            raise SkillInvocationError(f"Skill {skill.id} action has no command")
 
         skill_dir = (REPO_ROOT / skill.path).resolve()
         try:
@@ -31,12 +32,12 @@ class SkillActionInvoker:
             raise SkillInvocationError(f"Skill path is outside the repository: {skill.path}") from exc
 
         process = subprocess.run(
-            skill.card_action.command,
+            action.command,
             input=json.dumps(payload),
             text=True,
             capture_output=True,
             cwd=skill_dir,
-            timeout=skill.card_action.timeout_seconds,
+            timeout=action.timeout_seconds,
             check=False,
         )
 
@@ -50,6 +51,6 @@ class SkillActionInvoker:
             raise SkillInvocationError("Skill action did not return valid JSON") from exc
 
         try:
-            return SkillResult.model_validate(decoded)
+            return SkillRawResult.model_validate(decoded)
         except ValidationError as exc:
             raise SkillInvocationError("Skill action returned an invalid result") from exc

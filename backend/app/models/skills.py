@@ -10,12 +10,27 @@ SkillOrigin = Literal["built-in", "user"]
 SkillRunStatus = Literal["queued", "running", "succeeded", "failed"]
 SkillArgumentType = Literal["choice", "text"]
 SkillArgumentAskWhen = Literal["always", "missing"]
+SkillOutputKind = Literal["auto", "image", "video", "audio", "html", "text", "diagnostic", "artifact"]
+SkillArtifactKind = Literal["image", "video", "audio", "html", "text", "json", "artifact", "diagnostic"]
 
 
 class SkillCardAction(BaseModel):
     type: Literal["cli-local"] = "cli-local"
     command: list[str] = Field(default_factory=list)
     timeout_seconds: int = Field(default=30, alias="timeoutSeconds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SkillOutputConfig(BaseModel):
+    packager: Literal["auto"] = "auto"
+    kind: SkillOutputKind = "auto"
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SkillRuntimeConfig(BaseModel):
+    models_dir: str | None = Field(default=None, alias="modelsDir")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -46,7 +61,9 @@ class SkillDefinition(BaseModel):
     path: str
     origin: SkillOrigin = "built-in"
     capabilities: list[str] = Field(default_factory=list)
-    card_action: SkillCardAction | None = Field(default=None, alias="cardAction")
+    action: SkillCardAction | None = None
+    output: SkillOutputConfig = Field(default_factory=SkillOutputConfig)
+    runtime: SkillRuntimeConfig = Field(default_factory=SkillRuntimeConfig)
     arguments: list[SkillArgumentDefinition] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -65,6 +82,42 @@ class SkillRunRequest(BaseModel):
 
 class SkillResult(BaseModel):
     cards: list[GeneratedCard] = Field(default_factory=list)
+
+
+class SkillArtifact(BaseModel):
+    path: str | None = None
+    url: str | None = None
+    data_url: str | None = Field(default=None, alias="dataUrl")
+    kind: SkillArtifactKind | None = None
+    mime_type: str | None = Field(default=None, alias="mimeType")
+    title: str | None = None
+    prompt: str | None = None
+    html: str | None = None
+    text: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class SkillDiagnostic(BaseModel):
+    level: Literal["info", "warning", "error"] = "info"
+    title: str | None = None
+    message: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class SkillRawResult(BaseModel):
+    cards: list[GeneratedCard] = Field(default_factory=list)
+    artifacts: list[SkillArtifact | str] = Field(default_factory=list)
+    media: list[SkillArtifact | str] = Field(default_factory=list)
+    html: str | None = None
+    text: str | None = None
+    diagnostics: list[SkillDiagnostic | str] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class SkillRun(BaseModel):

@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from app.models import SkillRun, SkillRunRequest
+from app.services.card_packager import CardPackagerService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
 
@@ -11,9 +12,11 @@ class SkillRunService:
         self,
         registry: SkillRegistry | None = None,
         invoker: SkillActionInvoker | None = None,
+        packager: CardPackagerService | None = None,
     ) -> None:
         self.registry = registry or SkillRegistry()
         self.invoker = invoker or SkillActionInvoker()
+        self.packager = packager or CardPackagerService()
         self._runs: dict[str, SkillRun] = {}
 
     def create_run(self, payload: SkillRunRequest) -> SkillRun:
@@ -50,7 +53,7 @@ class SkillRunService:
             return
 
         try:
-            result = self.invoker.invoke(
+            raw_result = self.invoker.invoke(
                 skill,
                 {
                     "runId": run_id,
@@ -61,6 +64,13 @@ class SkillRunService:
                     "selectedCardSnapshots": payload.selected_card_snapshots,
                     "params": payload.params,
                 },
+            )
+            result = self.packager.package(
+                skill=skill,
+                run_id=run_id,
+                prompt=payload.prompt,
+                params=payload.params,
+                raw_result=raw_result,
             )
         except Exception as exc:
             self._fail(run_id, str(exc))

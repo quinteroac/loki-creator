@@ -1,5 +1,4 @@
 import base64
-import html
 import json
 import mimetypes
 import os
@@ -7,7 +6,6 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,7 +13,6 @@ from PIL import Image
 
 
 SKILL_ID = "imagegen"
-SOURCE_ACTION_ID = "codex-imagegen"
 SUPPORTED_IMAGE_MIME_TYPES = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
@@ -340,42 +337,6 @@ def validate_output_image(result: dict, run_dir: Path) -> tuple[Path, str]:
     return image_path, mime_type
 
 
-def create_card_html(artifact_url: str, title: str) -> str:
-    escaped_url = html.escape(artifact_url, quote=True)
-    escaped_title = html.escape(title)
-    return f"""<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      html,
-      body {{
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        background: #111111;
-      }}
-      body {{
-        display: grid;
-        place-items: center;
-        overflow: hidden;
-      }}
-      img {{
-        display: block;
-        width: 100%;
-        height: 100%;
-        object-fit: contain;
-        background: #111111;
-      }}
-    </style>
-  </head>
-  <body>
-    <img src="{escaped_url}" alt="{escaped_title}" />
-  </body>
-</html>"""
-
-
 def main() -> None:
     payload = read_payload()
     run_id = first_text(payload.get("runId"), f"skill_run_{uuid4().hex}")
@@ -389,31 +350,23 @@ def main() -> None:
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
     aspect_ratio = normalize_aspect_ratio(params.get("aspectRatio"))
     validate_output_aspect_ratio(image_path, aspect_ratio)
-    artifact_path = image_path.relative_to(artifacts_root()).as_posix()
     title = first_text(result.get("title"), "Generated image")
     final_prompt = first_text(result.get("prompt"), payload.get("prompt"))
 
-    card = {
-        "id": f"card_{uuid4().hex}",
-        "name": title,
+    artifact = {
+        "path": str(image_path),
+        "kind": "image",
+        "mimeType": mime_type,
+        "title": title,
         "prompt": final_prompt,
-        "html": create_card_html(f"/api/artifacts/{artifact_path}", title),
-        "sourceSkillId": SKILL_ID,
-        "sourceActionId": SOURCE_ACTION_ID,
         "metadata": {
-            "kind": "image",
-            "title": title,
-            "description": final_prompt,
-            "artifactUrl": f"/api/artifacts/{artifact_path}",
-            "thumbnailUrl": f"/api/artifacts/{artifact_path}",
             "preferredAspectRatio": aspect_ratio,
             "aspectRatio": aspect_ratio,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
             "tags": ["imagegen"],
             "capabilities": ["image-generation", "image-editing"],
         },
     }
-    print(json.dumps({"cards": [card]}))
+    print(json.dumps({"artifacts": [artifact]}))
 
 
 if __name__ == "__main__":

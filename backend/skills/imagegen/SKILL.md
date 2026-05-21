@@ -25,10 +25,13 @@ metadata:
           - value: "9:16"
             label: Portrait
             description: Vertical mobile frame.
-    cardAction:
+    action:
       type: cli-local
       command: [uv, run, python, scripts/card_action.py]
       timeoutSeconds: 900
+    output:
+      packager: auto
+      kind: image
 ---
 
 # Image Generation Skill

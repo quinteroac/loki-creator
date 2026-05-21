@@ -89,11 +89,18 @@ export type SkillDefinition = {
   path: string;
   capabilities: string[];
   arguments: SkillArgumentDefinition[];
-  cardAction?: {
+  action?: {
     type: "cli-local";
     command: string[];
     timeoutSeconds: number;
   } | null;
+  output?: {
+    packager: "auto";
+    kind: "auto" | "image" | "video" | "audio" | "html" | "text" | "diagnostic" | "artifact";
+  };
+  runtime?: {
+    modelsDir?: string | null;
+  };
 };
 
 export type SkillArgumentOption = {

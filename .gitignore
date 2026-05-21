@@ -22,6 +22,7 @@ backend/.venv/
 !.env.example
 .agents/
 .loki/
+.comfy-agent-tools.json
 
 # Logs
 *.log
