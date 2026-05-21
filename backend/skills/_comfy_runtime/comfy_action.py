@@ -23,6 +23,7 @@ ASPECT_DIMENSIONS = {
     "16:9": (1344, 768),
     "9:16": (768, 1344),
 }
+CHANGE_ASPECT_RATIOS = set(ASPECT_DIMENSIONS)
 
 
 def read_payload() -> dict[str, Any]:
@@ -335,6 +336,7 @@ def build_imagegen_command(
     model_dir = models_dir()
     model_profile = normalize_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
     aspect_ratio = first_text(params.get("aspectRatio"))
+    changes_aspect_ratio = aspect_ratio in CHANGE_ASPECT_RATIOS
 
     if require_model_profile and not model_profile:
         raise RuntimeError(f"{skill_label} requires params.modelProfile. The agent must ask the user which model to use.")
@@ -367,7 +369,7 @@ def build_imagegen_command(
         command.extend(["--width", str(width), "--height", str(height)])
     if width and height and mode == "edit" and model_profile == "flux-klein-9b-snofs":
         command.extend(["--width", str(width), "--height", str(height)])
-    if aspect_ratio and mode in {"grok-generate", "grok-edit"}:
+    if changes_aspect_ratio and mode in {"grok-generate", "grok-edit"}:
         command.extend(["--aspect-ratio", aspect_ratio])
     if as_int(params.get("seed")) is not None:
         command.extend(["--seed", str(as_int(params.get("seed")))])

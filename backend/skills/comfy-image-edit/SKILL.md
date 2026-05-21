@@ -24,6 +24,29 @@ metadata:
           - value: grok-imagine-api
             label: Grok Imagine API
             description: Remote Grok Imagine editing when COMFY_ORG_API_KEY is configured.
+      - id: aspectRatio
+        label: Aspect ratio
+        description: Choose whether to preserve the input image frame or change it for the edited result.
+        type: choice
+        required: true
+        askWhen: always
+        order: 20
+        options:
+          - value: original
+            label: Keep original
+            description: Preserve the selected card or attachment aspect ratio.
+          - value: "1:1"
+            label: Square 1:1
+            description: Change the edited output to a square frame.
+          - value: "4:3"
+            label: Landscape 4:3
+            description: Change the edited output to a classic landscape frame.
+          - value: "16:9"
+            label: Widescreen 16:9
+            description: Change the edited output to a cinematic widescreen frame.
+          - value: "9:16"
+            label: Vertical 9:16
+            description: Change the edited output to a vertical portrait frame.
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -50,8 +73,9 @@ outside the repo, let `comfy-tools-setup` install the CLIs with `uv tool`.
 
 ## Required Arguments
 
-Loki declares `modelProfile` as a required skill argument. The bridge asks it
-before the agent invokes this skill, then passes it to the action params.
+Loki declares `modelProfile` and `aspectRatio` as required skill arguments.
+The bridge asks for the model first, then asks whether to preserve the original
+frame or change to another aspect ratio before the agent invokes this skill.
 
 Do not silently fall back to a default profile. The action rejects editing
 without `modelProfile` and an input image.
@@ -61,6 +85,13 @@ Common edit profiles:
 - `qwen-edit2511`: Qwen Image Edit 2511 for direct visual edits.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 + SNOFS LoRA for single-reference editing.
 - `grok-imagine-api`: remote Grok Imagine editing, only when the API key is configured.
+
+Aspect ratio choices:
+
+- `original`: preserve the selected card or attachment frame.
+- `1:1`, `4:3`, `16:9`, `9:16`: request a changed edit frame. FLUX and Grok
+  edit modes can use changed frames; Qwen Image Edit should normally use
+  `original`.
 
 ## Commands
 

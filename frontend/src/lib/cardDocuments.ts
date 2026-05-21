@@ -30,7 +30,17 @@ export function hasPlayableMedia(cardHtml: string): boolean {
   return /<(video|audio)\b/i.test(cardHtml);
 }
 
+function getMetadataAspectRatio(document?: CardDocument): number | null {
+  const width = document?.metadata?.width;
+  const height = document?.metadata?.height;
+
+  return width && height && width > 0 && height > 0 ? width / height : null;
+}
+
 export function getCardPreviewAspectRatioValue(document?: CardDocument): number {
+  const metadataAspectRatio = getMetadataAspectRatio(document);
+  if (metadataAspectRatio) return metadataAspectRatio;
+
   switch (document?.metadata?.preferredAspectRatio) {
     case "4:3":
       return 4 / 3;
@@ -46,6 +56,9 @@ export function getCardPreviewAspectRatioValue(document?: CardDocument): number 
 }
 
 export function getCardPreviewAspectRatioCss(document?: CardDocument): string {
+  const metadataAspectRatio = getMetadataAspectRatio(document);
+  if (metadataAspectRatio) return `${metadataAspectRatio}`;
+
   switch (document?.metadata?.preferredAspectRatio) {
     case "4:3":
       return "4 / 3";

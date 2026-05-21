@@ -9,6 +9,8 @@ export type CardMetadata = {
   thumbnailUrl?: string;
   artifactUrl?: string;
   createdAt?: string;
+  width?: number;
+  height?: number;
   tags?: string[];
   capabilities?: string[];
   preferredAspectRatio?: CardAspectRatio;

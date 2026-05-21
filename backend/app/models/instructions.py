@@ -27,6 +27,8 @@ class CardMetadata(BaseModel):
     thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl")
     artifact_url: str | None = Field(default=None, alias="artifactUrl")
     created_at: str | None = Field(default=None, alias="createdAt")
+    width: int | None = None
+    height: int | None = None
     tags: list[str] = Field(default_factory=list)
     capabilities: list[str] = Field(default_factory=list)
     preferred_aspect_ratio: CardAspectRatio | None = Field(default=None, alias="preferredAspectRatio")

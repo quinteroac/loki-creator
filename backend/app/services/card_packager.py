@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from PIL import Image
+
 from app.models import CardMetadata, GeneratedCard, SkillArtifact, SkillDefinition, SkillDiagnostic, SkillRawResult, SkillResult
 
 
@@ -69,7 +71,8 @@ class CardPackagerService:
         kind = self._kind_for_artifact(artifact, mime_type, stored_path)
         title = self._first_text(artifact.title, params.get("title"), skill.name)
         card_prompt = self._first_text(artifact.prompt, params.get("skillPrompt"), params.get("prompt"), prompt)
-        preferred_aspect_ratio = self._preferred_aspect_ratio(artifact.metadata, params)
+        width, height = self._artifact_dimensions(kind, stored_path, artifact.metadata)
+        preferred_aspect_ratio = self._preferred_aspect_ratio(artifact.metadata, params, width, height)
         html_content = self._html_for_artifact(kind, artifact_url, title, mime_type)
 
         metadata = {
@@ -82,6 +85,9 @@ class CardPackagerService:
             "tags": [skill.id, *list(artifact.metadata.get("tags", []))],
             "capabilities": skill.capabilities,
         }
+        if width and height:
+            metadata["width"] = width
+            metadata["height"] = height
         if kind == "image":
             metadata["thumbnailUrl"] = artifact_url
         if preferred_aspect_ratio:
@@ -174,13 +180,46 @@ class CardPackagerService:
             return "interactive"
         return "artifact"
 
-    def _preferred_aspect_ratio(self, metadata: dict[str, Any], params: dict[str, Any]) -> str | None:
+    def _artifact_dimensions(self, kind: str, path: Path, metadata: dict[str, Any]) -> tuple[int | None, int | None]:
+        metadata_width = self._positive_int(metadata.get("width"))
+        metadata_height = self._positive_int(metadata.get("height"))
+        if metadata_width and metadata_height:
+            return metadata_width, metadata_height
+
+        if kind != "image":
+            return None, None
+
+        try:
+            with Image.open(path) as image:
+                return image.size
+        except Exception:
+            return None, None
+
+    def _positive_int(self, value: Any) -> int | None:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+
+        return parsed if parsed > 0 else None
+
+    def _preferred_aspect_ratio(
+        self,
+        metadata: dict[str, Any],
+        params: dict[str, Any],
+        width: int | None = None,
+        height: int | None = None,
+    ) -> str | None:
         value = self._first_text(
             metadata.get("preferredAspectRatio"),
             metadata.get("aspectRatio"),
             params.get("aspectRatio"),
         )
-        return value if value in {"1:1", "4:3", "16:9", "9:16", "auto"} else None
+        if value in {"1:1", "4:3", "16:9", "9:16"}:
+            return value
+        if width and height:
+            return "auto"
+        return value if value == "auto" else None
 
     def _html_for_artifact(self, kind: str, artifact_url: str, title: str, mime_type: str) -> str:
         escaped_url = html.escape(artifact_url, quote=True)
