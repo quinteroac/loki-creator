@@ -3,6 +3,7 @@ import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react
 import {
   getCardDisplaySubtitle,
   getCardDisplayTitle,
+  getCardPreviewAspectRatioCss,
   hasPlayableMedia,
   isDataUrlWithinLimit,
   SELECTED_CARD_PREVIEW_MAX_BYTES,
@@ -380,6 +381,7 @@ export function CanvasCard({
         type="button"
         aria-label={`Select ${accessibleTitle}`}
         aria-pressed={isSelected}
+        style={{ aspectRatio: getCardPreviewAspectRatioCss(document) }}
       >
         {useIframeFallback && (
           <iframe

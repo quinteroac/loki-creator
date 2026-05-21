@@ -15,7 +15,7 @@ class InstructionRequest(BaseModel):
 
 
 CardKind = Literal["generic", "image", "video", "audio", "diagnostic", "artifact", "interactive"]
-CardAspectRatio = Literal["1:1", "4:3", "16:9", "auto"]
+CardAspectRatio = Literal["1:1", "4:3", "16:9", "9:16", "auto"]
 
 
 class CardMetadata(BaseModel):

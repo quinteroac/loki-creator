@@ -8,12 +8,33 @@ from app.models.instructions import GeneratedCard
 
 SkillOrigin = Literal["built-in", "user"]
 SkillRunStatus = Literal["queued", "running", "succeeded", "failed"]
+SkillArgumentType = Literal["choice", "text"]
+SkillArgumentAskWhen = Literal["always", "missing"]
 
 
 class SkillCardAction(BaseModel):
     type: Literal["cli-local"] = "cli-local"
     command: list[str] = Field(default_factory=list)
     timeout_seconds: int = Field(default=30, alias="timeoutSeconds")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class SkillArgumentOption(BaseModel):
+    value: str
+    label: str | None = None
+    description: str | None = None
+
+
+class SkillArgumentDefinition(BaseModel):
+    id: str
+    label: str
+    description: str = ""
+    type: SkillArgumentType = "text"
+    required: bool = False
+    ask_when: SkillArgumentAskWhen = Field(default="missing", alias="askWhen")
+    options: list[SkillArgumentOption] = Field(default_factory=list)
+    order: int = 0
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -26,6 +47,7 @@ class SkillDefinition(BaseModel):
     origin: SkillOrigin = "built-in"
     capabilities: list[str] = Field(default_factory=list)
     card_action: SkillCardAction | None = Field(default=None, alias="cardAction")
+    arguments: list[SkillArgumentDefinition] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
 

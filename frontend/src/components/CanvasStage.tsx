@@ -35,10 +35,12 @@ export function CanvasStage({
 
   function updateNodeFrame(nodeId: string, frame: CanvasNodeFrame) {
     const layer = cardLayerRef.current;
+    const node = nodes.find((candidate) => candidate.id === nodeId);
+    const document = node ? documentsById[node.cardDocumentId] : undefined;
     const canvasWidth = layer?.clientWidth ?? CARD_DEFAULT_WIDTH + CANVAS_PADDING * 2;
-    const canvasHeight = layer?.clientHeight ?? getCardHeight(CARD_DEFAULT_WIDTH) + CANVAS_PADDING * 2;
+    const canvasHeight = layer?.clientHeight ?? getCardHeight(CARD_DEFAULT_WIDTH, document) + CANVAS_PADDING * 2;
 
-    onUpdateNodeFrame(nodeId, clampCanvasNodeFrame(frame, canvasWidth, canvasHeight));
+    onUpdateNodeFrame(nodeId, clampCanvasNodeFrame(frame, canvasWidth, canvasHeight, document));
   }
 
   return (

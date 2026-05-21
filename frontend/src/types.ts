@@ -1,6 +1,6 @@
 export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive";
 
-export type CardAspectRatio = "1:1" | "4:3" | "16:9" | "auto";
+export type CardAspectRatio = "1:1" | "4:3" | "16:9" | "9:16" | "auto";
 
 export type CardMetadata = {
   kind?: CardKind;
@@ -88,11 +88,29 @@ export type SkillDefinition = {
   origin: "built-in" | "user";
   path: string;
   capabilities: string[];
+  arguments: SkillArgumentDefinition[];
   cardAction?: {
     type: "cli-local";
     command: string[];
     timeoutSeconds: number;
   } | null;
+};
+
+export type SkillArgumentOption = {
+  value: string;
+  label?: string | null;
+  description?: string | null;
+};
+
+export type SkillArgumentDefinition = {
+  id: string;
+  label: string;
+  description: string;
+  type: "choice" | "text";
+  required: boolean;
+  askWhen: "always" | "missing";
+  options: SkillArgumentOption[];
+  order: number;
 };
 
 export type SkillRunStatus = "queued" | "running" | "succeeded" | "failed";
@@ -140,14 +158,29 @@ export type AgentRunRequest = {
   selectedCards: string[];
   selectedCardSnapshots: SelectedCardSnapshot[];
   context: Record<string, unknown>;
+  conversationId?: string;
+  answers?: Record<string, string>;
+  collectedArgs?: Record<string, string>;
+};
+
+export type AgentQuestion = {
+  id: string;
+  text: string;
+  inputType: "choice" | "text";
+  options: SkillArgumentOption[];
+  skillId?: string;
+  argumentId?: string;
 };
 
 export type AgentRunResponse = {
   id: string;
   agentId: string;
-  status: "succeeded" | "failed";
+  status: "succeeded" | "failed" | "needs_input";
   responseText: string;
   skillRunIds: string[];
   cardIds: string[];
+  conversationId?: string;
+  question?: AgentQuestion;
+  collectedArgs?: Record<string, string>;
   error?: string;
 };

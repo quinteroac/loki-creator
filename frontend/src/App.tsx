@@ -24,7 +24,16 @@ import {
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
-import type { AgentModel, AgentRunResponse, CanvasNodeFrame, CardDocument, SelectedCardPreview, SkillRun } from "./types";
+import type {
+  AgentModel,
+  AgentQuestion,
+  AgentRunRequest,
+  AgentRunResponse,
+  CanvasNodeFrame,
+  CardDocument,
+  SelectedCardPreview,
+  SkillRun,
+} from "./types";
 
 const fallbackModels: AgentModel[] = [
   {
@@ -46,6 +55,10 @@ export function App() {
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<AgentQuestion | null>(null);
+  const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
+  const [pendingCollectedArgs, setPendingCollectedArgs] = useState<Record<string, string>>({});
+  const [pendingAgentRequest, setPendingAgentRequest] = useState<AgentRunRequest | null>(null);
   const [isAgentResponseOpen, setIsAgentResponseOpen] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -186,9 +199,102 @@ export function App() {
   const skillButtonLabel = selectedSkills[0] ?? "Auto";
   const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
 
+  async function handleAgentRunResponse(agentRun: AgentRunResponse, baseRequest: AgentRunRequest) {
+    setLatestAgentResponse(agentRun);
+    setIsAgentResponseOpen(false);
+
+    if (agentRun.status === "needs_input" && agentRun.question && agentRun.conversationId) {
+      setPendingQuestion(agentRun.question);
+      setPendingConversationId(agentRun.conversationId);
+      setPendingCollectedArgs(agentRun.collectedArgs ?? {});
+      setPendingAgentRequest(baseRequest);
+      setInstruction("");
+      setStatus("Answer the agent question to continue.");
+      return;
+    }
+
+    setPendingQuestion(null);
+    setPendingConversationId(null);
+    setPendingCollectedArgs({});
+    setPendingAgentRequest(null);
+
+    if (agentRun.status === "failed") {
+      setStatus(agentRun.error || "Agent run failed.");
+      return;
+    }
+
+    for (const runId of agentRun.skillRunIds) {
+      const completedRun = await waitForSkillRun(runId);
+      addCardsFromRun(completedRun);
+    }
+
+    setInstruction("");
+    setStatus("Agent completed.");
+  }
+
+  async function buildAgentRequest(prompt: string): Promise<AgentRunRequest> {
+    const selectedCardSnapshots = await createSelectedCardSnapshots(
+      cardDocuments,
+      selectedCards,
+      previewCapturesRef.current,
+    );
+
+    return {
+      agentId: "base-agent",
+      prompt,
+      model: selectedModel,
+      skills: selectedSkills,
+      selectedCards,
+      selectedCardSnapshots,
+      context: {
+        skills: selectedSkills,
+        model: selectedModel,
+        agentId: "base-agent",
+        selectedElement: selectedDocument ? getCardDisplayTitle(selectedDocument) : null,
+      },
+    };
+  }
+
+  async function answerPendingQuestion(answer: string) {
+    const text = answer.trim();
+    if (!pendingQuestion || !pendingConversationId || !pendingAgentRequest) return;
+    if (!text) {
+      setStatus("Answer the agent question before continuing.");
+      return;
+    }
+
+    const answeredQuestion = pendingQuestion;
+    const answerKey = pendingQuestion.argumentId ?? pendingQuestion.id;
+    const request: AgentRunRequest = {
+      ...pendingAgentRequest,
+      conversationId: pendingConversationId,
+      answers: {
+        [answerKey]: text,
+        answer: text,
+      },
+      collectedArgs: pendingCollectedArgs,
+    };
+
+    try {
+      setPendingQuestion(null);
+      setInstruction("");
+      setStatus("Continuing agent...");
+      const agentRun = await createAgentRun(request);
+      await handleAgentRunResponse(agentRun, request);
+    } catch {
+      setPendingQuestion(answeredQuestion);
+      setStatus("Could not connect to the agent bridge.");
+    }
+  }
+
   async function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = instruction.trim();
+
+    if (pendingQuestion) {
+      await answerPendingQuestion(text);
+      return;
+    }
 
     if (!text) {
       setStatus("Write an instruction before sending it to the agent.");
@@ -197,41 +303,9 @@ export function App() {
 
     try {
       setStatus("Running agent...");
-      const selectedCardSnapshots = await createSelectedCardSnapshots(
-        cardDocuments,
-        selectedCards,
-        previewCapturesRef.current,
-      );
-      const agentRun = await createAgentRun({
-        agentId: "base-agent",
-        prompt: text,
-        model: selectedModel,
-        skills: selectedSkills,
-        selectedCards,
-        selectedCardSnapshots,
-        context: {
-          skills: selectedSkills,
-          model: selectedModel,
-          agentId: "base-agent",
-          selectedElement: selectedDocument ? getCardDisplayTitle(selectedDocument) : null,
-        },
-      });
-
-      setLatestAgentResponse(agentRun);
-      setIsAgentResponseOpen(false);
-
-      if (agentRun.status === "failed") {
-        setStatus(agentRun.error || "Agent run failed.");
-        return;
-      }
-
-      for (const runId of agentRun.skillRunIds) {
-        const completedRun = await waitForSkillRun(runId);
-        addCardsFromRun(completedRun);
-      }
-
-      setInstruction("");
-      setStatus("Agent completed.");
+      const request = await buildAgentRequest(text);
+      const agentRun = await createAgentRun(request);
+      await handleAgentRunResponse(agentRun, request);
     } catch {
       setStatus("Could not connect to the agent bridge.");
     }
@@ -328,6 +402,7 @@ export function App() {
         onCreateAgent={handleCreateAgent}
         onInstructionChange={setInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
+        onQuestionOption={answerPendingQuestion}
         onSelectModel={selectModel}
         onSubmit={submitInstruction}
         onToggleCard={toggleCard}
@@ -342,6 +417,7 @@ export function App() {
         setOpenMenu={setOpenMenu}
         setSkillSearch={setSkillSearch}
         status={status}
+        pendingQuestion={pendingQuestion}
         skillButtonLabel={skillButtonLabel}
         skillSearch={skillSearch}
       />

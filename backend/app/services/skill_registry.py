@@ -2,7 +2,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from app.models import SkillCardAction, SkillDefinition
+import yaml
+
+from app.models import SkillArgumentDefinition, SkillCardAction, SkillDefinition
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_DIR.parent
@@ -41,6 +43,7 @@ class SkillRegistry:
         loki_metadata = metadata.get("loki") if isinstance(metadata.get("loki"), dict) else {}
         card_action_data = loki_metadata.get("cardAction") if isinstance(loki_metadata.get("cardAction"), dict) else None
         capabilities = loki_metadata.get("capabilities") if isinstance(loki_metadata.get("capabilities"), list) else []
+        arguments_data = loki_metadata.get("arguments") if isinstance(loki_metadata.get("arguments"), list) else []
 
         return SkillDefinition(
             id=self._normalize_skill_id(name),
@@ -50,6 +53,11 @@ class SkillRegistry:
             origin="built-in",
             capabilities=[str(capability) for capability in capabilities],
             card_action=SkillCardAction.model_validate(card_action_data) if card_action_data else None,
+            arguments=[
+                SkillArgumentDefinition.model_validate(argument)
+                for argument in arguments_data
+                if isinstance(argument, dict)
+            ],
         )
 
     def _read_frontmatter(self, skill_file: Path) -> dict[str, Any]:
@@ -58,49 +66,8 @@ class SkillRegistry:
         if not match:
             return {}
 
-        return self._parse_simple_yaml(match.group(1))
-
-    def _parse_simple_yaml(self, text: str) -> dict[str, Any]:
-        root: dict[str, Any] = {}
-        stack: list[tuple[int, dict[str, Any]]] = [(-1, root)]
-
-        for raw_line in text.splitlines():
-            if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-                continue
-
-            indent = len(raw_line) - len(raw_line.lstrip(" "))
-            key, separator, raw_value = raw_line.strip().partition(":")
-            if not separator:
-                continue
-
-            while stack and indent <= stack[-1][0]:
-                stack.pop()
-
-            parent = stack[-1][1]
-            value = self._parse_yaml_value(raw_value.strip())
-            if value is None:
-                child: dict[str, Any] = {}
-                parent[key] = child
-                stack.append((indent, child))
-            else:
-                parent[key] = value
-
-        return root
-
-    def _parse_yaml_value(self, value: str) -> Any:
-        if value == "":
-            return None
-        if value.startswith("[") and value.endswith("]"):
-            inner = value[1:-1].strip()
-            if not inner:
-                return []
-            return [item.strip().strip("\"'") for item in inner.split(",")]
-        if value.lower() == "true":
-            return True
-        if value.lower() == "false":
-            return False
-
-        return value.strip("\"'")
+        parsed = yaml.safe_load(match.group(1)) or {}
+        return parsed if isinstance(parsed, dict) else {}
 
     def _normalize_skill_id(self, skill_id: str) -> str:
         return skill_id.strip().lower().replace(" ", "-")

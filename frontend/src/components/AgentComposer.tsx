@@ -2,7 +2,7 @@ import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles } from "l
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
-import type { AgentModel, GeneratedCard } from "../types";
+import type { AgentModel, AgentQuestion, GeneratedCard } from "../types";
 
 type AgentComposerProps = {
   availableModels: AgentModel[];
@@ -13,6 +13,7 @@ type AgentComposerProps = {
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onQuestionOption: (answer: string) => void;
   onSelectModel: (model: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
@@ -27,6 +28,7 @@ type AgentComposerProps = {
   setOpenMenu: (openMenu: string | null) => void;
   setSkillSearch: (skillSearch: string) => void;
   status: string;
+  pendingQuestion: AgentQuestion | null;
   skillButtonLabel: string;
   skillSearch: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -41,6 +43,7 @@ export function AgentComposer({
   onCreateAgent,
   onInstructionChange,
   onInstructionKeyDown,
+  onQuestionOption,
   onSelectModel,
   onSubmit,
   onToggleCard,
@@ -55,6 +58,7 @@ export function AgentComposer({
   setOpenMenu,
   setSkillSearch,
   status,
+  pendingQuestion,
   skillButtonLabel,
   skillSearch,
   fileInputRef,
@@ -186,6 +190,26 @@ export function AgentComposer({
         </div>
       )}
 
+      {pendingQuestion && (
+        <div className="agent-question" aria-live="polite">
+          <p>{pendingQuestion.text}</p>
+          {pendingQuestion.options.length > 0 && (
+            <div className="agent-question-options">
+              {pendingQuestion.options.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => onQuestionOption(option.value)}
+                  title={option.description ?? undefined}
+                >
+                  {option.label ?? option.value}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <form className="composer" onSubmit={onSubmit}>
         <div className="composer-main">
           <textarea
@@ -194,8 +218,8 @@ export function AgentComposer({
             value={instruction}
             onChange={(event) => onInstructionChange(event.target.value)}
             onKeyDown={onInstructionKeyDown}
-            placeholder="Write to imagine"
-            aria-label="Instruction for the agent"
+            placeholder={pendingQuestion ? "Answer the agent..." : "Write to imagine"}
+            aria-label={pendingQuestion ? "Answer for the agent" : "Instruction for the agent"}
           />
 
           <div className="composer-actions">

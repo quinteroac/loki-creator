@@ -20,6 +20,8 @@ const UNTITLED_CARD_TITLE = "Untitled card";
 const DISPLAY_SUBTITLE_MAX_LENGTH = 92;
 const TECHNICAL_TITLE_PATTERN = /^(?:card|node|job)_[a-z0-9-]{8,}$/i;
 const TITLE_COUNTER_PATTERN = /^(.*?)(?:\s+(\d+))?$/;
+const CARD_CHROME_HEIGHT = 108;
+const CARD_TALLEST_PREVIEW_ASPECT_RATIO = 9 / 16;
 
 export type CardPreviewCapture = () => SelectedCardPreview | Promise<SelectedCardPreview>;
 
@@ -27,8 +29,48 @@ export function hasPlayableMedia(cardHtml: string): boolean {
   return /<(video|audio)\b/i.test(cardHtml);
 }
 
-export function getCardHeight(width: number) {
-  return width * CARD_ASPECT_HEIGHT_RATIO;
+export function getCardPreviewAspectRatioValue(document?: CardDocument): number {
+  switch (document?.metadata?.preferredAspectRatio) {
+    case "4:3":
+      return 4 / 3;
+    case "16:9":
+      return 16 / 9;
+    case "9:16":
+      return 9 / 16;
+    case "auto":
+    case "1:1":
+    default:
+      return 1;
+  }
+}
+
+export function getCardPreviewAspectRatioCss(document?: CardDocument): string {
+  switch (document?.metadata?.preferredAspectRatio) {
+    case "4:3":
+      return "4 / 3";
+    case "16:9":
+      return "16 / 9";
+    case "9:16":
+      return "9 / 16";
+    case "auto":
+      return "auto";
+    case "1:1":
+    default:
+      return "1 / 1";
+  }
+}
+
+export function getCardHeight(width: number, document?: CardDocument) {
+  const contentWidth = Math.max(0, width - 28);
+  const previewHeight = contentWidth / getCardPreviewAspectRatioValue(document);
+
+  return previewHeight + CARD_CHROME_HEIGHT;
+}
+
+export function getCardLayoutRowHeight(width: number) {
+  const contentWidth = Math.max(0, width - 28);
+
+  return contentWidth / CARD_TALLEST_PREVIEW_ASPECT_RATIO + CARD_CHROME_HEIGHT;
 }
 
 function cleanLabel(value?: string | null): string {
@@ -291,10 +333,11 @@ export function clampCanvasNodeFrame(
   frame: CanvasNodeFrame,
   canvasWidth: number,
   canvasHeight: number,
+  document?: CardDocument,
 ): CanvasNodeFrame {
   const maxWidth = Math.min(CARD_MAX_WIDTH, Math.max(CARD_MIN_WIDTH, canvasWidth - CANVAS_PADDING * 2));
   const width = Math.min(Math.max(frame.width, CARD_MIN_WIDTH), maxWidth);
-  const height = getCardHeight(width);
+  const height = getCardHeight(width, document);
   const maxX = Math.max(0, canvasWidth - width - CANVAS_PADDING);
   const maxY = Math.max(0, canvasHeight - height - CANVAS_PADDING);
 
@@ -313,7 +356,7 @@ export function getInitialCanvasNodeFrame(index: number, canvasWidth: number): C
 
   return {
     x: CANVAS_PADDING + column * (CARD_DEFAULT_WIDTH + CARD_GAP),
-    y: CANVAS_PADDING + row * (getCardHeight(CARD_DEFAULT_WIDTH) + CARD_GAP),
+    y: CANVAS_PADDING + row * (getCardLayoutRowHeight(CARD_DEFAULT_WIDTH) + CARD_GAP),
     width: CARD_DEFAULT_WIDTH,
   };
 }

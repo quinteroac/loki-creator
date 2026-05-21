@@ -36,11 +36,29 @@ type LokiSkill = {
   path: string;
   origin: "built-in" | "user";
   capabilities: string[];
+  arguments: LokiSkillArgument[];
   cardAction?: {
     type: "cli-local";
     command: string[];
     timeoutSeconds: number;
   } | null;
+};
+
+type LokiSkillArgumentOption = {
+  value: string;
+  label?: string | null;
+  description?: string | null;
+};
+
+type LokiSkillArgument = {
+  id: string;
+  label: string;
+  description?: string;
+  type: "choice" | "text";
+  required: boolean;
+  askWhen: "always" | "missing";
+  options: LokiSkillArgumentOption[];
+  order: number;
 };
 
 type LokiSkillRun = {
@@ -98,15 +116,30 @@ type AgentRunRequest = {
   selectedCards: string[];
   selectedCardSnapshots?: SelectedCardSnapshot[];
   context: Record<string, unknown>;
+  conversationId?: string;
+  answers?: Record<string, string>;
+  collectedArgs?: Record<string, string>;
+};
+
+type AgentQuestion = {
+  id: string;
+  text: string;
+  inputType: "choice" | "text";
+  options: LokiSkillArgumentOption[];
+  skillId?: string;
+  argumentId?: string;
 };
 
 type AgentRunResponse = {
   id: string;
   agentId: string;
-  status: "succeeded" | "failed";
+  status: "succeeded" | "failed" | "needs_input";
   responseText: string;
   skillRunIds: string[];
   cardIds: string[];
+  conversationId?: string;
+  question?: AgentQuestion;
+  collectedArgs?: Record<string, string>;
   error?: string;
 };
 
@@ -122,14 +155,31 @@ type LokiSkillParams = {
 
 type LokiSkillCallResult = Awaited<ReturnType<typeof runLokiSkill>>;
 
+type PendingConversation = {
+  id: string;
+  request: AgentRunRequest;
+  selectedSkillIds: string[];
+  collectedArgs: Record<string, string>;
+  pendingQuestion?: AgentQuestion;
+  createdAt: number;
+};
+
+type AgentRunState = {
+  skillRunIds: string[];
+  cardIds: string[];
+  skillCalls: Map<string, Promise<LokiSkillCallResult>>;
+  pendingQuestion?: AgentQuestion;
+};
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const backendApiUrl = process.env.LOKI_BACKEND_URL ?? "http://127.0.0.1:8000";
 const port = Number(process.env.LOKI_AGENT_BRIDGE_PORT ?? 8787);
-const skillRunWaitTimeoutMs = Number(process.env.LOKI_SKILL_RUN_WAIT_TIMEOUT_MS ?? 300000);
+const skillRunWaitTimeoutMs = Number(process.env.LOKI_SKILL_RUN_WAIT_TIMEOUT_MS ?? 900000);
 const allowedOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+):\d+$/;
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
+const pendingConversations = new Map<string, PendingConversation>();
 
 const agents: LokiAgent[] = [
   {
@@ -272,11 +322,13 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
         ...request.context,
         agentId: request.agentId ?? "base-agent",
         model: request.model,
+        collectedArgs: request.collectedArgs ?? {},
         selectedCardSnapshots: request.selectedCardSnapshots ?? [],
       },
       selectedCards: request.selectedCards,
       selectedCardSnapshots: request.selectedCardSnapshots ?? [],
       params: {
+        ...(request.collectedArgs ?? {}),
         ...structuredParams,
         model: request.model,
         skillPrompt: skillParams.prompt,
@@ -302,11 +354,7 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
 function createLokiSkillPiTool(
   skill: LokiSkill,
   request: AgentRunRequest,
-  runState: {
-    skillRunIds: string[];
-    cardIds: string[];
-    skillCalls: Map<string, Promise<LokiSkillCallResult>>;
-  },
+  runState: AgentRunState,
 ) {
   const isImagegen = skill.id === "imagegen";
   const hasSelectedCards = (request.selectedCardSnapshots?.length ?? 0) > 0;
@@ -394,6 +442,71 @@ function createLokiSkillPiTool(
   });
 }
 
+function createAskUserPiTool(runState: AgentRunState) {
+  return defineTool({
+    name: "ask_user",
+    label: "Ask user",
+    description:
+      "Ask one concise clarification question before invoking a Loki skill when required information is missing.",
+    promptSnippet:
+      "Use ask_user only when a missing choice or constraint would materially change the artifact. Ask one question at a time.",
+    parameters: Type.Object({
+      question: Type.String({ description: "The single question to ask the user." }),
+      optionsJson: Type.Optional(Type.String({
+        description:
+          "Optional JSON array of option objects or strings. Example: [{\"value\":\"soft\",\"label\":\"Soft\"}].",
+      })),
+    }),
+    async execute(_toolCallId, params) {
+      let options: LokiSkillArgumentOption[] = [];
+      if (params.optionsJson?.trim()) {
+        try {
+          const parsed = JSON.parse(params.optionsJson);
+          if (Array.isArray(parsed)) {
+            options = parsed
+              .map((option) => {
+                if (typeof option === "string") return { value: option, label: option };
+                if (option && typeof option === "object" && "value" in option) {
+                  const value = String((option as { value: unknown }).value);
+                  return {
+                    value,
+                    label: typeof (option as { label?: unknown }).label === "string"
+                      ? (option as { label: string }).label
+                      : value,
+                    description: typeof (option as { description?: unknown }).description === "string"
+                      ? (option as { description: string }).description
+                      : null,
+                  };
+                }
+                return null;
+              })
+              .filter((option): option is LokiSkillArgumentOption => Boolean(option));
+          }
+        } catch {
+          options = [];
+        }
+      }
+
+      runState.pendingQuestion = {
+        id: `agent.${crypto.randomUUID().replaceAll("-", "")}`,
+        text: params.question,
+        inputType: options.length > 0 ? "choice" : "text",
+        options,
+      };
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: "Clarifying question recorded. Stop now and wait for the user's answer before invoking a skill.",
+          },
+        ],
+        details: { status: "needs_input" },
+      };
+    },
+  });
+}
+
 async function createResourceLoader() {
   const loader = new DefaultResourceLoader({
     cwd: repoRoot,
@@ -474,6 +587,104 @@ Use mediaAssets for direct image/video/audio editing when available. Use preview
 ${renderedCards.join("\n\n")}`;
 }
 
+function normalizeAnswerValue(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function createArgumentQuestion(skill: LokiSkill, argument: LokiSkillArgument): AgentQuestion {
+  return {
+    id: `${skill.id}.${argument.id}`,
+    text: argument.description ? `${argument.label}: ${argument.description}` : argument.label,
+    inputType: argument.type === "choice" ? "choice" : "text",
+    options: (argument.options ?? []).map((option) => ({
+      value: String(option.value),
+      label: option.label ?? option.value,
+      description: option.description ?? null,
+    })),
+    skillId: skill.id,
+    argumentId: argument.id,
+  };
+}
+
+function findNextSkillQuestion(selectedSkills: LokiSkill[], collectedArgs: Record<string, string>) {
+  const candidates = selectedSkills
+    .flatMap((skill) => (skill.arguments ?? []).map((argument) => ({ skill, argument })))
+    .filter(({ argument }) => argument.required || argument.askWhen === "always")
+    .sort((left, right) => {
+      const orderDelta = (left.argument.order ?? 0) - (right.argument.order ?? 0);
+      if (orderDelta !== 0) return orderDelta;
+      return `${left.skill.id}.${left.argument.id}`.localeCompare(`${right.skill.id}.${right.argument.id}`);
+    });
+
+  for (const { skill, argument } of candidates) {
+    const existingValue = normalizeAnswerValue(collectedArgs[argument.id]);
+    const validChoice = argument.type !== "choice"
+      || argument.options.length === 0
+      || argument.options.some((option) => option.value === existingValue);
+    if (!existingValue || !validChoice) {
+      return createArgumentQuestion(skill, argument);
+    }
+  }
+
+  return null;
+}
+
+function mergeConversationAnswers(conversation: PendingConversation, request: AgentRunRequest) {
+  const answers = request.answers ?? {};
+  const pendingQuestion = conversation.pendingQuestion;
+  const collectedArgs = {
+    ...conversation.collectedArgs,
+    ...(request.collectedArgs ?? {}),
+  };
+
+  for (const [key, value] of Object.entries(answers)) {
+    const answer = normalizeAnswerValue(value);
+    if (answer) {
+      collectedArgs[key] = answer;
+    }
+  }
+
+  if (pendingQuestion?.argumentId) {
+    const directAnswer = normalizeAnswerValue(answers[pendingQuestion.argumentId]);
+    const questionAnswer = normalizeAnswerValue(answers[pendingQuestion.id]);
+    const fallbackAnswer = normalizeAnswerValue(answers.answer);
+    const answer = directAnswer || questionAnswer || fallbackAnswer;
+    if (answer) {
+      collectedArgs[pendingQuestion.argumentId] = answer;
+    }
+  }
+
+  return collectedArgs;
+}
+
+function createNeedsInputResponse(
+  id: string,
+  agentId: string,
+  conversation: PendingConversation,
+  question: AgentQuestion,
+): AgentRunResponse {
+  return {
+    id,
+    agentId,
+    status: "needs_input",
+    responseText: question.text,
+    skillRunIds: [],
+    cardIds: [],
+    conversationId: conversation.id,
+    question,
+    collectedArgs: conversation.collectedArgs,
+  };
+}
+
+function formatCollectedArgs(collectedArgs?: Record<string, string>) {
+  const entries = Object.entries(collectedArgs ?? {}).filter(([, value]) => value.trim());
+  if (entries.length === 0) return "";
+
+  return `
+Collected skill arguments:
+${entries.map(([key, value]) => `- ${key}: ${value}`).join("\n")}`;
+}
+
 function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[]) {
   const agentId = request.agentId ?? "base-agent";
   const skillNames = exposedSkills.map((skill) => `${skill.name} (${toPiSkillToolName(skill)})`).join(", ") || "none";
@@ -494,6 +705,7 @@ Loki context:
 - exposed Loki skills: ${skillNames}
 - selected canvas cards: ${request.selectedCards.join(", ") || "none"}
 ${selectedCardInputs}
+${formatCollectedArgs(request.collectedArgs)}
 
 Loki runtime model:
 - Skills are the primary runtime unit. Their SKILL.md files contain instructions.
@@ -503,6 +715,7 @@ Loki runtime model:
 - For selected-card edits, preserve the selected card's visible content and visual style as the starting point.
 - When the requested result is an HTML/card artifact, author the transformed HTML yourself and pass it to the selected skill action in paramsJson.html.
 - Do not rely on a skill action to infer creative transformations from a short instruction.
+- If important information is missing after declared skill arguments are collected, ask one concise clarifying question before invoking a skill.
 ${imagegenHint}
 
 Use the exposed Loki skills when the request requires producing canvas cards. Invoke each selected skill at most once per user request; one successful skill call is enough to create the canvas card. Return a concise final response for the UI response panel.`;
@@ -511,7 +724,7 @@ Use the exposed Loki skills when the request requires producing canvas cards. In
 async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   const id = `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
   const agentId = request.agentId || "base-agent";
-  const runState = {
+  const runState: AgentRunState = {
     skillRunIds: [] as string[],
     cardIds: [] as string[],
     skillCalls: new Map<string, Promise<LokiSkillCallResult>>(),
@@ -522,10 +735,45 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
 
   try {
     const availableSkills = await listFrontendSkills();
-    const selectedSkills = selectSkillsForAgent(availableSkills, request.skills);
-    const customTools = selectedSkills.map((skill) => createLokiSkillPiTool(skill, request, runState));
+    const existingConversation = request.conversationId
+      ? pendingConversations.get(request.conversationId)
+      : undefined;
+    const selectedSkillIds = existingConversation?.selectedSkillIds ?? request.skills;
+    const selectedSkills = selectSkillsForAgent(availableSkills, selectedSkillIds);
+    const collectedArgs = existingConversation
+      ? mergeConversationAnswers(existingConversation, request)
+      : { ...(request.collectedArgs ?? {}) };
+    const effectiveRequest: AgentRunRequest = {
+      ...(existingConversation?.request ?? request),
+      conversationId: existingConversation?.id ?? request.conversationId,
+      collectedArgs,
+    };
+    const nextQuestion = findNextSkillQuestion(selectedSkills, collectedArgs);
+
+    if (nextQuestion) {
+      const conversationId = existingConversation?.id ?? `conversation_${crypto.randomUUID().replaceAll("-", "")}`;
+      const conversation: PendingConversation = {
+        id: conversationId,
+        request: effectiveRequest,
+        selectedSkillIds,
+        collectedArgs,
+        pendingQuestion: nextQuestion,
+        createdAt: existingConversation?.createdAt ?? Date.now(),
+      };
+      pendingConversations.set(conversationId, conversation);
+      return createNeedsInputResponse(id, agentId, conversation, nextQuestion);
+    }
+
+    if (existingConversation) {
+      pendingConversations.delete(existingConversation.id);
+    }
+
+    const customTools = [
+      createAskUserPiTool(runState),
+      ...selectedSkills.map((skill) => createLokiSkillPiTool(skill, effectiveRequest, runState)),
+    ];
     const resourceLoader = await createResourceLoader();
-    const model = resolveSelectedModel(request.model);
+    const model = resolveSelectedModel(effectiveRequest.model);
 
     const result = await createAgentSession({
       cwd: repoRoot,
@@ -546,7 +794,21 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       }
     });
 
-    await session.prompt(buildAgentPrompt(request, selectedSkills), { source: "api" });
+    await session.prompt(buildAgentPrompt(effectiveRequest, selectedSkills), { source: "api" });
+
+    if (runState.pendingQuestion && runState.skillRunIds.length === 0) {
+      const conversationId = `conversation_${crypto.randomUUID().replaceAll("-", "")}`;
+      const conversation: PendingConversation = {
+        id: conversationId,
+        request: effectiveRequest,
+        selectedSkillIds,
+        collectedArgs,
+        pendingQuestion: runState.pendingQuestion,
+        createdAt: Date.now(),
+      };
+      pendingConversations.set(conversationId, conversation);
+      return createNeedsInputResponse(id, agentId, conversation, runState.pendingQuestion);
+    }
 
     return {
       id,
@@ -599,6 +861,9 @@ const app = new Elysia()
         model: t.String({ minLength: 1 }),
         skills: t.Array(t.String()),
         selectedCards: t.Array(t.String()),
+        conversationId: t.Optional(t.String()),
+        answers: t.Optional(t.Record(t.String(), t.String())),
+        collectedArgs: t.Optional(t.Record(t.String(), t.String())),
         selectedCardSnapshots: t.Optional(
           t.Array(
             t.Object({

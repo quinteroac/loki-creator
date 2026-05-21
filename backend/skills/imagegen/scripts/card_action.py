@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from PIL import Image
+
 
 SKILL_ID = "imagegen"
 SOURCE_ACTION_ID = "codex-imagegen"
@@ -20,6 +22,12 @@ SUPPORTED_IMAGE_MIME_TYPES = {
     "image/jpg": ".jpg",
     "image/webp": ".webp",
     "image/gif": ".gif",
+}
+ASPECT_RATIO_VALUES = {
+    "1:1": 1 / 1,
+    "4:3": 4 / 3,
+    "16:9": 16 / 9,
+    "9:16": 9 / 16,
 }
 
 
@@ -174,6 +182,7 @@ def build_codex_prompt(payload: dict, run_dir: Path, output_dir: Path, selected_
         payload.get("prompt"),
     )
     title_hint = first_text(params.get("title"), params.get("name"), "Generated image")
+    aspect_ratio = normalize_aspect_ratio(params.get("aspectRatio"))
 
     selected_image_lines = "\n".join(f"- {path}" for path in selected_images) or "- none"
 
@@ -185,12 +194,18 @@ User request:
 Title hint:
 {title_hint}
 
+Aspect ratio:
+{aspect_ratio}
+
 Selected image inputs available as --image attachments:
 {selected_image_lines}
 
 Output requirements:
 - Use the imagegen skill's default built-in image generation/editing path unless the request explicitly requires a fallback.
 - If image attachments are present, treat them as visual input from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
+- The final generated image file itself must have aspect ratio {aspect_ratio}. This is a hard requirement.
+- If an attempt returns the wrong aspect ratio, regenerate with the requested aspect ratio before choosing the final image.
+- Do not crop, pad, stretch, or post-process an incorrectly shaped output to fake the requested aspect ratio.
 - Save exactly one final image file inside this directory: {output_dir}
 - Do not save the final image only under CODEX_HOME or another temporary location.
 - Do not modify repository source files.
@@ -200,6 +215,32 @@ Output requirements:
 Loki run directory:
 {run_dir}
 """
+
+
+def normalize_aspect_ratio(value: object) -> str:
+    aspect_ratio = first_text(value)
+    return aspect_ratio if aspect_ratio in ASPECT_RATIO_VALUES else "1:1"
+
+
+def validate_output_aspect_ratio(image_path: Path, aspect_ratio: str) -> None:
+    target_ratio = ASPECT_RATIO_VALUES.get(aspect_ratio)
+    if target_ratio is None:
+        return
+
+    with Image.open(image_path) as image:
+        width, height = image.size
+        if width <= 0 or height <= 0:
+            return
+
+        current_ratio = width / height
+        if abs(current_ratio - target_ratio) / target_ratio <= 0.025:
+            return
+
+    raise RuntimeError(
+        f"Codex returned an image with aspect ratio {width}:{height}, "
+        f"but Loki requested {aspect_ratio}. Regenerate with the requested aspect ratio; "
+        "do not crop, pad, or post-process an incorrect output."
+    )
 
 
 def resolve_codex_bin() -> str:
@@ -254,7 +295,7 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
         command.extend(["--image", str(image_path)])
     command.append(prompt)
 
-    timeout_seconds = int(os.environ.get("LOKI_IMAGEGEN_CODEX_TIMEOUT_SECONDS", "210"))
+    timeout_seconds = int(os.environ.get("LOKI_IMAGEGEN_CODEX_TIMEOUT_SECONDS", "900"))
     process = subprocess.run(
         command,
         text=True,
@@ -345,6 +386,9 @@ def main() -> None:
     selected_images = materialize_selected_images(payload, run_dir / "inputs")
     result = run_codex(payload, run_dir, selected_images)
     image_path, mime_type = validate_output_image(result, run_dir)
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    aspect_ratio = normalize_aspect_ratio(params.get("aspectRatio"))
+    validate_output_aspect_ratio(image_path, aspect_ratio)
     artifact_path = image_path.relative_to(artifacts_root()).as_posix()
     title = first_text(result.get("title"), "Generated image")
     final_prompt = first_text(result.get("prompt"), payload.get("prompt"))
@@ -362,7 +406,8 @@ def main() -> None:
             "description": final_prompt,
             "artifactUrl": f"/api/artifacts/{artifact_path}",
             "thumbnailUrl": f"/api/artifacts/{artifact_path}",
-            "preferredAspectRatio": "1:1",
+            "preferredAspectRatio": aspect_ratio,
+            "aspectRatio": aspect_ratio,
             "createdAt": datetime.now(timezone.utc).isoformat(),
             "tags": ["imagegen"],
             "capabilities": ["image-generation", "image-editing"],

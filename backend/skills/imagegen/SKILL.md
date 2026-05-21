@@ -4,10 +4,31 @@ description: "Generate or edit raster images when the task benefits from AI-crea
 metadata:
   loki:
     capabilities: [image-generation, image-editing, raster-card-output]
+    arguments:
+      - id: aspectRatio
+        label: Aspect ratio
+        description: Choose the image frame before generation or editing.
+        type: choice
+        required: true
+        askWhen: always
+        order: 10
+        options:
+          - value: "1:1"
+            label: Square
+            description: Balanced square image.
+          - value: "4:3"
+            label: Landscape 4:3
+            description: Classic horizontal frame.
+          - value: "16:9"
+            label: Widescreen
+            description: Wide cinematic frame.
+          - value: "9:16"
+            label: Portrait
+            description: Vertical mobile frame.
     cardAction:
       type: cli-local
       command: [uv, run, python, scripts/card_action.py]
-      timeoutSeconds: 240
+      timeoutSeconds: 900
 ---
 
 # Image Generation Skill

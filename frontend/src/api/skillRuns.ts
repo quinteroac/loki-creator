@@ -15,7 +15,7 @@ export async function listSkillRuns(options: { status?: SkillRun["status"] } = {
   return response.json();
 }
 
-export async function waitForSkillRun(runId: string, timeoutMs = 300000): Promise<SkillRun> {
+export async function waitForSkillRun(runId: string, timeoutMs = 900000): Promise<SkillRun> {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
