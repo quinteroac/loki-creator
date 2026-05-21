@@ -1,294 +1,167 @@
 # Loki Creator Architecture
 
-## Current Shape
+Loki Creator is a local canvas workspace where agents produce visual artifacts as cards. Skills are now the primary runtime unit. A skill is a standard Agent Skill folder with a required `SKILL.md`; any scripts, references, or assets inside that folder are implementation details of the skill.
 
-Loki Creator is split into a React frontend and a FastAPI backend.
+There is no legacy runtime compatibility layer. Public product concepts are skills, skill runs, selected card artifacts, and generated cards.
 
-- Frontend: React + Vite running with Bun in `frontend/`.
-- Backend: FastAPI running with uv in `backend/`.
-- Agent bridge: ElysiaJS + Pi SDK running with Bun in `agent-bridge/`.
-- The main user experience is a dark creative workspace with a dotted canvas and a bottom agent composer.
-- The frontend does not execute tools directly. It sends intent to the backend/agent layer and reconciles async tool job results.
+## Primary Flow
 
-The current backend stores jobs in memory. This is intentional for the first version and should be treated as a development runtime, not durable production storage.
+1. The frontend loads skills from `GET /api/skills`.
+2. The user writes a prompt, optionally selects skills, and optionally selects canvas cards.
+3. Selected cards are converted into multimodal snapshots containing HTML, detected media assets, metadata, and a rendered preview when available.
+4. The agent bridge loads Agent Skills through Pi resource discovery and exposes selected Loki skills as agent-callable skill actions.
+5. When the agent needs to create or transform visible output, it invokes a Loki skill action.
+6. The backend creates a skill run through `POST /api/skill-runs`.
+7. The skill action returns normalized cards.
+8. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
 
-## Frontend Responsibilities
+## Backend
 
-The frontend owns presentation and local workspace state:
+The backend owns the stable runtime contracts and execution boundary:
 
-- Load frontend-visible tools from `GET /api/tools`.
-- Load available agents from the agent bridge.
-- Let the user select tools and selected canvas cards in the composer.
-- Submit prompts as agent runs through the agent bridge.
-- Include snapshots of selected canvas cards in agent run requests so selected cards can be used as model input.
-- Poll completed tool jobs and merge returned cards into the canvas.
-- Show the latest textual agent response in a right-side response popover.
-- Render each generated card from HTML.
+- `backend/app/models/skills.py`: `SkillDefinition`, `SkillRunRequest`, `SkillRun`, and `SkillResult`.
+- `backend/app/models/instructions.py`: card contracts shared by skill results.
+- `backend/app/services/skill_registry.py`: reads skill folders from `backend/skills/`.
+- `backend/app/services/skill_invokers.py`: executes declared skill actions.
+- `backend/app/services/skill_runs.py`: in-memory async run state and action execution.
+- `backend/app/api/routes.py`: FastAPI endpoints for skills, skill runs, instructions, and artifacts.
 
-Important modules:
+The initial runtime supports one action type:
 
-- `frontend/src/App.jsx`: workspace orchestration and state composition.
-- `frontend/src/components/AgentComposer.jsx`: prompt composer, popovers, selected tools/cards controls.
-- `frontend/src/components/AgentResponsePanel.jsx`: right-side response popover for the latest agent run.
-- `frontend/src/components/CanvasStage.jsx`: canvas surface.
-- `frontend/src/components/CanvasCard.jsx`: card rendering using HTML-in-Canvas when available, iframe fallback otherwise.
-- `frontend/src/api/agentRuns.js`: agent bridge client.
-- `frontend/src/api/toolJobs.js`: async job client.
-- `frontend/src/api/tools.js`: tools registry client.
+- `cli-local`: runs a local command declared by the skill metadata and passes JSON on stdin.
 
-## Backend Responsibilities
+Skill action input includes:
 
-The backend owns contracts, tool registration, invocation, and async job state:
+- `skillId`
+- `prompt`
+- `context`
+- `selectedCards`
+- `selectedCardSnapshots`
+- `params`
 
-- Expose tool contracts.
-- Create and run async tool jobs.
-- Normalize tool output into HTML canvas cards.
-- Keep built-in tools separate from future user-created tools.
-- Keep user-created tool manifests in `backend/user_tools/`.
+Skill action output must be:
 
-Important modules:
+```json
+{
+  "cards": []
+}
+```
 
-- `backend/app/models/agents.py`: base agent and agent-skill contracts for future user-created agents.
-- `backend/app/models/tools.py`: tool, package, job, invocation, and result contracts.
-- `backend/app/models/instructions.py`: current instruction and generated-card contracts.
-- `backend/app/services/builtin_agents.py`: built-in agent definitions such as `Tool Builder`.
-- `backend/app/services/builtin_tools.py`: built-in tool contracts.
-- `backend/app/services/tool_registry.py`: hybrid registry for built-ins and user manifests.
-- `backend/app/services/tool_invokers.py`: invoker abstraction for built-in, HTTP, and CLI tools.
-- `backend/app/services/tool_jobs.py`: in-memory async job store and runner.
-- `backend/app/api/routes.py`: API endpoints.
+Every visible result must be represented as a card. Scripts may generate files or perform deterministic packaging, but the user-facing artifact enters the workspace through `GeneratedCard`.
 
-## Tool Execution Flow
+## Skills
 
-1. User or agent creates a tool job through `POST /api/tool-jobs`.
-2. Backend stores a `queued` job in memory.
-3. Backend runs the job in the background.
-4. `ToolRegistry` resolves the requested tool by id, slug, or name.
-5. `ToolInvokerFactory` chooses the invoker by `sourceType`.
-6. The tool returns `ToolResult`.
-7. `ToolResult.cards` contains HTML cards.
-8. Frontend polls `GET /api/tool-jobs?status=succeeded`.
-9. New job cards are merged into the canvas and the first generated card becomes selected.
+Skills live under `backend/skills/<skill-id>/` and must include `SKILL.md`.
 
-This polling/reconciliation behavior is not a temporary bridge. It is the current async contract between the backend/agent/tool runtime and the frontend workspace.
+The `SKILL.md` frontmatter contains standard Agent Skill metadata plus Loki metadata for executable card actions:
 
-## Card Rendering
+```yaml
+---
+name: imagegen
+description: Generate or edit raster images as Loki canvas cards.
+metadata:
+  loki:
+    capabilities: [image-generation, image-editing, raster-card-output]
+    cardAction:
+      type: cli-local
+      command: [uv, run, python, scripts/card_action.py]
+      timeoutSeconds: 240
+---
+```
 
-The backend returns card documents as the primary visual output. A `CardDocument` keeps HTML free-form and adds optional metadata around it. The legacy `GeneratedCard` name remains compatible. A card document has:
+Everything beyond `SKILL.md` is freeform according to the Agent Skills convention:
+
+- `scripts/` for deterministic actions.
+- `references/` for optional supporting material.
+- `assets/` for bundled resources.
+
+The first real skill is `backend/skills/imagegen/`. It vendors the standard Codex `imagegen` skill and adds a Loki card action that delegates generation/editing to `codex exec`, then packages the resulting image as a card.
+
+## Cards
+
+Cards remain Loki's visual contract.
+
+`GeneratedCard` fields:
 
 - `id`
 - `name`
 - `prompt`
 - `html`
-- `sourceToolId`
-- optional `metadata`
+- `sourceSkillId`
+- `sourceActionId`
+- `metadata`
 
-The frontend places card documents on the workspace as `CanvasNode` instances. A canvas node owns:
+The frontend stores card content separately from canvas layout. `CardDocument` owns artifact data; `CanvasNode` owns position and size. This keeps visual placement independent from skill output.
 
-- `id`
-- `cardDocumentId`
-- `frame` (`x`, `y`, `width`)
+## Selected Cards
 
-The first version keeps a one-to-one relationship between card documents and canvas nodes, but keeps the concepts separate so layout state is no longer mixed with tool output.
+Selected cards are treated as multimodal artifacts, not as trusted instructions. A selected card snapshot includes:
 
-`CanvasCard` attempts to render `CardDocument.html` into a real `<canvas>` using the experimental HTML-in-Canvas API:
+- full artifact HTML,
+- rendered preview when available,
+- detected media assets,
+- prompt and display labels,
+- metadata as secondary context.
 
-- `<canvas layoutsubtree>`
-- `drawElementImage(...)`
+The agent bridge summarizes selected cards in the prompt and forwards the complete snapshots to skill actions through both `selectedCardSnapshots` and `context.selectedCardSnapshots`.
 
-If the browser does not support this API, or when `metadata.playableMedia` indicates playable media, the same HTML is rendered inside an iframe fallback. This is expected in Firefox and most browsers without the Chromium flag enabled.
-
-## Tool Registry
-
-The registry is hybrid:
-
-- Built-in tools are Python contracts in `backend/app/services/builtin_tools.py`.
-- Built-in manifest tools can live in `backend/builtin_tools/<tool-id>/tool.json`.
-- User-created tools will be local JSON manifests in `backend/user_tools/*.json`.
-- User-created folder tools can live in `backend/user_tools/<tool-id>/tool.json`.
-- Both are exposed as `ToolDefinition`.
-
-Built-in tools may be:
-
-- `invocationVisibility: "frontend"`: visible/selectable in the UI.
-- `invocationVisibility: "internal"`: available to the agent/backend only.
-
-`GET /api/tools` returns only frontend-visible tools.  
-`GET /api/tools?include_internal=true` includes internal tools such as `Browser Tool`.
-
-Node/React tools use the existing `cli-local` runtime. They receive `ToolInvocationRequest` JSON on stdin and must write a `ToolResult` JSON object to stdout. React tools render to self-contained HTML, typically through server rendering, and place that HTML in `GeneratedCard.html`; they may add optional `GeneratedCard.metadata`. The frontend does not mount or hydrate tool-provided React components in this version.
-
-Folder-based tool manifests get a runtime `workingDirectory` derived from their containing folder. Built-in manifest tools are always normalized to `origin: "built-in"` and `exportable: false`; user manifest tools are normalized to `origin: "user"` and `exportable: true`.
-
-Tools must separate operational instructions from visible output. `ToolInvocationRequest.prompt` preserves the exact original user request for card metadata. `params.toolPrompt` is only a runtime instruction and must not be rendered into card HTML. Visible card content should come from explicit fields such as `params.outputText`, `params.title`, `params.subtitle`, `params.body`, `params.footer`, or structured provider output.
-
-HTML-producing tools share an authored-artifact path: when the model can produce the desired card directly, it should pass complete self-contained HTML through `params.html`, `params.cardHtml`, or `params.outputHtml`. Tools should package that authored HTML as the card artifact and keep tool-specific templates or text extraction as fallbacks. For selected-card edits, the model is expected to transform `context.selectedCardSnapshots[*].html` itself and send the transformed HTML, instead of relying on the tool to infer creative changes from the prompt.
-
-## Agent Contracts
-
-Agents are the base template for future user-created agents and built-in agents. The first contract-only version defines:
-
-- `AgentDefinition`: identity, display metadata, `defaultModel`, inherited `defaultSkills`, and `agentSkillId`.
-- `AgentSkillDefinition`: the agent-specific skill referenced by an agent.
-- `AgentSkillStep`: an ordered canvas workflow step with tool, input card, output card, and prompt references.
-
-`defaultModel` represents the agent's preferred model for future execution, but it is not used by the runtime yet. `defaultSkills` represents skills inherited by every agent, but starts empty in this first version. `agentSkillId` expresses the planned 1:1 relationship between an agent and its primary agent skill.
-
-Agent skills adopt the Agent Skills standard: a skill is a folder with a required `SKILL.md` file containing YAML frontmatter and Markdown instructions. Built-in agent skills live in `backend/builtin_agent_skills/`, for example `backend/builtin_agent_skills/tool-builder/SKILL.md`. Future user-created agent skills should live in an equivalent user-owned location such as `backend/user_agent_skills/`.
-
-`AgentDefinition.agentSkillId` points to the standard skill folder name, not to a JSON manifest. JSON remains reserved for user-created tool manifests.
-
-`Tool Builder` is a built-in agent defined in code and backed by the standard `tool-builder` Agent Skill folder. Its helper tools are built-in internal `ToolDefinition` entries:
-
-- `tool-requirements-analyzer`
-- `tool-contract-drafter`
-- `tool-preview-card-builder`
-
-Creation from canvas elements is intentionally reserved for a future implementation. There are no agent endpoints, registries, frontend flows, or `ToolJobService` integration in this version.
-
-The Base Agent inherits core built-in creative skills by default:
-
-- `hyperframes`
-- `hyperframes-cli`
-- `hyperframes-registry`
-- `gsap`
-- `css-animations`
-- `waapi`
-
-Additional Hyperframes-adjacent skills are installed as built-in skills but are not inherited by default: `hyperframes-media`, `three`, `lottie`, `animejs`, and `tailwind`.
+For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact to a skill action. Skill actions package and validate outputs; they do not replace the agent's creative reasoning.
 
 ## Agent Bridge
 
-The frontend calls an ElysiaJS bridge for agent runs instead of invoking Pi SDK in the browser. The bridge owns Pi SDK sessions, loads agent skills, exposes Loki tools as Pi custom tools, and delegates actual tool execution back to FastAPI through `POST /api/tool-jobs`.
+The Elysia bridge owns Pi sessions and model selection. It does not execute skill scripts directly. Instead, it:
 
-Bridge endpoints:
+- discovers backend skills from `GET /api/skills`,
+- symlinks `backend/skills/*` into `.agents/skills/*` for Pi skill discovery,
+- creates a Pi custom action for each selected Loki skill,
+- forwards action calls to `POST /api/skill-runs`,
+- waits for skill run completion,
+- returns `skillRunIds` and `cardIds` to the frontend.
 
-- `GET /api/health`
-- `GET /api/agents`
-- `POST /api/agent-runs`
+Agent run response:
 
-The bridge creates `.agents/skills/tool-builder` as a development symlink to `backend/builtin_agent_skills/tool-builder` when it starts. The backend skill folder remains the source of truth; `.agents/` is a runtime discovery path and is ignored by git.
+```json
+{
+  "id": "agent_run_...",
+  "agentId": "base-agent",
+  "status": "succeeded",
+  "responseText": "...",
+  "skillRunIds": ["skill_run_..."],
+  "cardIds": ["card_..."]
+}
+```
 
-Agent run responses return text and references:
+## Frontend
 
-- `responseText`: shown in the right-side response popover.
-- `toolJobIds`: jobs created by Pi custom tool calls.
-- `cardIds`: cards created by those jobs.
+The frontend is responsible for workspace state and reconciliation:
 
-Agent run requests keep `selectedCards` as the selected card id list and also send
-`selectedCardSnapshots` from frontend state. Each snapshot treats a selected card as a multimodal artifact: it includes
-the card id, display title, prompt, metadata, full HTML, detected media assets, and a rendered preview PNG when the
-frontend can capture one from the card preview canvas. The preview represents the artifact area only; canvas chrome such
-as selection borders, resize handles, editable titles, and subtitles is excluded. Inline previews and data assets are
-bounded by request-size limits; oversized payloads are marked as omitted with a reason while preserving source
-references when available. The bridge injects only a textual summary of selected cards into the agent prompt and forwards
-the complete snapshots to tool jobs as `context.selectedCardSnapshots`.
+- `frontend/src/api/skills.ts`: skill registry client.
+- `frontend/src/api/skillRuns.ts`: async skill run polling.
+- `frontend/src/api/agentRuns.ts`: bridge client.
+- `frontend/src/lib/cardDocuments.ts`: card naming, snapshots, preview capture, and normalization.
+- `frontend/src/components/AgentComposer.tsx`: prompt composer, skill selector, model selector, and selected cards selector.
+- `frontend/src/components/CanvasCard.tsx`: card rendering, selection, resize, and inline renaming.
 
-Cards continue to flow through the existing tool-job polling contract.
+The composer's `Auto` option means all currently available skills. It is not a real skill.
 
-## Browser Extension
-
-`browser-tool` is an internal agent capability backed by a user-installed browser extension, not by Selenium/WebDriver. The extension connects outbound to the agent bridge over WebSocket, so the hosted bridge does not need direct network access to the user's machine.
-
-The extension has separate Chrome and Firefox builds generated from shared source in `browser-extension/`. It operates on the user's real browser tabs and existing sessions. Initial actions are intentionally small:
-
-- `open_url`
-- `get_active_tab`
-- `extract_state`
-- `click`
-- `type`
-- `press`
-- `screenshot`
-- `extract_images`
-
-The agent bridge exposes `browser-tool` to Pi only when an extension is connected. Direct browser results are returned to the agent as tool details and text observations. Extracted image data URLs can be passed through the existing `image` tool to produce normal Loki canvas cards.
-
-## ComfyUI Runtime Preparation
-
-Loki prepares for local/cloud generation tools through `comfy-diffusion`, a Python package that exposes ComfyUI runtime capabilities without running the ComfyUI web server. The dependency lives in the FastAPI backend because backend tool jobs own generation, tool invocation, and card normalization.
-
-The integration is intentionally diagnostic-only for now:
-
-- `ComfyDiffusionService` is the backend boundary for lazy `comfy-diffusion` imports, runtime checks, and model directory resolution.
-- `LOKI_COMFY_MODELS_DIR` can override the model directory; the default is a local `.loki/comfy-models` path ignored by git.
-- `comfy-runtime-check` is an internal built-in tool that reports runtime readiness as a normal Loki card.
-- No image, video, audio, or model-download Comfy tools are implemented yet.
-
-Future Comfy tools should keep the existing async flow: `POST /api/tool-jobs`, registry resolution, invoker execution, `ComfyDiffusionService`, and `ToolResult.cards`. Pipeline outputs from `comfy-diffusion` should be converted to `GeneratedCard` HTML, with the exact user prompt preserved in the card description.
-
-## Hyperframes Runtime Preparation
-
-Loki integrates Hyperframes for HTML-authored video composition and rendering. Hyperframes runs as local CLI-backed built-in tools, not as an embedded Studio/editor surface. All projects and rendered artifacts live under `.loki/hyperframes/`.
-
-Hyperframes tools follow the existing async tool-job contract and return diagnostic, preview, or artifact cards:
-
-- `hyperframes-runtime-check`
-- `hyperframes-project-create`
-- `hyperframes-composition-write`
-- `hyperframes-registry-add`
-- `hyperframes-lint`
-- `hyperframes-inspect`
-- `hyperframes-snapshot`
-- `hyperframes-render`
-- `hyperframes-tts`
-- `hyperframes-transcribe`
-- `hyperframes-remove-background`
-
-The first integration intentionally excludes Hyperframes Studio/preview as an editing tool, publish, AWS Lambda rendering, and the full website-to-video pipeline. Those require additional UX and orchestration decisions beyond the current tool contract.
-
-## Export And Import Preparation
-
-The contract includes `ToolPackage` for future export/import:
-
-- `manifestVersion`
-- `tool`
-- `assets`
-- `secretsRequired`
-- `integrity`
-
-Secrets must never be exported as values. Packages may reference required secret names, such as `OPENAI_API_KEY` or `RUNPOD_TOKEN`.
-
-Current behavior:
-
-- Built-in tools are not exportable.
-- User-created tools will be exportable once import/install is implemented.
-- `POST /api/tools/import` exists as a placeholder and returns `501`.
-
-## API Surface
-
-Current backend endpoints:
+## Current Endpoints
 
 - `GET /api/health`
-- `GET /api/tools`
-- `GET /api/tools?include_internal=true`
-- `GET /api/tools/{tool_id}/export`
-- `POST /api/tools/import`
-- `POST /api/tool-jobs`
-- `GET /api/tool-jobs`
-- `GET /api/tool-jobs?status=succeeded`
-- `GET /api/tool-jobs/{job_id}`
-- `POST /api/instructions`
+- `GET /api/skills`
+- `POST /api/skill-runs`
+- `GET /api/skill-runs`
+- `GET /api/skill-runs?status=succeeded`
+- `GET /api/skill-runs/{run_id}`
+- `GET /api/artifacts/{artifact_path}`
+- `GET /api/agents` on the bridge
+- `GET /api/models` on the bridge
+- `POST /api/agent-runs` on the bridge
 
-Current agent bridge endpoints:
+## Design Principles
 
-- `GET /api/health`
-- `GET /api/agents`
-- `POST /api/agent-runs`
-- `GET /api/browser-extension/status`
-- `POST /api/browser-extension/actions`
-- `WS /api/browser-extension/connect`
-
-`POST /api/instructions` is legacy-compatible and currently returns one generated card. The preferred architecture for agent/tool execution is the async tool-job flow.
-
-## Architectural Decisions
-
-- Use async jobs for tool execution, even while jobs are in memory.
-- Keep the frontend passive with respect to tool execution; it requests work and reconciles results.
-- Use HTML as the primary card output format.
-- Support HTML-in-Canvas progressively with iframe fallback.
-- Separate tool contracts from tool implementations.
-- Define agent contracts before implementing user-created agent persistence, canvas creation, or execution.
-- Store agent skills as Agent Skills standard folders with `SKILL.md`, not as JSON manifests.
-- Keep Pi SDK on the server-side agent bridge; do not expose Pi credentials or SDK runtime in React.
-- Prepare for user tool export/import with manifests and package contracts before adding UI.
-- Keep SOLID boundaries: schemas, registry, invokers, services, routes, and UI components remain separate.
+- Skills are product-visible; scripts and actions are private implementation details.
+- Cards are the only visible output contract.
+- The model remains the creative agent; skills provide instructions and reliable packaging surfaces.
+- Selected cards are artifact inputs, not system instructions.
+- Keep runtime modules focused: registry discovers, invoker executes, run service tracks state, routes expose contracts.
+- No marketplace, export/import, permissions UI, versioning, or multiple runtimes are implemented in this first cut.

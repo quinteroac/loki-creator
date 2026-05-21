@@ -1,4 +1,4 @@
-import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Wrench } from "lucide-react";
+import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
@@ -7,7 +7,7 @@ import type { AgentModel, GeneratedCard } from "../types";
 type AgentComposerProps = {
   availableModels: AgentModel[];
   canvasNodes: GeneratedCard[];
-  filteredTools: string[];
+  filteredSkills: string[];
   instruction: string;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void;
   onCreateAgent: () => void;
@@ -16,26 +16,26 @@ type AgentComposerProps = {
   onSelectModel: (model: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
-  onToggleTool: (tool: string) => void;
+  onToggleSkill: (skill: string) => void;
   openMenu: string | null;
   selectedCards: string[];
   selectedCardCount: number;
   selectedCardLabel: string;
   selectedModel: string;
-  selectedToolCount: number;
-  selectedTools: string[];
+  selectedSkillCount: number;
+  selectedSkills: string[];
   setOpenMenu: (openMenu: string | null) => void;
-  setToolSearch: (toolSearch: string) => void;
+  setSkillSearch: (skillSearch: string) => void;
   status: string;
-  toolButtonLabel: string;
-  toolSearch: string;
+  skillButtonLabel: string;
+  skillSearch: string;
   fileInputRef: RefObject<HTMLInputElement | null>;
 };
 
 export function AgentComposer({
   availableModels,
   canvasNodes,
-  filteredTools,
+  filteredSkills,
   instruction,
   onAttachFiles,
   onCreateAgent,
@@ -44,19 +44,19 @@ export function AgentComposer({
   onSelectModel,
   onSubmit,
   onToggleCard,
-  onToggleTool,
+  onToggleSkill,
   openMenu,
   selectedCards,
   selectedCardCount,
   selectedCardLabel,
   selectedModel,
-  selectedToolCount,
-  selectedTools,
+  selectedSkillCount,
+  selectedSkills,
   setOpenMenu,
-  setToolSearch,
+  setSkillSearch,
   status,
-  toolButtonLabel,
-  toolSearch,
+  skillButtonLabel,
+  skillSearch,
   fileInputRef,
 }: AgentComposerProps) {
   const [modelSearch, setModelSearch] = useState("");
@@ -86,37 +86,37 @@ export function AgentComposer({
         </div>
       )}
 
-      {openMenu === "tool-picker" && (
-        <div className="popover tools-popover" data-popover aria-label="Select tools">
-          <label className="tool-search">
+      {openMenu === "skill-picker" && (
+        <div className="popover picker-popover" data-popover aria-label="Select skills">
+          <label className="picker-search">
             <Search size={14} strokeWidth={2} />
             <input
               type="search"
-              value={toolSearch}
-              onChange={(event) => setToolSearch(event.target.value)}
-              placeholder="Search tools"
-              aria-label="Search tools"
+              value={skillSearch}
+              onChange={(event) => setSkillSearch(event.target.value)}
+              placeholder="Search skills"
+              aria-label="Search skills"
               autoFocus
             />
           </label>
-          <div className="tool-list">
-            {filteredTools.map((tool) => {
-              const isSelected = selectedTools.includes(tool);
+          <div className="picker-list">
+            {filteredSkills.map((skill) => {
+              const isSelected = selectedSkills.includes(skill);
 
               return (
                 <button
-                  className={`tool-option ${isSelected ? "selected" : ""}`}
-                  key={tool}
+                  className={`picker-option ${isSelected ? "selected" : ""}`}
+                  key={skill}
                   type="button"
-                  onClick={() => onToggleTool(tool)}
+                  onClick={() => onToggleSkill(skill)}
                 >
-                  <span>{tool}</span>
+                  <span>{skill}</span>
                   {isSelected && <Check size={14} strokeWidth={2} />}
                 </button>
               );
             })}
-            {filteredTools.length === 0 && (
-              <p className="tool-empty">{toolSearch.trim() ? "No matching tools" : "No tools available"}</p>
+            {filteredSkills.length === 0 && (
+              <p className="picker-empty">{skillSearch.trim() ? "No matching skills" : "No skills available"}</p>
             )}
           </div>
         </div>
@@ -124,7 +124,7 @@ export function AgentComposer({
 
       {openMenu === "model-picker" && (
         <div className="popover model-popover" data-popover aria-label="Select model">
-          <label className="tool-search">
+          <label className="picker-search">
             <Search size={14} strokeWidth={2} />
             <input
               type="search"
@@ -135,13 +135,13 @@ export function AgentComposer({
               autoFocus
             />
           </label>
-          <div className="tool-list">
+          <div className="picker-list">
             {filteredModels.map((model) => {
               const isSelected = selectedModel === model.label;
 
               return (
                 <button
-                  className={`tool-option ${isSelected ? "selected" : ""}`}
+                  className={`picker-option ${isSelected ? "selected" : ""}`}
                   key={`${model.provider}:${model.id}`}
                   type="button"
                   onClick={() => onSelectModel(model.label)}
@@ -152,7 +152,7 @@ export function AgentComposer({
               );
             })}
             {filteredModels.length === 0 && (
-              <p className="tool-empty">{modelSearch.trim() ? "No matching models" : "No models available"}</p>
+              <p className="picker-empty">{modelSearch.trim() ? "No matching models" : "No models available"}</p>
             )}
           </div>
         </div>
@@ -160,7 +160,7 @@ export function AgentComposer({
 
       {openMenu === "selected-cards" && (
         <div className="popover cards-popover" data-popover aria-label="Selected cards">
-          <div className="tool-list">
+          <div className="picker-list">
             {canvasNodes.map((node) => {
               const isSelected = selectedCards.includes(node.id);
               const title = getCardDisplayTitle(node);
@@ -168,7 +168,7 @@ export function AgentComposer({
 
               return (
                 <button
-                  className={`tool-option card-option ${isSelected ? "selected" : ""}`}
+                  className={`picker-option card-option ${isSelected ? "selected" : ""}`}
                   key={node.id}
                   type="button"
                   onClick={() => onToggleCard(node.id)}
@@ -181,7 +181,7 @@ export function AgentComposer({
                 </button>
               );
             })}
-            {canvasNodes.length === 0 && <p className="tool-empty">No cards in canvas</p>}
+            {canvasNodes.length === 0 && <p className="picker-empty">No cards in canvas</p>}
           </div>
         </div>
       )}
@@ -224,12 +224,12 @@ export function AgentComposer({
               className="chat-chip"
               type="button"
               data-popover-trigger
-              aria-expanded={openMenu === "tool-picker"}
-              onClick={() => setOpenMenu(openMenu === "tool-picker" ? null : "tool-picker")}
+              aria-expanded={openMenu === "skill-picker"}
+              onClick={() => setOpenMenu(openMenu === "skill-picker" ? null : "skill-picker")}
             >
-              <Wrench size={14} strokeWidth={2} />
-              <span>{toolButtonLabel}</span>
-              {selectedToolCount > 1 && <small>{selectedToolCount}</small>}
+              <Sparkles size={14} strokeWidth={2} />
+              <span>{skillButtonLabel}</span>
+              {selectedSkillCount > 1 && <small>{selectedSkillCount}</small>}
             </button>
             <button
               className="chat-chip"

@@ -17,16 +17,16 @@ export function AgentResponsePanel({ isOpen, onToggle, response }: AgentResponse
       {isOpen && (
         <div className="agent-response-popover" data-popover role="dialog" aria-label="Latest agent response">
           <div className="agent-response-header">
-            <span>{response.agentId === "tool-builder" ? "Tool Builder" : "Base Agent"}</span>
+            <span>Base Agent</span>
             <small>{response.status}</small>
           </div>
           <p>{response.responseText}</p>
-          {(response.toolJobIds.length > 0 || response.cardIds.length > 0) && (
+          {(response.skillRunIds.length > 0 || response.cardIds.length > 0) && (
             <dl>
-              {response.toolJobIds.length > 0 && (
+              {response.skillRunIds.length > 0 && (
                 <>
-                  <dt>Jobs</dt>
-                  <dd>{response.toolJobIds.join(", ")}</dd>
+                  <dt>Skill runs</dt>
+                  <dd>{response.skillRunIds.join(", ")}</dd>
                 </>
               )}
               {response.cardIds.length > 0 && (

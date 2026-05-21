@@ -625,7 +625,7 @@ textarea::placeholder {
   box-shadow: rgba(0, 0, 0, 0.08) 0 4px 6px 0;
 }
 
-.tools-popover {
+.picker-popover {
   left: 140px;
   width: min(312px, calc(100vw - 48px));
 }
@@ -664,7 +664,7 @@ textarea::placeholder {
   outline: 0;
 }
 
-.tool-search {
+.picker-search {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
@@ -677,7 +677,7 @@ textarea::placeholder {
   border-radius: 9999px;
 }
 
-.tool-search input {
+.picker-search input {
   width: 100%;
   min-width: 0;
   color: var(--dark-text);
@@ -689,11 +689,11 @@ textarea::placeholder {
   line-height: 1.5;
 }
 
-.tool-search input::placeholder {
+.picker-search input::placeholder {
   color: var(--dark-text-soft);
 }
 
-.tool-list {
+.picker-list {
   display: grid;
   gap: 4px;
   max-height: 272px;
@@ -701,54 +701,54 @@ textarea::placeholder {
   padding-top: 2px;
 }
 
-.tool-option {
+.picker-option {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
   gap: 12px;
 }
 
-.tool-option > span {
+.picker-option > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tool-option.card-option > span {
+.picker-option.card-option > span {
   display: grid;
   gap: 2px;
   white-space: normal;
 }
 
-.tool-option.card-option strong,
-.tool-option.card-option small {
+.picker-option.card-option strong,
+.picker-option.card-option small {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tool-option.card-option strong {
+.picker-option.card-option strong {
   color: var(--dark-text);
   font-size: 14px;
   font-weight: 600;
   line-height: 1.35;
 }
 
-.tool-option.card-option small {
+.picker-option.card-option small {
   color: var(--dark-text-soft);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.45;
 }
 
-.tool-option.selected {
+.picker-option.selected {
   color: var(--dark-text);
   background: var(--panel-soft);
 }
 
-.tool-empty {
+.picker-empty {
   margin: 0;
   padding: 10px 12px;
   color: var(--dark-text-soft);

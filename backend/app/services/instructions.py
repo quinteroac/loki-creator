@@ -13,7 +13,7 @@ class InstructionService:
         instruction_id = f"instruction_{int(now.timestamp() * 1000)}"
         generated_card = self._card_factory.create(
             prompt=payload.instruction,
-            source_tool_id=payload.tool,
+            source_skill_id=payload.skill,
         )
 
         return InstructionResponse(

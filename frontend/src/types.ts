@@ -20,7 +20,8 @@ export type CardDocument = {
   name: string;
   prompt: string;
   html: string;
-  sourceToolId?: string | null;
+  sourceSkillId?: string | null;
+  sourceActionId?: string | null;
   metadata?: CardMetadata;
 };
 
@@ -63,7 +64,8 @@ export type SelectedCardSnapshot = {
   html: string;
   preview?: SelectedCardPreview;
   mediaAssets: SelectedCardMediaAsset[];
-  sourceToolId?: string | null;
+  sourceSkillId?: string | null;
+  sourceActionId?: string | null;
   metadata?: CardMetadata;
 };
 
@@ -79,55 +81,26 @@ export type CanvasNode = {
   frame: CanvasNodeFrame;
 };
 
-export type ToolDefinition = {
+export type SkillDefinition = {
   id: string;
-  slug: string;
   name: string;
   description: string;
-  version: string;
-  author: string;
   origin: "built-in" | "user";
-  sourceType: "builtin" | "http" | "cli-local" | "cli-remote";
-  invocationVisibility: "frontend" | "internal";
+  path: string;
   capabilities: string[];
-  inputSchema: Record<string, unknown>;
-  outputSchema: Record<string, unknown>;
-  exportable: boolean;
-  createdBy?: string | null;
-  createdAt?: string | null;
-  updatedAt?: string | null;
-  runtime: {
-    sourceType: "builtin" | "http" | "cli-local" | "cli-remote";
-    entrypoint?: string | null;
+  cardAction?: {
+    type: "cli-local";
     command: string[];
-    method: string;
     timeoutSeconds: number;
-    workingDirectory?: string | null;
-  };
-  permissions: {
-    network: boolean;
-    filesystem: boolean;
-    envVars: string[];
-    allowedCommands: string[];
-  };
-  configuration: Array<{
-    key: string;
-    label: string;
-    type: "string" | "number" | "boolean" | "select" | "secret";
-    description?: string | null;
-    required: boolean;
-    default: unknown;
-    options: string[];
-    secret: boolean;
-  }>;
+  } | null;
 };
 
-export type ToolJobStatus = "queued" | "running" | "succeeded" | "failed";
+export type SkillRunStatus = "queued" | "running" | "succeeded" | "failed";
 
-export type ToolJob = {
+export type SkillRun = {
   id: string;
-  toolId: string;
-  status: ToolJobStatus;
+  skillId: string;
+  status: SkillRunStatus;
   createdAt: string;
   updatedAt: string;
   result?: {
@@ -136,11 +109,12 @@ export type ToolJob = {
   error?: string | null;
 };
 
-export type ToolJobRequest = {
-  toolId: string;
+export type SkillRunRequest = {
+  skillId: string;
   prompt: string;
   context: Record<string, unknown>;
   selectedCards: string[];
+  selectedCardSnapshots: SelectedCardSnapshot[];
   params: Record<string, unknown>;
 };
 
@@ -162,7 +136,7 @@ export type AgentRunRequest = {
   prompt: string;
   agentId: string | null;
   model: string;
-  tools: string[];
+  skills: string[];
   selectedCards: string[];
   selectedCardSnapshots: SelectedCardSnapshot[];
   context: Record<string, unknown>;
@@ -173,7 +147,7 @@ export type AgentRunResponse = {
   agentId: string;
   status: "succeeded" | "failed";
   responseText: string;
-  toolJobIds: string[];
+  skillRunIds: string[];
   cardIds: string[];
   error?: string;
 };

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createAgentRun, listAgentModels } from "./api/agentRuns";
-import { listToolJobs, waitForToolJob } from "./api/toolJobs";
-import { listTools } from "./api/tools";
+import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
+import { listSkills } from "./api/skills";
 import { AgentComposer } from "./components/AgentComposer";
 import { AgentResponsePanel } from "./components/AgentResponsePanel";
 import { CanvasStage } from "./components/CanvasStage";
@@ -24,7 +24,7 @@ import {
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
-import type { AgentModel, AgentRunResponse, CanvasNodeFrame, CardDocument, SelectedCardPreview, ToolJob } from "./types";
+import type { AgentModel, AgentRunResponse, CanvasNodeFrame, CardDocument, SelectedCardPreview, SkillRun } from "./types";
 
 const fallbackModels: AgentModel[] = [
   {
@@ -39,19 +39,19 @@ export function App() {
   const [instruction, setInstruction] = useState("");
   const [cardDocuments, setCardDocuments] = useState(initialCardDocuments);
   const [canvasNodes, setCanvasNodes] = useState(initialCanvasNodes);
-  const [availableTools, setAvailableTools] = useState<string[]>([]);
-  const [visibleToolIds, setVisibleToolIds] = useState<Set<string>>(new Set());
-  const [selectedTools, setSelectedTools] = useState(["Auto"]);
+  const [availableSkills, setAvailableSkills] = useState<string[]>([]);
+  const [visibleSkillIds, setVisibleSkillIds] = useState<Set<string>>(new Set());
+  const [selectedSkills, setSelectedSkills] = useState(["Auto"]);
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [isAgentResponseOpen, setIsAgentResponseOpen] = useState(false);
-  const [toolSearch, setToolSearch] = useState("");
+  const [skillSearch, setSkillSearch] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const processedJobIdsRef = useRef<Set<string>>(new Set());
+  const processedRunIdsRef = useRef<Set<string>>(new Set());
   const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
@@ -62,22 +62,22 @@ export function App() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadTools() {
+    async function loadSkills() {
       try {
-        const tools = await listTools();
+        const skills = await listSkills();
         if (isMounted) {
-          setAvailableTools(tools.map((tool) => tool.name));
-          setVisibleToolIds(new Set(tools.map((tool) => tool.id)));
+          setAvailableSkills(skills.map((skill) => skill.name));
+          setVisibleSkillIds(new Set(skills.map((skill) => skill.id)));
         }
       } catch {
         if (isMounted) {
-          setAvailableTools([]);
-          setVisibleToolIds(new Set());
+          setAvailableSkills([]);
+          setVisibleSkillIds(new Set());
         }
       }
     }
 
-    loadTools();
+    loadSkills();
 
     return () => {
       isMounted = false;
@@ -111,17 +111,17 @@ export function App() {
     };
   }, []);
 
-  const addCardsFromJob = useCallback((job: ToolJob) => {
-    if (processedJobIdsRef.current.has(job.id)) return;
+  const addCardsFromRun = useCallback((run: SkillRun) => {
+    if (processedRunIdsRef.current.has(run.id)) return;
 
-    if (job.status !== "succeeded") return;
+    if (run.status !== "succeeded") return;
 
-    processedJobIdsRef.current.add(job.id);
-    if (!visibleToolIds.has(job.toolId)) return;
+    processedRunIdsRef.current.add(run.id);
+    if (!visibleSkillIds.has(run.skillId)) return;
 
-    const generatedCards = (job.result?.cards ?? []).filter((card) => {
-      if (!card.sourceToolId) return true;
-      return visibleToolIds.has(card.sourceToolId);
+    const generatedCards = (run.result?.cards ?? []).filter((card) => {
+      if (!card.sourceSkillId) return true;
+      return visibleSkillIds.has(card.sourceSkillId);
     }).map(normalizeCardDocument);
     if (generatedCards.length === 0) return;
 
@@ -152,38 +152,38 @@ export function App() {
       return newNodes.length > 0 ? [...currentNodes, ...newNodes] : currentNodes;
     });
 
-  }, [visibleToolIds]);
+  }, [visibleSkillIds]);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function syncCompletedToolJobs() {
+    async function syncCompletedSkillRuns() {
       try {
-        const jobs = await listToolJobs({ status: "succeeded" });
+        const runs = await listSkillRuns({ status: "succeeded" });
         if (!isMounted) return;
 
-        jobs.forEach(addCardsFromJob);
+        runs.forEach(addCardsFromRun);
       } catch {
-        // Job sync is best-effort; the next interval will reconcile completed jobs.
+        // Run sync is best-effort; the next interval will reconcile completed runs.
       }
     }
 
-    syncCompletedToolJobs();
-    const intervalId = window.setInterval(syncCompletedToolJobs, 1200);
+    syncCompletedSkillRuns();
+    const intervalId = window.setInterval(syncCompletedSkillRuns, 1200);
 
     return () => {
       isMounted = false;
       window.clearInterval(intervalId);
     };
-  }, [addCardsFromJob]);
+  }, [addCardsFromRun]);
 
   const documentsById = useMemo(
     () => Object.fromEntries(cardDocuments.map((document) => [document.id, document])),
     [cardDocuments],
   );
   const selectedDocument = cardDocuments.find((document) => document.id === selectedCards[0]);
-  const filteredTools = filterBySearch(availableTools, toolSearch);
-  const toolButtonLabel = selectedTools[0] ?? "Auto";
+  const filteredSkills = filterBySearch(availableSkills, skillSearch);
+  const skillButtonLabel = selectedSkills[0] ?? "Auto";
   const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
 
   async function submitInstruction(event: FormEvent<HTMLFormElement>) {
@@ -206,11 +206,11 @@ export function App() {
         agentId: "base-agent",
         prompt: text,
         model: selectedModel,
-        tools: selectedTools,
+        skills: selectedSkills,
         selectedCards,
         selectedCardSnapshots,
         context: {
-          tools: selectedTools,
+          skills: selectedSkills,
           model: selectedModel,
           agentId: "base-agent",
           selectedElement: selectedDocument ? getCardDisplayTitle(selectedDocument) : null,
@@ -225,9 +225,9 @@ export function App() {
         return;
       }
 
-      for (const jobId of agentRun.toolJobIds) {
-        const completedJob = await waitForToolJob(jobId);
-        addCardsFromJob(completedJob);
+      for (const runId of agentRun.skillRunIds) {
+        const completedRun = await waitForSkillRun(runId);
+        addCardsFromRun(completedRun);
       }
 
       setInstruction("");
@@ -256,8 +256,8 @@ export function App() {
     setOpenMenu(null);
   }
 
-  function toggleTool(tool: string) {
-    setSelectedTools((currentTools) => toggleExclusiveAutoSelection(currentTools, tool));
+  function toggleSkill(skill: string) {
+    setSelectedSkills((currentSkills) => toggleExclusiveAutoSelection(currentSkills, skill));
   }
 
   function toggleCard(cardId: string) {
@@ -322,7 +322,7 @@ export function App() {
         canvasNodes={cardDocuments}
         availableModels={availableModels}
         fileInputRef={fileInputRef}
-        filteredTools={filteredTools}
+        filteredSkills={filteredSkills}
         instruction={instruction}
         onAttachFiles={handleFiles}
         onCreateAgent={handleCreateAgent}
@@ -331,19 +331,19 @@ export function App() {
         onSelectModel={selectModel}
         onSubmit={submitInstruction}
         onToggleCard={toggleCard}
-        onToggleTool={toggleTool}
+        onToggleSkill={toggleSkill}
         openMenu={openMenu}
         selectedCards={selectedCards}
         selectedCardCount={selectedCards.length}
         selectedCardLabel={selectedCardLabel}
         selectedModel={selectedModel}
-        selectedToolCount={selectedTools.length}
-        selectedTools={selectedTools}
+        selectedSkillCount={selectedSkills.length}
+        selectedSkills={selectedSkills}
         setOpenMenu={setOpenMenu}
-        setToolSearch={setToolSearch}
+        setSkillSearch={setSkillSearch}
         status={status}
-        toolButtonLabel={toolButtonLabel}
-        toolSearch={toolSearch}
+        skillButtonLabel={skillButtonLabel}
+        skillSearch={skillSearch}
       />
     </main>
   );

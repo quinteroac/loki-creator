@@ -262,7 +262,8 @@ export async function createSelectedCardSnapshots(
       html: document.html,
       preview,
       mediaAssets: extractSelectedCardMediaAssets(document.html),
-      sourceToolId: document.sourceToolId,
+      sourceSkillId: document.sourceSkillId,
+      sourceActionId: document.sourceActionId,
       metadata: document.metadata,
     });
   }

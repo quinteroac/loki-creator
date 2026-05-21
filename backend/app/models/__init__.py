@@ -1,15 +1,6 @@
 from app.models.agents import AgentDefinition, AgentSkillDefinition, AgentSkillStep
 from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
-from app.models.tools import (
-    ToolDefinition,
-    ToolConfigurationField,
-    ToolInvocationRequest,
-    ToolJob,
-    ToolPackage,
-    ToolPermissions,
-    ToolResult,
-    ToolRuntime,
-)
+from app.models.skills import SkillCardAction, SkillDefinition, SkillResult, SkillRun, SkillRunRequest
 
 __all__ = [
     "AgentDefinition",
@@ -19,12 +10,9 @@ __all__ = [
     "GeneratedCard",
     "InstructionRequest",
     "InstructionResponse",
-    "ToolDefinition",
-    "ToolConfigurationField",
-    "ToolInvocationRequest",
-    "ToolJob",
-    "ToolPackage",
-    "ToolPermissions",
-    "ToolResult",
-    "ToolRuntime",
+    "SkillCardAction",
+    "SkillDefinition",
+    "SkillResult",
+    "SkillRun",
+    "SkillRunRequest",
 ]

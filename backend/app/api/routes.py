@@ -7,16 +7,15 @@ from fastapi.responses import FileResponse
 from app.models import (
     InstructionRequest,
     InstructionResponse,
-    ToolDefinition,
-    ToolInvocationRequest,
-    ToolJob,
-    ToolPackage,
+    SkillDefinition,
+    SkillRun,
+    SkillRunRequest,
 )
-from app.services import InstructionService, ToolJobService, ToolRegistry
+from app.services import InstructionService, SkillRegistry, SkillRunService
 
 router = APIRouter(prefix="/api")
-tool_registry = ToolRegistry()
-tool_job_service = ToolJobService(registry=tool_registry)
+skill_registry = SkillRegistry()
+skill_run_service = SkillRunService(registry=skill_registry)
 repo_root = Path(__file__).resolve().parents[3]
 artifacts_root = Path(os.environ.get("LOKI_ARTIFACTS_ROOT", repo_root / ".loki")).resolve()
 
@@ -25,12 +24,12 @@ def get_instruction_service() -> InstructionService:
     return InstructionService()
 
 
-def get_tool_registry() -> ToolRegistry:
-    return tool_registry
+def get_skill_registry() -> SkillRegistry:
+    return skill_registry
 
 
-def get_tool_job_service() -> ToolJobService:
-    return tool_job_service
+def get_skill_run_service() -> SkillRunService:
+    return skill_run_service
 
 
 @router.get("/health")
@@ -46,79 +45,43 @@ def create_instruction(
     return service.create(payload)
 
 
-@router.get("/tools", response_model=list[ToolDefinition])
-def list_tools(
-    include_internal: bool = False,
-    registry: ToolRegistry = Depends(get_tool_registry),
-) -> list[ToolDefinition]:
-    tools = registry.list_tools()
-
-    if include_internal:
-        return tools
-
-    return [tool for tool in tools if tool.invocation_visibility == "frontend"]
+@router.get("/skills", response_model=list[SkillDefinition])
+def list_skills(
+    registry: SkillRegistry = Depends(get_skill_registry),
+) -> list[SkillDefinition]:
+    return registry.list_skills()
 
 
-@router.get("/tools/{tool_id}/export", response_model=ToolPackage)
-def export_tool(
-    tool_id: str,
-    registry: ToolRegistry = Depends(get_tool_registry),
-) -> ToolPackage:
-    tool = registry.get_tool(tool_id)
-
-    if tool is None:
-        raise HTTPException(status_code=404, detail="Tool not found")
-    if not tool.exportable:
-        raise HTTPException(status_code=400, detail="Built-in tools are not exportable")
-
-    return ToolPackage(
-        manifest_version="1",
-        tool=tool,
-        assets=[],
-        secrets_required=tool.permissions.env_vars,
-        integrity={},
-    )
-
-
-@router.post("/tools/import", status_code=501)
-def import_tool(package: ToolPackage) -> dict[str, str]:
-    return {
-        "status": "not_implemented",
-        "message": "Tool import is reserved for a future version.",
-    }
-
-
-@router.post("/tool-jobs", response_model=ToolJob)
-def create_tool_job(
-    payload: ToolInvocationRequest,
+@router.post("/skill-runs", response_model=SkillRun)
+def create_skill_run(
+    payload: SkillRunRequest,
     background_tasks: BackgroundTasks,
-    service: ToolJobService = Depends(get_tool_job_service),
-) -> ToolJob:
-    job = service.create_job(payload)
-    background_tasks.add_task(service.run_job, job.id, payload)
-    return job
+    service: SkillRunService = Depends(get_skill_run_service),
+) -> SkillRun:
+    run = service.create_run(payload)
+    background_tasks.add_task(service.run_skill, run.id, payload)
+    return run
 
 
-@router.get("/tool-jobs", response_model=list[ToolJob])
-def list_tool_jobs(
+@router.get("/skill-runs", response_model=list[SkillRun])
+def list_skill_runs(
     status: str | None = None,
-    service: ToolJobService = Depends(get_tool_job_service),
-) -> list[ToolJob]:
-    """List tool jobs so clients can reconcile async agent/tool results."""
-    return service.list_jobs(status=status)
+    service: SkillRunService = Depends(get_skill_run_service),
+) -> list[SkillRun]:
+    return service.list_runs(status=status)
 
 
-@router.get("/tool-jobs/{job_id}", response_model=ToolJob)
-def get_tool_job(
-    job_id: str,
-    service: ToolJobService = Depends(get_tool_job_service),
-) -> ToolJob:
-    job = service.get_job(job_id)
+@router.get("/skill-runs/{run_id}", response_model=SkillRun)
+def get_skill_run(
+    run_id: str,
+    service: SkillRunService = Depends(get_skill_run_service),
+) -> SkillRun:
+    run = service.get_run(run_id)
 
-    if job is None:
-        raise HTTPException(status_code=404, detail="Tool job not found")
+    if run is None:
+        raise HTTPException(status_code=404, detail="Skill run not found")
 
-    return job
+    return run
 
 
 @router.get("/artifacts/{artifact_path:path}")

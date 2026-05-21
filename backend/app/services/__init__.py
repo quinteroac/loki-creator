@@ -1,15 +1,14 @@
-from app.services.builtin_agents import BASE_AGENT, BUILTIN_AGENTS, TOOL_BUILDER_AGENT
-from app.services.comfy_diffusion import ComfyDiffusionService
+from app.services.builtin_agents import BASE_AGENT, BUILTIN_AGENTS
 from app.services.instructions import InstructionService
-from app.services.tool_jobs import ToolJobService
-from app.services.tool_registry import ToolRegistry
+from app.services.skill_invokers import SkillActionInvoker
+from app.services.skill_registry import SkillRegistry
+from app.services.skill_runs import SkillRunService
 
 __all__ = [
     "BUILTIN_AGENTS",
     "BASE_AGENT",
-    "TOOL_BUILDER_AGENT",
-    "ComfyDiffusionService",
     "InstructionService",
-    "ToolJobService",
-    "ToolRegistry",
+    "SkillActionInvoker",
+    "SkillRegistry",
+    "SkillRunService",
 ]

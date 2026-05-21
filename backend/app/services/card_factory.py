@@ -9,7 +9,8 @@ class HtmlCardFactory:
         self,
         *,
         prompt: str,
-        source_tool_id: str | None = None,
+        source_skill_id: str | None = None,
+        source_action_id: str | None = None,
         name: str = "Canvas card",
         output_text: str | None = None,
         metadata: CardMetadata | dict | None = None,
@@ -38,6 +39,7 @@ class HtmlCardFactory:
             name=name,
             prompt=prompt,
             html=html,
-            source_tool_id=source_tool_id,
+            source_skill_id=source_skill_id,
+            source_action_id=source_action_id,
             metadata=card_metadata,
         )

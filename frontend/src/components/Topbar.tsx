@@ -12,20 +12,6 @@ export function Topbar() {
         <span>Untitled project</span>
       </div>
       <div className="topbar-actions">
-        <a
-          className="button-secondary compact"
-          href="/downloads/browser-extension/loki-browser-extension-chrome.zip"
-          download="loki-browser-extension-chrome.zip"
-        >
-          Chrome Extension
-        </a>
-        <a
-          className="button-secondary compact"
-          href="/downloads/browser-extension/loki-browser-extension-firefox.zip"
-          download="loki-browser-extension-firefox.zip"
-        >
-          Firefox Extension
-        </a>
         <button className="button-secondary compact" type="button">
           Save
         </button>

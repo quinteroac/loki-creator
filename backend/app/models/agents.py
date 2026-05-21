@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class AgentSkillStep(BaseModel):
     id: str
     order: int
-    tool_id: str = Field(alias="toolId")
+    skill_id: str = Field(alias="skillId")
     input_card_ids: list[str] = Field(default_factory=list, alias="inputCardIds")
     output_card_ids: list[str] = Field(default_factory=list, alias="outputCardIds")
     prompt: str
