@@ -23,6 +23,12 @@ ASPECT_DIMENSIONS = {
     "16:9": (1344, 768),
     "9:16": (768, 1344),
 }
+VIDEO_BASE_DIMENSIONS = {
+    "1:1": (512, 512),
+    "4:3": (512, 384),
+    "16:9": (512, 288),
+    "9:16": (288, 512),
+}
 CHANGE_ASPECT_RATIOS = set(ASPECT_DIMENSIONS)
 
 
@@ -179,6 +185,32 @@ def command_from_params(params: dict[str, Any], default: str) -> str:
     return first_text(params.get("command"), params.get("mode"), default)
 
 
+def normalize_video_mode(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    aliases = {
+        "text-to-video": "t2v",
+        "txt2vid": "t2v",
+        "image-to-video": "i2v",
+        "img2vid": "i2v",
+        "reference-to-video": "i2v",
+        "reference-image-to-video": "i2v",
+        "image-audio-to-video": "ia2av",
+        "image-plus-audio-to-video": "ia2av",
+        "image-and-audio-to-video": "ia2av",
+        "first-last-frame": "flf2v",
+        "first-last-frame-to-video": "flf2v",
+        "first-and-last-frame-to-video": "flf2v",
+        "motion-track-control": "motion-track",
+        "seedance2-text-to-video": "seedance2-t2v",
+        "seedance2-image-to-video": "seedance2-r2v",
+        "seedance2-reference-to-video": "seedance2-r2v",
+        "seedance2-reference-image-to-video": "seedance2-r2v",
+        "seedance2-first-last-frame": "seedance2-flf2v",
+        "seedance2-first-last-frame-to-video": "seedance2-flf2v",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
     width = as_int(params.get("width"))
     height = as_int(params.get("height"))
@@ -186,6 +218,18 @@ def dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
         return width, height
     aspect_ratio = first_text(params.get("aspectRatio"))
     return ASPECT_DIMENSIONS.get(aspect_ratio, (width, height))
+
+
+def video_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
+    aspect_ratio = first_text(params.get("aspectRatio"))
+    if aspect_ratio in VIDEO_BASE_DIMENSIONS:
+        return VIDEO_BASE_DIMENSIONS[aspect_ratio]
+
+    width = as_int(params.get("width"))
+    height = as_int(params.get("height"))
+    if width and height:
+        return width, height
+    return width, height
 
 
 def normalize_model_profile(value: str) -> str:
@@ -197,6 +241,37 @@ def normalize_model_profile(value: str) -> str:
         "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
     }
     return aliases.get(value, value)
+
+
+def normalize_video_model_profile(value: str) -> str:
+    aliases = {
+        "ltx": "ltx23-10eros",
+        "ltx23": "ltx23-10eros",
+        "ltx-2.3": "ltx23-10eros",
+        "ltx-2.3-10eros": "ltx23-10eros",
+        "ltx23-local": "ltx23-10eros",
+        "seedance": "seedance2-api",
+        "seedance2": "seedance2-api",
+        "seedance-2": "seedance2-api",
+        "seedance-2.0": "seedance2-api",
+    }
+    return aliases.get(value, value)
+
+
+def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[Path]]) -> str:
+    if model_profile == "ltx23-10eros" and mode.startswith("seedance2-"):
+        if mode == "seedance2-flf2v":
+            return "flf2v"
+        if mode == "seedance2-r2v":
+            return "i2v"
+        return "t2v"
+    if model_profile != "seedance2-api" or mode.startswith("seedance2-"):
+        return mode
+    if mode == "flf2v" or len(media.get("image", [])) >= 2:
+        return "seedance2-flf2v"
+    if mode in {"i2v", "ia2av", "motion-track"} or selected_input(media, "image"):
+        return "seedance2-r2v"
+    return "seedance2-t2v"
 
 
 def divisible_by_16(value: int) -> int:
@@ -213,6 +288,37 @@ def image_dimensions(path: Path | None) -> tuple[int | None, int | None]:
             return image.size
     except Exception:
         return None, None
+
+
+def half_scale_image_input(path: Path, inputs_dir: Path, label: str) -> Path:
+    with Image.open(path) as image:
+        width, height = image.size
+        target_width = max(16, width // 2)
+        target_height = max(16, height // 2)
+        target_width -= target_width % 2
+        target_height -= target_height % 2
+        resized = image.convert("RGB").resize((target_width, target_height), Image.Resampling.LANCZOS)
+        destination = inputs_dir / f"{label}-half.png"
+        resized.save(destination)
+        return destination
+
+
+def maybe_half_scale_ltx_image_input(path_value: str, out_dir: Path, mode: str) -> str:
+    if mode.startswith("seedance2-") or mode not in {"i2v", "ia2av", "flf2v", "motion-track"}:
+        return path_value
+    if not path_value:
+        return path_value
+
+    path = Path(path_value)
+    if not path.is_file():
+        return path_value
+
+    inputs_dir = out_dir.parent / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        return str(half_scale_image_input(path, inputs_dir, path.stem[:48] or "input"))
+    except Exception:
+        return path_value
 
 
 def selected_input(media: dict[str, list[Path]], kind: str) -> Path | None:
@@ -427,18 +533,31 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         default_mode = "i2v" if selected_input(media, "image") else "t2v"
         if skill_id == "comfy-motion-track-control":
             default_mode = "motion-track"
-        mode = command_from_params(params, default_mode)
+        model_profile = normalize_video_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
+        if not model_profile and skill_id == "comfy-videogen":
+            raise RuntimeError("comfy-videogen requires params.modelProfile. The agent must ask the user which video model to use.")
+        mode = normalize_video_mode(command_from_params(params, default_mode))
+        mode = video_mode_for_profile(mode, model_profile, media)
         command = ["comfy-videogen", mode, "--out", str(out_dir)]
         if not mode.startswith("seedance2-"):
             command.extend(["--models-dir", str(model_dir)])
         command.extend(["--prompt", prompt])
         image_input = first_text(params.get("inputPath")) or str(selected_input(media, "image") or "")
+        image_input = maybe_half_scale_ltx_image_input(image_input, out_dir, mode)
         if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v"} and image_input:
             command.extend(["--input", image_input])
         if mode in {"flf2v", "seedance2-flf2v"}:
             image_inputs = media.get("image", [])
-            first = first_text(params.get("firstPath")) or str(image_inputs[0] if image_inputs else "")
-            last = first_text(params.get("lastPath")) or str(image_inputs[-1] if image_inputs else "")
+            first = maybe_half_scale_ltx_image_input(
+                first_text(params.get("firstPath")) or str(image_inputs[0] if image_inputs else ""),
+                out_dir,
+                mode,
+            )
+            last = maybe_half_scale_ltx_image_input(
+                first_text(params.get("lastPath")) or str(image_inputs[-1] if image_inputs else ""),
+                out_dir,
+                mode,
+            )
             if first:
                 command.extend(["--first", first])
             if last:
@@ -449,13 +568,22 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         control_video = first_text(params.get("controlVideoPath")) or str(selected_input(media, "video") or "")
         if mode == "motion-track" and control_video:
             command.extend(["--control-video", control_video])
-        width, height = dimensions(params)
+        width, height = video_dimensions(params)
         if width and height and not mode.startswith("seedance2-"):
             command.extend(["--width", str(width), "--height", str(height)])
         if first_text(params.get("aspectRatio")) and mode.startswith("seedance2-"):
             command.extend(["--ratio", first_text(params.get("aspectRatio"))])
+        duration = as_int(params.get("duration"))
+        if duration is not None:
+            if mode.startswith("seedance2-"):
+                command.extend(["--duration", str(duration)])
+            elif as_int(params.get("length")) is None:
+                fps = as_int(params.get("fps")) or 24
+                command.extend(["--length", str(duration * fps)])
         for key in ("length", "fps", "duration", "seed"):
             value = as_int(params.get(key))
+            if key == "duration" and duration is not None:
+                continue
             if value is not None:
                 command.extend([f"--{key}", str(value)])
         return command, repo_root()
@@ -512,6 +640,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
 
 def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     process = subprocess.run(
         command,
         cwd=cwd,

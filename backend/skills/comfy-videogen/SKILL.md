@@ -4,6 +4,63 @@ description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros
 metadata:
   loki:
     capabilities: [video-generation, image-to-video, raster-card-output, comfy]
+    runtime:
+      modelsDir: .loki/models/comfyui
+    arguments:
+      - id: modelProfile
+        label: Video model
+        description: Choose the video generation model/runtime.
+        type: choice
+        required: true
+        askWhen: always
+        order: 10
+        options:
+          - value: ltx23-10eros
+            label: LTX 2.3 Local
+            description: Local GPU-backed LTX 2.3 10Eros workflows.
+          - value: seedance2-api
+            label: Seedance 2.0 API
+            description: Remote ByteDance Seedance 2.0 API nodes through ComfyUI API Nodes.
+      - id: aspectRatio
+        label: Aspect ratio
+        description: Choose the video frame.
+        type: choice
+        required: true
+        askWhen: always
+        order: 20
+        options:
+          - value: "16:9"
+            label: Widescreen 16:9
+            description: Standard cinematic landscape frame.
+          - value: "9:16"
+            label: Vertical 9:16
+            description: Portrait frame for reels and mobile video.
+          - value: "1:1"
+            label: Square 1:1
+            description: Square social video frame.
+          - value: "4:3"
+            label: Classic 4:3
+            description: Classic landscape frame.
+      - id: duration
+        label: Duration
+        description: Choose the target video duration.
+        type: choice
+        required: true
+        askWhen: always
+        order: 30
+        options:
+          - value: "5"
+            label: 5 seconds
+            description: Short clip for quick preview.
+          - value: "7"
+            label: 7 seconds
+            description: Balanced default duration.
+          - value: "10"
+            label: 10 seconds
+            description: Longer shot with more motion time.
+          - value: "15"
+            label: 15 seconds
+            description: Maximum standard clip duration for LTX 2.3 and Seedance 2.0.
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -31,6 +88,34 @@ debugging ComfyUI runtime output, warnings, or progress bars.
 If `comfy-videogen` or `comfy-models` is not available, use
 `comfy-tools-setup` first. In this repository, prefer `uv run comfy-videogen`;
 outside the repo, let `comfy-tools-setup` install the CLIs with `uv tool`.
+
+## Required Arguments
+
+Loki declares `modelProfile`, `aspectRatio`, and `duration` as required skill
+arguments. The bridge asks which video model/runtime to use first, then asks for
+the frame, then asks for the target duration before the agent invokes this skill.
+
+Available model profiles:
+
+- `ltx23-10eros`: local GPU-backed LTX 2.3 10Eros workflows. Use this for local
+  text-to-video, image-to-video, image+audio-to-video, first/last-frame, and
+  motion-track workflows.
+- `seedance2-api`: remote ByteDance Seedance 2.0 API workflows. Use this for
+  text-to-video, reference-image-to-video, and first/last-frame video when
+  `COMFY_ORG_API_KEY` is configured.
+
+Aspect ratio choices:
+
+- `16:9`: widescreen landscape.
+- `9:16`: vertical portrait.
+- `1:1`: square.
+- `4:3`: classic landscape.
+
+Duration choices:
+
+- `5`, `7`, `10`, or `15` seconds. Local LTX converts duration to `length` frames
+  using `fps=24` unless another fps is explicitly provided. Seedance receives
+  the same value as `--duration`.
 
 At the start of every video workflow, start or reuse the local Comfy Media
 gallery for the active output directory:
