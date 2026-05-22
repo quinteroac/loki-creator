@@ -390,16 +390,21 @@ function createLokiSkillPiTool(
     : "";
   const skillActionDescription =
     " The action can return normal artifacts such as images, videos, audio, HTML, text, or diagnostics; Loki will package those outputs into canvas cards.";
+  const musicgenDescription = skill.id === "comfy-musicgen"
+    ? " For ACE-Step music generation, the prompt parameter must be a comma-separated music caption/tag list, not a natural-language request. Never write phrases like \"generate a song\" or \"make music about\" in prompt. Rewrite the user request into tags such as genre, vocal intent, instruments, mood, production style, BPM, and key; put lyrics only in paramsJson.lyrics."
+    : "";
+  const promptDescription = skill.id === "comfy-musicgen"
+    ? "ACE-Step music caption only: comma-separated tags such as genre, vocal intent, instruments, mood, production style, BPM, and key. Do not pass natural-language instructions like 'generate a song'."
+    : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
 
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
-    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${musicgenDescription}${selectedCardDescription}${attachmentDescription}`,
+    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${musicgenDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
-        description:
-          "Operational instruction for the Loki skill action. This is not user-visible card copy.",
+        description: promptDescription,
       }),
       outputText: Type.Optional(Type.String({
         description:

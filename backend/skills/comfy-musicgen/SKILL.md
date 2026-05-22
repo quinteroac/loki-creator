@@ -1,6 +1,6 @@
 ---
 name: comfy-musicgen
-description: Generate music locally with comfy-diffusion and ACE-Step 1.5 Base. Use when the user wants local GPU-backed music or song generation saved as WAV in the workspace. Do not use for hosted audio APIs, image generation, video generation, voice cloning, speech-only TTS, model downloads, ComfyUI server workflows, UI work, or custom node installation.
+description: Generate music locally with comfy-diffusion and ACE-Step 1.5 Base. Use ACE-Step caption/tag prompting, not natural-language instruction prompting. Use when the user wants local GPU-backed music or song generation saved as WAV in the workspace. Do not use for hosted audio APIs, image generation, video generation, voice cloning, speech-only TTS, model downloads, ComfyUI server workflows, UI work, or custom node installation.
 metadata:
   loki:
     capabilities: [music-generation, audio-card-output, comfy]
@@ -19,6 +19,17 @@ Use this skill for local music generation through the `comfy-musicgen` CLI. The
 CLI uses ACE-Step 1.5 model files under `.loki/models/comfyui`. If built-in
 ACE-Step files are missing, use `comfy-model-downloader` for
 `musicgen.generate` before running inference.
+
+Critical: ACE-Step is not an instruction-following chat model. Never pass the
+user's natural-language request directly to `--prompt`. The `--prompt` value must
+be a comma-separated ACE-Step music caption/tag list. Convert requests such as
+"Generate a sad J-pop song in Japanese, 2:30 duration, 92 BPM, minor key" into:
+
+```text
+Japanese J-pop, Japanese vocal, melancholic mood, modern production, 92 BPM, A minor
+```
+
+Then pass duration, BPM, language, and key as structured CLI params when known.
 
 The CLI is quiet by default and prints only final JSON. Use `--verbose` only when
 debugging ComfyUI runtime output, warnings, or progress bars.
@@ -58,9 +69,11 @@ Generate instrumental music:
 
 ```bash
 uv run comfy-musicgen generate \
-  --prompt "lofi hip hop beat, warm Rhodes piano, mellow drums, tape texture" \
+  --prompt "lofi hip hop, instrumental beat, warm Rhodes piano, mellow brushed drums, round electric bass, tape saturation, intimate late-night mood, clean mix, 82 BPM" \
   --lyrics "[instrumental]" \
   --duration 120 \
+  --steps 64 \
+  --cfg 7.0 \
   --seed 0 \
   --extra-lora .loki/models/comfyui/loras/ace-step-1.5/vocal-polish.safetensors:0.5:0.0 \
   --out outputs
@@ -70,11 +83,13 @@ Generate with lyrics:
 
 ```bash
 uv run comfy-musicgen generate \
-  --prompt "Latin pop ballad, polished radio production, nylon guitar, warm electric bass, soft drums, intimate male vocal, emotional chorus, 92 BPM" \
+  --prompt "Latin pop ballad, polished radio production, nylon guitar arpeggios, warm electric bass, soft live drums, intimate male vocal, emotional chorus lift, clean modern mix, 92 BPM, A minor" \
   --lyrics "[verse]\nLa luna cae sobre el mar\nTu nombre vuelve a respirar\n\n[chorus]\nQuedate cerca de mi\nCuando la noche quiera caer\n\n[instrumental]\n\n[bridge]\nNo hay distancia para olvidar\nLo que aprendimos a cuidar\n\n[chorus]\nQuedate cerca de mi\nCuando la noche quiera caer" \
   --language es \
   --bpm 92 \
   --keyscale "A minor" \
+  --steps 64 \
+  --cfg 7.0 \
   --out outputs
 ```
 
@@ -93,26 +108,49 @@ uv run comfy-musicgen generate \
 ## Prompt Guidance
 
 ACE-Step works best when `--prompt` and `--lyrics` are treated as separate inputs.
-Use `--prompt` for comma-separated music tags: primary genre, era or scene,
-instruments, mood, vocal type, production texture, and tempo. Keep tags focused
-and non-contradictory; prefer one main style with secondary influences instead of
-a long list of clashing genres.
+Use `--prompt` as the music caption: a comma-separated tag list describing the
+overall song portrait. Always rewrite vague user requests into a complete caption
+before calling the CLI. A strong caption includes these pieces, in this order:
+
+1. Primary genre and subgenre.
+2. Vocal intent or `instrumental`.
+3. Core instruments and rhythm section.
+4. Mood, era, or scene.
+5. Production texture and mix target.
+6. Tempo in BPM and optional key.
+
+Keep tags focused and non-contradictory; prefer one main style with one or two
+secondary influences instead of a long list of clashing genres. Use English tag
+phrases even when the user speaks another language, unless quoting lyrics.
 
 Good tag shape:
 
 ```text
-Japanese pop, bright synth hooks, upbeat drums, electric bass, catchy female vocal, 132 BPM
+Japanese city pop, catchy female vocal, bright synth hooks, upbeat drums, electric bass, glossy 1980s mix, nostalgic summer mood, 132 BPM
 ```
 
+Do not put full sentences like "make a song about..." into `--prompt`. Convert
+them to musical tags. Put story, theme, and emotional arc into the caption only
+as short musical descriptors such as `heartbreak lyrics`, `hopeful chorus`, or
+`dark cinematic tension`.
+
 Use `--lyrics` only when sung or spoken content is desired. Structure lyrics with
-section markers such as `[verse]`, `[chorus]`, `[bridge]`, `[instrumental]`, and
-`[outro]`. Keep lines singable: short phrases, natural vowels, clear emotional
-turns, and enough breathing room. Add `[instrumental]` between sections for solos
-or breaks.
+concise section markers such as `[verse]`, `[chorus]`, `[bridge]`,
+`[instrumental]`, and `[outro]`. The lyrics field is the temporal script: it can
+include short section performance hints such as `[chorus - anthemic]` or
+`[bridge - whispered]`, but avoid stacking several tags in one marker. Keep lines
+singable: short phrases, natural vowels, clear emotional turns, and enough
+breathing room. Add `[instrumental]`, `[guitar solo]`, or `[drum break]` between
+sections for solos or breaks.
+
+Maintain consistency between caption and lyrics. If the caption says `intimate
+male vocal`, do not mark a chorus as `female choir`; if the caption says
+`minimal acoustic`, do not ask the lyrics for an explosive EDM drop.
 
 For instrumental tracks, put `[instrumental]` or `[inst]` in `--lyrics` and also
 include an instrumental cue in `--prompt`. If lyrics are left empty, the model may
-still infer vocal texture from tags like `female vocal` or `male voice`.
+still infer vocal texture from tags like `female vocal` or `male voice`; avoid
+vocal tags for instrumental tracks unless the user wants wordless vocal texture.
 
 Match `--language` to the lyrics language, for example `en`, `es`, `ja`, `zh`,
 `fr`, or `ko`. For multilingual lyrics, prefer one dominant language per run; if
@@ -123,9 +161,16 @@ Use `--duration` for target song length in seconds. The final WAV metadata is in
 the JSON response; read `duration_seconds`, `sample_rate`, and `channels` from
 the response instead of assuming the model returned the exact target length.
 
-The CLI defaults to the quality pass validated in real local tests:
-`steps=32` and `cfg=7.0`. For quick smoke tests, override with `--steps 8
---cfg 1 --duration 30`.
+Use the bridge quality defaults for normal generation: `steps=64` and `cfg=7.0`.
+ACE-Step 1.5 Base benefits from more denoising steps and supports CFG; official
+guidance describes Base as typically useful around 32-64 steps, with CFG usually
+in the 5.0-9.0 range. Use `cfg=7.0` first. If the result is too literal or harsh,
+try `cfg=5.0`; if it ignores the caption, try `cfg=8.0` or `9.0`. For quick
+smoke tests only, override with `--steps 8 --cfg 1 --duration 30`.
+
+When the user asks for "better quality", prefer changing the caption first, then
+run at `steps=64`, `cfg=7.0`, and a fixed seed for comparison. Do not raise CFG
+above `9.0` unless explicitly experimenting; high CFG can make artifacts worse.
 
 ## Prompt Templates
 
@@ -133,9 +178,11 @@ Instrumental:
 
 ```bash
 uv run comfy-musicgen generate \
-  --prompt "cinematic orchestral, slow tempo, strings, brass, emotional, film score" \
+  --prompt "cinematic orchestral score, instrumental, legato strings, warm brass, soft timpani, emotional slow build, wide film mix, 72 BPM, D minor" \
   --lyrics "[instrumental]" \
   --duration 120 \
+  --steps 64 \
+  --cfg 7.0 \
   --out outputs
 ```
 
@@ -143,11 +190,13 @@ Song with structure:
 
 ```bash
 uv run comfy-musicgen generate \
-  --prompt "English pop, glossy radio production, bright synth hooks, punchy drums, catchy female vocal, 124 BPM" \
+  --prompt "English synth pop, catchy female vocal, bright synth hooks, punchy drums, electric bass, glossy radio production, uplifting chorus, 124 BPM, C major" \
   --lyrics "[verse]\nI see the morning in your eyes\nA little fire in the city lights\n\n[chorus]\nHold on, we are running higher\nHands up into the open sky\n\n[instrumental]\n\n[chorus]\nHold on, we are running higher\nHands up into the open sky" \
   --language en \
   --bpm 124 \
   --keyscale "C major" \
+  --steps 64 \
+  --cfg 7.0 \
   --out outputs
 ```
 
@@ -157,6 +206,10 @@ Troubleshooting:
 - Weak backing track: add concrete instrument tags and production terms.
 - Muddled style: remove contradictory tags and choose a clearer primary genre.
 - Wrong language or pronunciation: set `--language` explicitly and simplify lyrics.
+- Harsh or artifact-heavy audio: keep `steps=64`, lower `cfg` toward `5.0`, and
+  simplify the caption.
+- Ignored style: keep the caption concise, repeat the most important style word
+  once, and raise `cfg` toward `8.0` or `9.0`.
 
 ## Defaults
 
@@ -166,7 +219,8 @@ Troubleshooting:
 - Text encoder 1.7B: `text_encoders/qwen_1.7b_ace15.safetensors`
 - VAE: `vae/ace_1.5_vae.safetensors`
 - Audio params: `duration=120`, `bpm=120`, `time_signature=4`, `keyscale=C major`, `language=en`
-- Sampling params: `steps=32`, `cfg=7.0`, `sampler=euler`, `scheduler=simple`, `seed=0`
+- Bridge quality sampling params: `steps=64`, `cfg=7.0`, `sampler=euler`, `scheduler=simple`, `seed=0`
+- CLI/profile fallback sampling params: `steps=32`, `cfg=7.0`, `sampler=euler`, `scheduler=simple`, `seed=0`
 - Output format: WAV PCM 16-bit
 - Dependency: `comfy-diffusion[comfyui,video,audio]`
 

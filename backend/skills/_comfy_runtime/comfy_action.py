@@ -4,6 +4,7 @@ import base64
 import json
 import mimetypes
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,6 +29,10 @@ VIDEO_BASE_DIMENSIONS = {
     "4:3": (512, 384),
     "16:9": (512, 288),
     "9:16": (288, 512),
+}
+MUSIC_QUALITY_DEFAULTS = {
+    "steps": "64",
+    "cfg": "7.0",
 }
 CHANGE_ASPECT_RATIOS = set(ASPECT_DIMENSIONS)
 
@@ -185,6 +190,18 @@ def command_from_params(params: dict[str, Any], default: str) -> str:
     return first_text(params.get("command"), params.get("mode"), default)
 
 
+def unique_items(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            result.append(normalized)
+    return result
+
+
 def normalize_video_mode(value: str) -> str:
     normalized = value.strip().lower().replace("_", "-")
     aliases = {
@@ -230,6 +247,177 @@ def video_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
     if width and height:
         return width, height
     return width, height
+
+
+def parse_music_duration_seconds(text: str) -> str:
+    match = re.search(r"(?:~|about|around|approx\.?\s*)?(\d{1,2}):(\d{2})\s*(?:duration|long|minutes?|mins?)?", text, re.IGNORECASE)
+    if match:
+        return str((int(match.group(1)) * 60) + int(match.group(2)))
+    match = re.search(r"(?:~|about|around|approx\.?\s*)?(\d{1,3})\s*(?:seconds?|secs?|s)\b", text, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    match = re.search(r"(?:~|about|around|approx\.?\s*)?(\d{1,2})\s*(?:minutes?|mins?)\b", text, re.IGNORECASE)
+    if match:
+        return str(int(match.group(1)) * 60)
+    return ""
+
+
+def parse_music_language(text: str) -> str:
+    lowered = text.lower()
+    languages = {
+        "japanese": "ja",
+        "j-pop": "ja",
+        "jpop": "ja",
+        "spanish": "es",
+        "espanol": "es",
+        "español": "es",
+        "english": "en",
+        "korean": "ko",
+        "k-pop": "ko",
+        "kpop": "ko",
+        "chinese": "zh",
+        "mandarin": "zh",
+        "french": "fr",
+    }
+    for needle, code in languages.items():
+        if needle in lowered:
+            return code
+    return ""
+
+
+def parse_music_keyscale(text: str) -> str:
+    match = re.search(r"\b([A-G](?:#|b)?)\s+(major|minor)\b", text, re.IGNORECASE)
+    if match:
+        return f"{match.group(1).upper()} {match.group(2).lower()}"
+    if re.search(r"\bminor\s+key\b", text, re.IGNORECASE):
+        return "A minor"
+    if re.search(r"\bmajor\s+key\b", text, re.IGNORECASE):
+        return "C major"
+    return ""
+
+
+def parse_music_bpm(text: str) -> str:
+    match = re.search(r"\b(\d{2,3})\s*bpm\b", text, re.IGNORECASE)
+    return match.group(1) if match else ""
+
+
+def looks_like_music_caption(prompt: str) -> bool:
+    stripped = prompt.strip()
+    lowered = stripped.lower()
+    if "," not in stripped:
+        return False
+    if re.match(r"^(generate|create|make|compose|write|produce)\b", lowered):
+        return False
+    if re.search(r"\b(song|track|music)\s+(about|for|that|with)\b", lowered):
+        return False
+    return True
+
+
+def normalize_music_caption(prompt: str) -> str:
+    if looks_like_music_caption(prompt):
+        return prompt
+
+    lowered = prompt.lower()
+    tags: list[str] = []
+    genre_map = [
+        ("j-pop", "Japanese J-pop"),
+        ("jpop", "Japanese J-pop"),
+        ("k-pop", "Korean K-pop"),
+        ("kpop", "Korean K-pop"),
+        ("city pop", "Japanese city pop"),
+        ("lofi", "lofi hip hop"),
+        ("hip hop", "hip hop"),
+        ("latin pop", "Latin pop"),
+        ("pop", "pop"),
+        ("rock", "rock"),
+        ("ballad", "ballad"),
+        ("orchestral", "cinematic orchestral score"),
+        ("cinematic", "cinematic score"),
+        ("electronic", "electronic music"),
+        ("edm", "EDM"),
+        ("jazz", "jazz"),
+        ("reggaeton", "reggaeton"),
+    ]
+    for needle, tag in genre_map:
+        if needle in lowered:
+            tags.append(tag)
+            break
+    if not tags:
+        tags.append("pop")
+
+    if "instrumental" in lowered or "[instrumental]" in lowered:
+        tags.append("instrumental")
+    elif "female" in lowered:
+        tags.append("female vocal")
+    elif "male" in lowered:
+        tags.append("male vocal")
+    elif "japanese" in lowered or "j-pop" in lowered or "jpop" in lowered:
+        tags.append("Japanese vocal")
+    else:
+        tags.append("vocal song")
+
+    mood_map = [
+        ("sad", "melancholic mood"),
+        ("triste", "melancholic mood"),
+        ("melancholic", "melancholic mood"),
+        ("emotional", "emotional"),
+        ("happy", "upbeat mood"),
+        ("dark", "dark mood"),
+        ("romantic", "romantic mood"),
+        ("energetic", "energetic"),
+    ]
+    for needle, tag in mood_map:
+        if needle in lowered:
+            tags.append(tag)
+
+    instrument_map = [
+        ("piano", "piano"),
+        ("guitar", "guitar"),
+        ("synth", "synth hooks"),
+        ("bass", "electric bass"),
+        ("drums", "drums"),
+        ("strings", "strings"),
+    ]
+    for needle, tag in instrument_map:
+        if needle in lowered:
+            tags.append(tag)
+
+    if "modern" in lowered:
+        tags.append("modern production")
+    if "radio" in lowered:
+        tags.append("radio-ready mix")
+    if "clean" in lowered:
+        tags.append("clean mix")
+
+    bpm = parse_music_bpm(prompt)
+    if bpm:
+        tags.append(f"{bpm} BPM")
+    keyscale = parse_music_keyscale(prompt)
+    if keyscale:
+        tags.append(keyscale)
+
+    return ", ".join(unique_items(tags))
+
+
+def normalized_music_params(prompt: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    music_params = dict(params)
+    if not first_text(music_params.get("duration")):
+        duration = parse_music_duration_seconds(prompt)
+        if duration:
+            music_params["duration"] = duration
+    if not first_text(music_params.get("bpm")):
+        bpm = parse_music_bpm(prompt)
+        if bpm:
+            music_params["bpm"] = bpm
+    if not first_text(music_params.get("keyscale")):
+        keyscale = parse_music_keyscale(prompt)
+        if keyscale:
+            music_params["keyscale"] = keyscale
+    if not first_text(music_params.get("language")):
+        language = parse_music_language(prompt)
+        if language:
+            music_params["language"] = language
+    return normalize_music_caption(prompt), music_params
 
 
 def normalize_model_profile(value: str) -> str:
@@ -589,6 +777,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         return command, repo_root()
 
     if skill_id == "comfy-musicgen":
+        prompt, music_params = normalized_music_params(prompt, params)
         command = [
             "comfy-musicgen",
             "generate",
@@ -599,13 +788,36 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             "--prompt",
             prompt,
         ]
-        lyrics = first_text(params.get("lyrics"))
+        lyrics = first_text(music_params.get("lyrics"))
         if lyrics:
             command.extend(["--lyrics", lyrics])
-        for key in ("duration", "bpm", "steps", "cfg", "language", "keyscale"):
-            value = first_text(params.get(key))
+        for key, cli_key in (
+            ("duration", "duration"),
+            ("bpm", "bpm"),
+            ("steps", "steps"),
+            ("cfg", "cfg"),
+            ("language", "language"),
+            ("keyscale", "keyscale"),
+            ("timeSignature", "time-signature"),
+            ("time_signature", "time-signature"),
+            ("sampler", "sampler"),
+            ("scheduler", "scheduler"),
+        ):
+            value = first_text(music_params.get(key))
+            if not value and key in MUSIC_QUALITY_DEFAULTS:
+                value = MUSIC_QUALITY_DEFAULTS[key]
             if value:
-                command.extend([f"--{key}", value])
+                command.extend([f"--{cli_key}", value])
+        extra_lora = music_params.get("extraLora") or music_params.get("extra_lora")
+        if isinstance(extra_lora, list):
+            for value in extra_lora:
+                resolved = first_text(value)
+                if resolved:
+                    command.extend(["--extra-lora", resolved])
+        else:
+            resolved = first_text(extra_lora)
+            if resolved:
+                command.extend(["--extra-lora", resolved])
         return command, repo_root()
 
     if skill_id == "comfy-media":
@@ -712,6 +924,16 @@ def raw_result_from_cli(payload: dict[str, Any], command: list[str], prompt: str
     }
 
 
+def prompt_from_command(command: list[str], fallback: str) -> str:
+    try:
+        index = command.index("--prompt")
+    except ValueError:
+        return fallback
+    if index + 1 >= len(command):
+        return fallback
+    return command[index + 1]
+
+
 def main() -> None:
     payload = read_payload()
     run_dir = output_dir(payload)
@@ -722,7 +944,7 @@ def main() -> None:
             f"Comfy CLI not found: {command[0]}. Install with `uv tool install git+https://github.com/quinteroac/comfy-agent-tools`."
         )
     result = run_command(command, cwd)
-    print(json.dumps(raw_result_from_cli(result, command, base_prompt(payload))))
+    print(json.dumps(raw_result_from_cli(result, command, prompt_from_command(command, base_prompt(payload)))))
 
 
 if __name__ == "__main__":
