@@ -15,6 +15,7 @@ type CanvasStageProps = {
   selectedIds: string[];
   selectedDocument?: CardDocument;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
+  onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onToggleNode: (nodeId: string) => void;
   onUpdateNodeFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
@@ -26,6 +27,7 @@ export function CanvasStage({
   selectedIds,
   selectedDocument,
   onRenameDocument,
+  onRedoDocument,
   onRegisterPreviewCapture,
   onToggleNode,
   onUpdateNodeFrame,
@@ -58,6 +60,7 @@ export function CanvasStage({
                 isSelected={selectedIds.includes(node.cardDocumentId)}
                 key={node.id}
                 onRenameDocument={onRenameDocument}
+                onRedoDocument={onRedoDocument}
                 onRegisterPreviewCapture={onRegisterPreviewCapture}
                 onUpdateFrame={updateNodeFrame}
                 onToggleSelect={onToggleNode}

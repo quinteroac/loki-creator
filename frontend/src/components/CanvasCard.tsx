@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Download, Pencil } from "lucide-react";
+import { Download, RotateCcw } from "lucide-react";
 import {
   downloadCardDocument,
   getCardDisplaySubtitle,
@@ -23,6 +23,7 @@ type CanvasCardProps = {
   node: CanvasNode;
   isSelected: boolean;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
+  onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
@@ -114,6 +115,7 @@ export function CanvasCard({
   node,
   isSelected,
   onRenameDocument,
+  onRedoDocument,
   onRegisterPreviewCapture,
   onToggleSelect,
   onUpdateFrame,
@@ -416,6 +418,11 @@ export function CanvasCard({
     }
   }
 
+  function handleRedo() {
+    onRedoDocument(document.id);
+    setContextMenuPosition(null);
+  }
+
   return (
     <article
       className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
@@ -504,9 +511,9 @@ export function CanvasCard({
           }}
           onPointerDown={stopCardInteraction}
         >
-          <button className="context-menu-item" type="button" role="menuitem" disabled title="Coming soon">
-            <Pencil size={16} aria-hidden="true" />
-            <span>Editar</span>
+          <button className="context-menu-item" type="button" role="menuitem" onClick={handleRedo}>
+            <RotateCcw size={16} aria-hidden="true" />
+            <span>Rehacer</span>
           </button>
           <button
             className="context-menu-item"

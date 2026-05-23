@@ -413,6 +413,23 @@ export function App() {
     );
   }
 
+  function redoDocument(cardDocumentId: string) {
+    const document = cardDocuments.find((candidate) => candidate.id === cardDocumentId);
+    const prompt = document?.prompt.trim();
+
+    if (!prompt) {
+      setStatus("This card does not have a prompt to reuse.");
+      return;
+    }
+
+    setInstruction(prompt);
+    setPendingQuestion(null);
+    setPendingConversationId(null);
+    setPendingCollectedArgs({});
+    setPendingAgentRequest(null);
+    setStatus("Prompt loaded from card.");
+  }
+
   const registerPreviewCapture = useCallback((cardDocumentId: string, capturePreview: () => SelectedCardPreview) => {
     previewCapturesRef.current.set(cardDocumentId, capturePreview);
 
@@ -440,6 +457,7 @@ export function App() {
         documentsById={documentsById}
         nodes={canvasNodes}
         onRenameDocument={renameDocument}
+        onRedoDocument={redoDocument}
         onRegisterPreviewCapture={registerPreviewCapture}
         onToggleNode={toggleCanvasNode}
         onUpdateNodeFrame={updateCanvasNodeFrame}
