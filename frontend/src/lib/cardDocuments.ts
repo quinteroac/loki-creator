@@ -1,5 +1,6 @@
 import type {
   CardDocument,
+  CardKind,
   CanvasNode,
   CanvasNodeFrame,
   SelectedCardMediaAsset,
@@ -23,6 +24,14 @@ const TECHNICAL_TITLE_PATTERN = /^(?:card|node|job)_[a-z0-9-]{8,}$/i;
 const TITLE_COUNTER_PATTERN = /^(.*?)(?:\s+(\d+))?$/;
 const CARD_CHROME_HEIGHT = 108;
 const CARD_TALLEST_PREVIEW_ASPECT_RATIO = 9 / 16;
+const DOWNLOAD_EXTENSION_BY_KIND: Partial<Record<CardKind, string>> = {
+  audio: "wav",
+  diagnostic: "txt",
+  generic: "html",
+  image: "png",
+  interactive: "html",
+  video: "mp4",
+};
 
 export type CardPreviewCapture = () => SelectedCardPreview | Promise<SelectedCardPreview>;
 
@@ -89,6 +98,41 @@ export function getCardLayoutRowHeight(width: number) {
 
 function cleanLabel(value?: string | null): string {
   return value?.trim().replace(/\s+/g, " ") ?? "";
+}
+
+function sanitizeFilename(value: string): string {
+  return cleanLabel(value)
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
+    .replace(/\.+$/g, "")
+    .slice(0, 80) || UNTITLED_CARD_TITLE;
+}
+
+function getExtensionFromUrl(src: string): string | undefined {
+  const pathname = src.startsWith("data:") ? "" : src.split("?", 1)[0].split("#", 1)[0];
+  const extension = pathname.match(/\.([a-z0-9]{1,8})$/i)?.[1];
+
+  return extension?.toLowerCase();
+}
+
+function getExtensionFromMimeType(mimeType?: string): string | undefined {
+  if (!mimeType) return undefined;
+
+  const knownTypes: Record<string, string> = {
+    "application/json": "json",
+    "application/pdf": "pdf",
+    "audio/mpeg": "mp3",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "text/html": "html",
+    "text/plain": "txt",
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+  };
+
+  return knownTypes[mimeType] ?? mimeType.split("/", 2)[1]?.split("+", 1)[0];
 }
 
 function isTechnicalTitle(value: string): boolean {
@@ -320,6 +364,73 @@ async function fetchArtifactDataUrl(src: string): Promise<{ dataUrl: string; mim
   }
 
   return null;
+}
+
+function getPrimaryDownloadSource(document: CardDocument): { mimeType?: string; src: string } | null {
+  if (document.metadata?.artifactUrl) {
+    return { src: document.metadata.artifactUrl };
+  }
+
+  const mediaAsset = extractSelectedCardMediaAssets(document.html).find((asset) => asset.src || asset.dataUrl);
+  const source = mediaAsset?.dataUrl ?? mediaAsset?.src;
+
+  return source ? { src: source, mimeType: mediaAsset?.mimeType } : null;
+}
+
+function triggerBrowserDownload(href: string, filename: string) {
+  const link = document.createElement("a");
+
+  link.href = href;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+function revokeObjectUrlAfterDownload(objectUrl: string) {
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+}
+
+export async function downloadCardDocument(document: CardDocument): Promise<void> {
+  const downloadSource = getPrimaryDownloadSource(document);
+  const extension =
+    (downloadSource ? getExtensionFromUrl(downloadSource.src) || getExtensionFromMimeType(downloadSource.mimeType) : undefined) ||
+    DOWNLOAD_EXTENSION_BY_KIND[document.metadata?.kind ?? "generic"] ||
+    "html";
+  const filename = `${sanitizeFilename(getCardDisplayTitle(document))}.${extension}`;
+
+  if (!downloadSource) {
+    const blob = new Blob([document.html], { type: "text/html" });
+    const objectUrl = URL.createObjectURL(blob);
+
+    triggerBrowserDownload(objectUrl, filename);
+    revokeObjectUrlAfterDownload(objectUrl);
+    return;
+  }
+
+  if (downloadSource.src.startsWith("data:")) {
+    triggerBrowserDownload(downloadSource.src, filename);
+    return;
+  }
+
+  const candidates = artifactFetchCandidates(downloadSource.src);
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate);
+      if (!response.ok) continue;
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      triggerBrowserDownload(objectUrl, filename);
+      revokeObjectUrlAfterDownload(objectUrl);
+      return;
+    } catch {
+      // Try the next candidate; artifact URLs may be served by either Vite proxy or backend origin.
+    }
+  }
+
+  triggerBrowserDownload(downloadSource.src, filename);
 }
 
 async function hydrateMediaAssets(

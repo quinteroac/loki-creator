@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import { Download, Pencil } from "lucide-react";
 import {
+  downloadCardDocument,
   getCardDisplaySubtitle,
   getCardDisplayTitle,
   getCardPreviewAspectRatioCss,
@@ -118,6 +120,7 @@ export function CanvasCard({
 }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
   const previewReadyRef = useRef(false);
   const dragStateRef = useRef<{
@@ -133,7 +136,9 @@ export function CanvasCard({
   const suppressNextClickRef = useRef(false);
   const [useIframeFallback, setUseIframeFallback] = useState(() => shouldUsePlayableMediaFallback(document));
   const [isDragging, setIsDragging] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const accessibleTitle = getCardDisplayTitle(document);
   const caption = getCardDisplaySubtitle(document);
   const [titleDraft, setTitleDraft] = useState(accessibleTitle);
@@ -235,6 +240,31 @@ export function CanvasCard({
     });
   }, [document.id, onRegisterPreviewCapture, useIframeFallback]);
 
+  useEffect(() => {
+    if (!contextMenuPosition) return undefined;
+
+    function closeContextMenu(event: globalThis.MouseEvent) {
+      if (contextMenuRef.current?.contains(event.target as Node)) return;
+      setContextMenuPosition(null);
+    }
+
+    function closeContextMenuWithKeyboard(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setContextMenuPosition(null);
+      }
+    }
+
+    window.document.addEventListener("mousedown", closeContextMenu);
+    window.document.addEventListener("contextmenu", closeContextMenu);
+    window.document.addEventListener("keydown", closeContextMenuWithKeyboard);
+
+    return () => {
+      window.document.removeEventListener("mousedown", closeContextMenu);
+      window.document.removeEventListener("contextmenu", closeContextMenu);
+      window.document.removeEventListener("keydown", closeContextMenuWithKeyboard);
+    };
+  }, [contextMenuPosition]);
+
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
 
@@ -325,6 +355,18 @@ export function CanvasCard({
     onToggleSelect(node.id);
   }
 
+  function handleContextMenu(event: MouseEvent<HTMLElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+
+    setContextMenuPosition({
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    });
+  }
+
   function stopCardInteraction(event: MouseEvent<HTMLElement> | PointerEvent<HTMLElement>) {
     event.stopPropagation();
   }
@@ -363,10 +405,22 @@ export function CanvasCard({
     }
   }
 
+  async function handleDownload() {
+    setIsDownloading(true);
+
+    try {
+      await downloadCardDocument(document);
+      setContextMenuPosition(null);
+    } finally {
+      setIsDownloading(false);
+    }
+  }
+
   return (
     <article
       className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onPointerCancel={handlePointerCancel}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -432,6 +486,40 @@ export function CanvasCard({
         aria-label={`Resize ${accessibleTitle}`}
         onPointerDown={handleResizePointerDown}
       />
+      {contextMenuPosition && (
+        <div
+          className="popover canvas-card-context-menu"
+          ref={contextMenuRef}
+          data-popover
+          role="menu"
+          aria-label={`${accessibleTitle} actions`}
+          style={{
+            left: `${contextMenuPosition.x}px`,
+            top: `${contextMenuPosition.y}px`,
+          }}
+          onClick={stopCardInteraction}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onPointerDown={stopCardInteraction}
+        >
+          <button className="context-menu-item" type="button" role="menuitem" disabled title="Coming soon">
+            <Pencil size={16} aria-hidden="true" />
+            <span>Editar</span>
+          </button>
+          <button
+            className="context-menu-item"
+            type="button"
+            role="menuitem"
+            onClick={handleDownload}
+            disabled={isDownloading}
+          >
+            <Download size={16} aria-hidden="true" />
+            <span>{isDownloading ? "Descargando..." : "Descargar"}</span>
+          </button>
+        </div>
+      )}
     </article>
   );
 }

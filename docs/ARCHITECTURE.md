@@ -211,7 +211,9 @@ The frontend is responsible for workspace state and reconciliation:
 - `frontend/src/components/AgentComposer.tsx`: prompt composer, skill selector, model selector, and selected cards selector.
 - `frontend/src/components/CanvasCard.tsx`: card rendering, selection, resize, and inline renaming.
 
-The composer's `Auto` option means all currently available skills. It is not a real skill.
+The composer's `Auto` option means the active agent's default skills when that
+agent declares them, falling back to all currently available skills otherwise.
+It is not a real skill.
 
 ## Current Endpoints
 

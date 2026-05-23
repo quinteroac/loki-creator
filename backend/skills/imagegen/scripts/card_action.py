@@ -20,11 +20,15 @@ SUPPORTED_IMAGE_MIME_TYPES = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
-ASPECT_RATIO_VALUES = {
-    "1:1": 1 / 1,
-    "4:3": 4 / 3,
-    "16:9": 16 / 9,
-    "9:16": 9 / 16,
+RESOLUTION_VALUES = {
+    "1024x1024": (1024, 1024),
+    "1536x1024": (1536, 1024),
+    "1024x1536": (1024, 1536),
+    "2048x2048": (2048, 2048),
+    "2048x1152": (2048, 1152),
+    "3840x2160": (3840, 2160),
+    "2160x3840": (2160, 3840),
+    "auto": None,
 }
 
 
@@ -169,12 +173,14 @@ def write_output_schema(run_dir: Path) -> Path:
             {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["title", "prompt", "imagePath", "mimeType"],
+                "required": ["title", "prompt", "imagePath", "mimeType", "width", "height"],
                 "properties": {
                     "title": {"type": "string"},
                     "prompt": {"type": "string"},
                     "imagePath": {"type": "string"},
                     "mimeType": {"type": "string"},
+                    "width": {"type": "integer"},
+                    "height": {"type": "integer"},
                 },
             },
             indent=2,
@@ -212,11 +218,28 @@ def build_codex_prompt(payload: dict, run_dir: Path, output_dir: Path, selected_
         payload.get("prompt"),
     )
     title_hint = first_text(params.get("title"), params.get("name"), "Generated image")
-    aspect_ratio = normalize_aspect_ratio(params.get("aspectRatio"))
+    resolution = normalize_resolution(params.get("resolution"))
+    dimensions = RESOLUTION_VALUES[resolution]
+    resolution_requirement = (
+        f"The final generated image file must be exactly {dimensions[0]}x{dimensions[1]} pixels."
+        if dimensions
+        else "Let Codex choose the output dimensions that best fit the request."
+    )
+    retry_requirement = (
+        "If an attempt returns any other pixel dimensions, regenerate with the requested resolution before choosing the final image."
+        if dimensions
+        else "Do not force a specific pixel size when resolution is auto."
+    )
 
     selected_image_lines = "\n".join(f"- {path}" for path in selected_images) or "- none"
 
     return f"""Use the Codex imagegen skill to create the requested raster image artifact for Loki Creator.
+
+Execution boundary:
+- Use only Codex's built-in image generation/editing path provided by the imagegen skill.
+- Do not use ComfyUI, comfy-agent-tools, comfy-imagegen, comfy-image-generate, comfy-image-edit, comfy-image-upscale, or any backend/skills/comfy-* skill.
+- Do not read Comfy skill instructions and do not run commands whose names start with comfy-.
+- If you cannot use Codex imagegen directly, fail rather than substituting a Comfy workflow.
 
 User request:
 {prompt}
@@ -224,8 +247,8 @@ User request:
 Title hint:
 {title_hint}
 
-Aspect ratio:
-{aspect_ratio}
+Resolution:
+{resolution}
 
 Selected image inputs available as --image attachments:
 {selected_image_lines}
@@ -233,44 +256,53 @@ Selected image inputs available as --image attachments:
 Output requirements:
 - Use the imagegen skill's default built-in image generation/editing path unless the request explicitly requires a fallback.
 - If image attachments are present, treat them as visual input from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
-- The final generated image file itself must have aspect ratio {aspect_ratio}. This is a hard requirement.
-- If an attempt returns the wrong aspect ratio, regenerate with the requested aspect ratio before choosing the final image.
-- Do not crop, pad, stretch, or post-process an incorrectly shaped output to fake the requested aspect ratio.
+- {resolution_requirement}
+- {retry_requirement}
+- Do not crop, pad, stretch, upscale, downscale, or post-process an incorrectly sized output to fake the requested resolution.
 - Save exactly one final image file inside this directory: {output_dir}
-- Do not save the final image only under CODEX_HOME or another temporary location.
+- Do not save the final image only under CODEX_HOME or another temporary location; copy or move the chosen image into the output directory above.
 - Do not modify repository source files.
 - Return only JSON matching this schema:
-  {{"title":"short card title","prompt":"final generation/edit prompt","imagePath":"absolute path to final image","mimeType":"image/png or image/jpeg or image/webp"}}
+  {{"title":"short card title","prompt":"final generation/edit prompt","imagePath":"absolute path to final image","mimeType":"image/png or image/jpeg or image/webp","width":1024,"height":1024}}
 
 Loki run directory:
 {run_dir}
 """
 
 
-def normalize_aspect_ratio(value: object) -> str:
-    aspect_ratio = first_text(value)
-    return aspect_ratio if aspect_ratio in ASPECT_RATIO_VALUES else "1:1"
+def normalize_resolution(value: object) -> str:
+    resolution = first_text(value)
+    if resolution in RESOLUTION_VALUES:
+        return resolution
+    raise RuntimeError(
+        "imagegen requires params.resolution to be one of: "
+        f"{', '.join(RESOLUTION_VALUES.keys())}"
+    )
 
 
-def validate_output_aspect_ratio(image_path: Path, aspect_ratio: str) -> None:
-    target_ratio = ASPECT_RATIO_VALUES.get(aspect_ratio)
-    if target_ratio is None:
+def validate_output_resolution(image_path: Path, resolution: str) -> tuple[int | None, int | None] | None:
+    target_dimensions = RESOLUTION_VALUES[resolution]
+    if target_dimensions is None:
         return
 
     with Image.open(image_path) as image:
         width, height = image.size
-        if width <= 0 or height <= 0:
-            return
-
-        current_ratio = width / height
-        if abs(current_ratio - target_ratio) / target_ratio <= 0.025:
-            return
+        if (width, height) == target_dimensions:
+            return width, height
 
     raise RuntimeError(
-        f"Codex returned an image with aspect ratio {width}:{height}, "
-        f"but Loki requested {aspect_ratio}. Regenerate with the requested aspect ratio; "
-        "do not crop, pad, or post-process an incorrect output."
+        f"Codex returned an image with resolution {width}x{height}, "
+        f"but Loki requested {resolution}. Regenerate with the requested resolution; "
+        "do not crop, pad, resize, or post-process an incorrect output."
     )
+
+
+def read_image_dimensions(image_path: Path) -> tuple[int | None, int | None]:
+    try:
+        with Image.open(image_path) as image:
+            return image.size
+    except Exception:
+        return None, None
 
 
 def resolve_codex_bin() -> str:
@@ -314,7 +346,7 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
         codex_bin,
         "exec",
         "--cd",
-        str(repo_root()),
+        str(run_dir),
         "--dangerously-bypass-approvals-and-sandbox",
         "--output-schema",
         str(schema_path),
@@ -381,10 +413,21 @@ def main() -> None:
     result = run_codex(payload, run_dir, selected_images)
     image_path, mime_type = validate_output_image(result, run_dir)
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
-    aspect_ratio = normalize_aspect_ratio(params.get("aspectRatio"))
-    validate_output_aspect_ratio(image_path, aspect_ratio)
+    resolution = normalize_resolution(params.get("resolution"))
+    validated_dimensions = validate_output_resolution(image_path, resolution)
+    width, height = validated_dimensions if validated_dimensions else read_image_dimensions(image_path)
     title = first_text(result.get("title"), "Generated image")
     final_prompt = first_text(result.get("prompt"), payload.get("prompt"))
+
+    metadata = {
+        "resolution": resolution,
+        "tags": ["imagegen"],
+        "capabilities": ["image-generation", "image-editing"],
+    }
+    if width:
+        metadata["width"] = width
+    if height:
+        metadata["height"] = height
 
     artifact = {
         "path": str(image_path),
@@ -392,12 +435,7 @@ def main() -> None:
         "mimeType": mime_type,
         "title": title,
         "prompt": final_prompt,
-        "metadata": {
-            "preferredAspectRatio": aspect_ratio,
-            "aspectRatio": aspect_ratio,
-            "tags": ["imagegen"],
-            "capabilities": ["image-generation", "image-editing"],
-        },
+        "metadata": metadata,
     }
     print(json.dumps({"artifacts": [artifact]}))
 

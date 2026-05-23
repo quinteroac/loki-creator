@@ -230,6 +230,35 @@ button {
     rgba(36, 36, 36, 0.08) 0 12px 16px -4px;
 }
 
+.canvas-card:has(.canvas-card-context-menu) {
+  z-index: 4;
+}
+
+.canvas-card-context-menu {
+  z-index: 5;
+  bottom: auto;
+  width: 176px;
+  min-width: 176px;
+  transform: translate(8px, 8px);
+}
+
+.canvas-card-context-menu .context-menu-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.canvas-card-context-menu .context-menu-item:disabled {
+  color: var(--dark-text-soft);
+  cursor: default;
+  opacity: 0.58;
+}
+
+.canvas-card-context-menu .context-menu-item:disabled:hover {
+  background: transparent;
+}
+
 .canvas-card-resize {
   position: absolute;
   right: 8px;

@@ -5,26 +5,38 @@ metadata:
   loki:
     capabilities: [image-generation, image-editing, raster-card-output]
     arguments:
-      - id: aspectRatio
-        label: Aspect ratio
-        description: Choose the image frame before generation or editing.
+      - id: resolution
+        label: Resolution
+        description: Choose the exact output resolution before generation or editing.
         type: choice
         required: true
         askWhen: always
         order: 10
         options:
-          - value: "1:1"
-            label: Square
-            description: Balanced square image.
-          - value: "4:3"
-            label: Landscape 4:3
-            description: Classic horizontal frame.
-          - value: "16:9"
-            label: Widescreen
-            description: Wide cinematic frame.
-          - value: "9:16"
-            label: Portrait
-            description: Vertical mobile frame.
+          - value: "1024x1024"
+            label: "1024x1024 square"
+            description: Standard square image.
+          - value: "1536x1024"
+            label: "1536x1024 landscape"
+            description: Standard landscape image.
+          - value: "1024x1536"
+            label: "1024x1536 portrait"
+            description: Standard portrait image.
+          - value: "2048x2048"
+            label: "2048x2048 2K square"
+            description: High-resolution square image.
+          - value: "2048x1152"
+            label: "2048x1152 2K landscape"
+            description: High-resolution 16:9 landscape image.
+          - value: "3840x2160"
+            label: "3840x2160 4K landscape"
+            description: 4K 16:9 landscape image.
+          - value: "2160x3840"
+            label: "2160x3840 4K portrait"
+            description: 4K 9:16 portrait image.
+          - value: "auto"
+            label: Auto
+            description: Let Codex choose the best resolution for the request.
     action:
       type: cli-local
       command: [uv, run, python, scripts/card_action.py]

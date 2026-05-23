@@ -293,12 +293,22 @@ function toPiSkillToolName(skill: LokiSkill) {
   return `loki_skill_${skill.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 }
 
-function selectSkillsForAgent(availableSkills: LokiSkill[], selectedSkills: string[]) {
+function getDefaultSkillIds(agentId: string) {
+  return agents.find((agent) => agent.id === agentId)?.defaultSkills ?? [];
+}
+
+function selectSkillsForAgent(availableSkills: LokiSkill[], selectedSkills: string[], agentId: string) {
   const normalizedSelected = selectedSkills.map(normalizeSkillName);
   const isAuto = normalizedSelected.length === 0 || normalizedSelected.includes("auto");
+  const defaultSkillIds = getDefaultSkillIds(agentId).map(normalizeSkillName);
 
   if (isAuto) {
-    return availableSkills;
+    if (defaultSkillIds.length === 0) return availableSkills;
+
+    return availableSkills.filter((skill) => {
+      const candidates = [skill.id, skill.name].map(normalizeSkillName);
+      return candidates.some((candidate) => defaultSkillIds.includes(candidate));
+    });
   }
 
   return availableSkills.filter((skill) => {
@@ -906,7 +916,7 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       ? pendingConversations.get(request.conversationId)
       : undefined;
     const selectedSkillIds = existingConversation?.selectedSkillIds ?? request.skills;
-    const selectedSkills = selectSkillsForAgent(availableSkills, selectedSkillIds);
+    const selectedSkills = selectSkillsForAgent(availableSkills, selectedSkillIds, agentId);
     const collectedArgs = existingConversation
       ? mergeConversationAnswers(existingConversation, request)
       : { ...(request.collectedArgs ?? {}) };
