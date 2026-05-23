@@ -26,6 +26,7 @@ The backend owns the stable runtime contracts and execution boundary:
 - `backend/app/services/skill_registry.py`: reads skill folders from `backend/skills/`.
 - `backend/app/services/skill_invokers.py`: executes declared skill actions.
 - `backend/app/services/card_packager.py`: converts raw skill outputs into Loki cards.
+- `backend/app/services/projects.py`: persists named canvas projects under `.loki/projects/`.
 - `backend/app/services/skill_runs.py`: in-memory async run state and action execution.
 - `backend/app/api/routes.py`: FastAPI endpoints for skills, skill runs, instructions, and artifacts.
 
@@ -131,6 +132,17 @@ Cards remain Loki's visual contract.
 
 The frontend stores card content separately from canvas layout. `CardDocument` owns artifact data; `CanvasNode` owns position and size. This keeps visual placement independent from skill output.
 
+## Projects
+
+Projects are named snapshots of the current canvas stored as local folders under
+`.loki/projects/<project-id>/`. Each project folder contains `project.json` with
+the visible project name, timestamps, card documents, and canvas nodes. Opening a
+project replaces the current frontend canvas rather than merging cards.
+
+Generated artifacts referenced by card metadata remain in their original
+`.loki/skills/...` locations; project saves persist references and canvas state,
+not copies of artifact files.
+
 ## Selected Cards
 
 Selected cards are treated as multimodal artifacts, not as trusted instructions. A selected card snapshot includes:
@@ -218,6 +230,9 @@ It is not a real skill.
 ## Current Endpoints
 
 - `GET /api/health`
+- `GET /api/projects`
+- `GET /api/projects/{project_id}`
+- `PUT /api/projects/{project_id}`
 - `GET /api/skills`
 - `POST /api/skill-runs`
 - `GET /api/skill-runs`

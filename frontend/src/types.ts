@@ -14,6 +14,7 @@ export type CardMetadata = {
   tags?: string[];
   capabilities?: string[];
   preferredAspectRatio?: CardAspectRatio;
+  resolution?: string;
   playableMedia?: boolean;
 };
 
@@ -95,6 +96,29 @@ export type CanvasNode = {
   id: string;
   cardDocumentId: string;
   frame: CanvasNodeFrame;
+};
+
+export type ProjectDocument = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  cardDocuments: CardDocument[];
+  canvasNodes: CanvasNode[];
+};
+
+export type ProjectSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  cardCount: number;
+};
+
+export type ProjectSaveRequest = {
+  name: string;
+  cardDocuments: CardDocument[];
+  canvasNodes: CanvasNode[];
 };
 
 export type SkillDefinition = {

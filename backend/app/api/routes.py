@@ -7,17 +7,21 @@ from fastapi.responses import FileResponse
 from app.models import (
     InstructionRequest,
     InstructionResponse,
+    ProjectDocument,
+    ProjectSaveRequest,
+    ProjectSummary,
     SkillDefinition,
     SkillRun,
     SkillRunRequest,
 )
-from app.services import InstructionService, SkillRegistry, SkillRunService
+from app.services import InstructionService, ProjectNotFoundError, ProjectService, SkillRegistry, SkillRunService
 
 router = APIRouter(prefix="/api")
 skill_registry = SkillRegistry()
 skill_run_service = SkillRunService(registry=skill_registry)
 repo_root = Path(__file__).resolve().parents[3]
 artifacts_root = Path(os.environ.get("LOKI_ARTIFACTS_ROOT", repo_root / ".loki")).resolve()
+projects_root = artifacts_root / "projects"
 
 
 def get_instruction_service() -> InstructionService:
@@ -30,6 +34,10 @@ def get_skill_registry() -> SkillRegistry:
 
 def get_skill_run_service() -> SkillRunService:
     return skill_run_service
+
+
+def get_project_service() -> ProjectService:
+    return ProjectService(projects_root)
 
 
 @router.get("/health")
@@ -50,6 +58,33 @@ def list_skills(
     registry: SkillRegistry = Depends(get_skill_registry),
 ) -> list[SkillDefinition]:
     return registry.list_skills()
+
+
+@router.get("/projects", response_model=list[ProjectSummary])
+def list_projects(
+    service: ProjectService = Depends(get_project_service),
+) -> list[ProjectSummary]:
+    return service.list_projects()
+
+
+@router.get("/projects/{project_id}", response_model=ProjectDocument)
+def get_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    try:
+        return service.get_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@router.put("/projects/{project_id}", response_model=ProjectDocument)
+def save_project(
+    project_id: str,
+    payload: ProjectSaveRequest,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    return service.save_project(project_id, payload)
 
 
 @router.post("/skill-runs", response_model=SkillRun)

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createAgentRun, listAgentModels } from "./api/agentRuns";
+import { listProjects, loadProject, saveProject } from "./api/projects";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
 import { listSkills } from "./api/skills";
 import { AgentComposer } from "./components/AgentComposer";
@@ -33,6 +34,7 @@ import type {
   AgentRunResponse,
   CanvasNodeFrame,
   CardDocument,
+  ProjectSummary,
   SelectedCardPreview,
   SkillRun,
 } from "./types";
@@ -63,6 +65,10 @@ export function App() {
   const [pendingCollectedArgs, setPendingCollectedArgs] = useState<Record<string, string>>({});
   const [pendingAgentRequest, setPendingAgentRequest] = useState<AgentRunRequest | null>(null);
   const [isAgentResponseOpen, setIsAgentResponseOpen] = useState(false);
+  const [isSaveProjectOpen, setIsSaveProjectOpen] = useState(false);
+  const [projectNameDraft, setProjectNameDraft] = useState("");
+  const [currentProjectName, setCurrentProjectName] = useState("Untitled project");
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [skillSearch, setSkillSearch] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -94,6 +100,29 @@ export function App() {
     }
 
     loadSkills();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSavedProjects() {
+      try {
+        const savedProjects = await listProjects();
+        if (isMounted) {
+          setProjects(savedProjects);
+        }
+      } catch {
+        if (isMounted) {
+          setProjects([]);
+        }
+      }
+    }
+
+    loadSavedProjects();
 
     return () => {
       isMounted = false;
@@ -430,6 +459,72 @@ export function App() {
     setStatus("Prompt loaded from card.");
   }
 
+  function openSaveProjectDialog() {
+    setProjectNameDraft(currentProjectName === "Untitled project" ? "" : currentProjectName);
+    setIsSaveProjectOpen(true);
+    setOpenMenu(null);
+  }
+
+  async function toggleProjectMenu() {
+    if (openMenu === "project-open") {
+      setOpenMenu(null);
+      return;
+    }
+
+    try {
+      setProjects(await listProjects());
+    } catch {
+      setProjects([]);
+      setStatus("Could not load projects.");
+    }
+    setOpenMenu("project-open");
+  }
+
+  function closeSaveProjectDialog() {
+    setIsSaveProjectOpen(false);
+  }
+
+  async function submitSaveProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = projectNameDraft.trim();
+
+    if (!name) {
+      setStatus("Name the project before saving.");
+      return;
+    }
+
+    try {
+      const project = await saveProject({
+        name,
+        cardDocuments,
+        canvasNodes,
+      });
+      setCurrentProjectName(project.name);
+      setProjects(await listProjects());
+      setIsSaveProjectOpen(false);
+      setStatus("Project saved.");
+    } catch {
+      setStatus("Could not save project.");
+    }
+  }
+
+  async function openProject(projectId: string) {
+    try {
+      const project = await loadProject(projectId);
+      const completedRuns = await listSkillRuns({ status: "succeeded" });
+      completedRuns.forEach((run) => processedRunIdsRef.current.add(run.id));
+
+      setCardDocuments(project.cardDocuments.map(normalizeCardDocument));
+      setCanvasNodes(project.canvasNodes);
+      setCurrentProjectName(project.name);
+      setSelectedCards([]);
+      setOpenMenu(null);
+      setStatus("Project opened.");
+    } catch {
+      setStatus("Could not open project.");
+    }
+  }
+
   const registerPreviewCapture = useCallback((cardDocumentId: string, capturePreview: () => SelectedCardPreview) => {
     previewCapturesRef.current.set(cardDocumentId, capturePreview);
 
@@ -447,7 +542,37 @@ export function App() {
 
   return (
     <main className="workspace" aria-label="Loki workspace">
-      <Topbar />
+      <Topbar
+        isProjectMenuOpen={openMenu === "project-open"}
+        onOpenProject={openProject}
+        onSaveProject={openSaveProjectDialog}
+        onToggleProjectMenu={toggleProjectMenu}
+        projectName={currentProjectName}
+        projects={projects}
+      />
+      {isSaveProjectOpen && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="project-modal" onSubmit={submitSaveProject} aria-label="Save project">
+            <h2>Save project</h2>
+            <label htmlFor="projectNameInput">Project name</label>
+            <input
+              id="projectNameInput"
+              className="project-name-input"
+              value={projectNameDraft}
+              onChange={(event) => setProjectNameDraft(event.target.value)}
+              autoFocus
+            />
+            <div className="project-modal-actions">
+              <button className="button-tertiary" type="button" onClick={closeSaveProjectDialog}>
+                Cancel
+              </button>
+              <button className="button-primary" type="submit">
+                Save
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       <AgentResponsePanel
         isOpen={isAgentResponseOpen}
         onToggle={() => setIsAgentResponseOpen((current) => !current)}
