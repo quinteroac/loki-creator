@@ -18,10 +18,10 @@ metadata:
         options:
           - value: anima-base
             label: Anima Base
-            description: Anime and illustration generation with Anima Base v1.0 + Turbo LoRA. Requires Danbooru-style tag prompts.
+            description: Anime and illustration generation with Anima Base v1.0 + Turbo LoRA.
           - value: anima-preview3-turbo
             label: Anima Preview3
-            description: Anime and illustration generation with Anima Preview3 + Turbo LoRA. Requires Danbooru-style tag prompts.
+            description: Anime and illustration generation with Anima Preview3 + Turbo LoRA.
           - value: flux-klein-9b-snofs
             label: FLUX Klein SNOFS
             description: FLUX.2 Klein 9B FP8 + SNOFS LoRA for local image generation.
@@ -139,10 +139,10 @@ COMFY_ORG_API_KEY=... uv run comfy-imagegen grok-generate \
 
 ## Prompt Guidance
 
-For `modelProfile` values `anima-base` and `anima-preview3-turbo`, the action
-input prompt must be Danbooru-style tags. Never pass the user's natural-language
-request directly to `--prompt` and never use a sentence for Anima. Rewrite the
-request before invoking the Loki action.
+For `modelProfile` values `anima-base` and `anima-preview3-turbo`, adapt the
+user's request into Danbooru-style tags before invoking the Loki action. The
+runtime also normalizes natural-language prompts as a fallback, so do not ask the
+user to rewrite their request just to satisfy the model format.
 
 Use a comma-separated tag list with lowercase tags and spaces instead of
 underscores except score tags. Recommended positive prefix:
@@ -157,14 +157,7 @@ cinematica"; Anima prompt should be:
 masterpiece, best quality, score_7, safe, 1girl, samurai, katana, forest, rain, cinematic lighting, dramatic shadows, detailed background, anime style
 ```
 
-It must not be:
-
-```text
-Una chica samurai en un bosque lluvioso con luz cinematica
-```
-
-The Loki action rejects Anima generation when the prompt still looks like
-natural language. Recommended negative guidance when adapting prompts:
+Recommended negative guidance when adapting prompts:
 `worst quality, low quality, score_1, score_2, score_3, artist name`.
 
 Anima is not a realism model. It is intended for anime, illustration, and art.

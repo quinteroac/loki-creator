@@ -601,18 +601,101 @@ def looks_like_tag_prompt(prompt: str) -> bool:
     return not any(lowered_first_tag.startswith(marker) for marker in natural_language_starters)
 
 
-def validate_imagegen_prompt(mode: str, model_profile: str, prompt: str, skill_label: str) -> None:
-    if mode != "generate" or not is_anima_profile(model_profile):
-        return
+def normalize_anima_prompt(prompt: str) -> str:
     if looks_like_tag_prompt(prompt):
-        return
+        return prompt
 
-    raise RuntimeError(
-        f"{skill_label} with {model_profile} requires Danbooru-style tags, not natural language. "
-        "Rewrite the user's request into a comma-separated tag prompt before invoking the skill. "
-        "Use compact tags like: masterpiece, best quality, score_7, safe, 1girl, samurai, katana, "
-        "forest, rain, cinematic lighting, detailed background, anime style."
-    )
+    lowered = prompt.lower()
+    tags: list[str] = ["masterpiece", "best quality", "score_7", "safe"]
+    subject_map = [
+        (("1girl", "girl", "woman", "mujer", "chica", "niña"), "1girl"),
+        (("1boy", "boy", "man", "hombre", "chico", "niño"), "1boy"),
+        (("robot", "android", "mecha"), "robot"),
+        (("cat", "gato", "gata"), "cat"),
+        (("dog", "perro", "perra"), "dog"),
+        (("dragon", "dragon", "dragón"), "dragon"),
+    ]
+    descriptor_map = [
+        (("samurai",), "samurai"),
+        (("katana", "sword", "espada"), "katana"),
+        (("portrait", "retrato"), "portrait"),
+        (("full body", "cuerpo completo"), "full body"),
+        (("close-up", "closeup", "primer plano"), "close-up"),
+        (("forest", "bosque"), "forest"),
+        (("city", "ciudad"), "city"),
+        (("street", "calle"), "street"),
+        (("beach", "playa"), "beach"),
+        (("mountain", "montaña"), "mountain"),
+        (("rain", "lluvia", "lluvioso", "lluviosa"), "rain"),
+        (("snow", "nieve", "nevado", "nevada"), "snow"),
+        (("night", "noche"), "night"),
+        (("sunset", "atardecer"), "sunset"),
+        (("cinematic", "cinematica", "cinemática"), "cinematic lighting"),
+        (("dramatic", "dramatico", "dramático"), "dramatic lighting"),
+        (("neon",), "neon lighting"),
+        (("soft light", "luz suave"), "soft lighting"),
+        (("detailed", "detalle", "detallado", "detallada"), "detailed background"),
+        (("anime", "manga"), "anime style"),
+        (("illustration", "ilustracion", "ilustración"), "illustration"),
+    ]
+
+    for needles, tag in [*subject_map, *descriptor_map]:
+        if any(needle in lowered for needle in needles):
+            tags.append(tag)
+
+    words = re.findall(r"[a-zA-ZÀ-ÿ0-9_+-]+", lowered)
+    stop_words = {
+        "a",
+        "an",
+        "and",
+        "con",
+        "create",
+        "de",
+        "del",
+        "draw",
+        "el",
+        "en",
+        "for",
+        "generate",
+        "genera",
+        "haz",
+        "image",
+        "imagen",
+        "la",
+        "las",
+        "los",
+        "make",
+        "of",
+        "para",
+        "por",
+        "the",
+        "un",
+        "una",
+        "with",
+        "y",
+    }
+    existing = {tag.lower() for tag in tags}
+    for word in words:
+        normalized = word.strip("_+-")
+        if len(normalized) < 3 or normalized in stop_words or normalized in existing:
+            continue
+        tags.append(normalized)
+        existing.add(normalized)
+        if len(tags) >= 18:
+            break
+
+    if not any(tag in tags for tag in ("anime style", "illustration")):
+        tags.append("anime style")
+    if "detailed background" not in tags:
+        tags.append("detailed background")
+
+    return ", ".join(unique_items(tags))
+
+
+def normalize_imagegen_prompt(mode: str, model_profile: str, prompt: str) -> str:
+    if mode != "generate" or not is_anima_profile(model_profile):
+        return prompt
+    return normalize_anima_prompt(prompt)
 
 
 def build_imagegen_command(
@@ -639,7 +722,7 @@ def build_imagegen_command(
 
     if model_profile:
         mode = maybe_adjust_imagegen_mode_for_profile(mode, model_profile)
-    validate_imagegen_prompt(mode, model_profile, prompt, skill_label)
+    prompt = normalize_imagegen_prompt(mode, model_profile, prompt)
 
     command = ["comfy-imagegen", mode, "--out", str(out_dir)]
     if mode in {"generate", "edit", "upscale"}:
