@@ -698,6 +698,100 @@ def normalize_imagegen_prompt(mode: str, model_profile: str, prompt: str) -> str
     return normalize_anima_prompt(prompt)
 
 
+def lora_architecture_for_profile(model_profile: str) -> str:
+    if is_anima_profile(model_profile):
+        return "anima"
+    if model_profile == "qwen-edit2511":
+        return "qwen-image-edit"
+    if model_profile == "flux-klein-9b-snofs":
+        return "flux-klein"
+    return ""
+
+
+def first_scalar_text(*values: object) -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (int, float)):
+            return str(value)
+    return ""
+
+
+def extra_lora_value_from_raw(raw: object) -> str:
+    if isinstance(raw, dict):
+        path = first_text(raw.get("path"), raw.get("name"), raw.get("file"))
+        if not path:
+            return ""
+        model_strength = first_scalar_text(raw.get("modelStrength"), raw.get("model_strength"), raw.get("strength"))
+        clip_strength = first_scalar_text(raw.get("clipStrength"), raw.get("clip_strength"))
+        if model_strength:
+            path = f"{path}:{model_strength}"
+            if clip_strength:
+                path = f"{path}:{clip_strength}"
+        return path
+    return first_text(raw)
+
+
+def extra_lora_values(params: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("extraLora", "extra_lora", "extraLoras", "extra_loras", "lora", "loras"):
+        raw = params.get(key)
+        if isinstance(raw, list):
+            values.extend(extra_lora_value_from_raw(value) for value in raw)
+        else:
+            values.append(extra_lora_value_from_raw(raw))
+    return [value for value in values if value]
+
+
+def resolve_extra_lora(value: str, architecture: str) -> str:
+    lora_path, separator, strengths = value.partition(":")
+    path = Path(lora_path).expanduser()
+    suffix = f"{separator}{strengths}" if separator else ""
+    if path.is_absolute():
+        return value
+    if path.parent != Path("."):
+        candidates = [repo_root() / path, models_dir() / path]
+        if path.parts and path.parts[0] == "loras":
+            candidates = [models_dir() / path, repo_root() / path]
+        for candidate in candidates:
+            if candidate.is_file():
+                return f"{candidate}{suffix}"
+        return value
+
+    search_dirs = []
+    if architecture:
+        search_dirs.append(models_dir() / "loras" / architecture)
+    search_dirs.append(models_dir() / "loras")
+
+    normalized_name = lora_path.lower().replace("_", "-").replace(" ", "-")
+    matches: list[Path] = []
+    for search_dir in search_dirs:
+        if not search_dir.is_dir():
+            continue
+        candidates = sorted(search_dir.glob("*.safetensors"))
+        exact_names = {normalized_name, f"{normalized_name}.safetensors"}
+        for candidate in candidates:
+            candidate_key = candidate.name.lower().replace("_", "-").replace(" ", "-")
+            candidate_stem = candidate.stem.lower().replace("_", "-").replace(" ", "-")
+            if candidate_key in exact_names or candidate_stem == normalized_name:
+                return f"{candidate}{suffix}"
+        matches.extend(
+            candidate
+            for candidate in candidates
+            if normalized_name in candidate.stem.lower().replace("_", "-").replace(" ", "-")
+        )
+
+    if matches:
+        return f"{matches[0]}{suffix}"
+    return value
+
+
+def append_extra_loras(command: list[str], params: dict[str, Any], model_profile: str) -> None:
+    architecture = lora_architecture_for_profile(model_profile)
+    for value in extra_lora_values(params):
+        command.extend(["--extra-lora", resolve_extra_lora(value, architecture)])
+
+
 def build_imagegen_command(
     *,
     mode: str,
@@ -750,6 +844,8 @@ def build_imagegen_command(
         command.extend(["--aspect-ratio", aspect_ratio])
     if as_int(params.get("seed")) is not None:
         command.extend(["--seed", str(as_int(params.get("seed")))])
+    if mode in {"generate", "edit"}:
+        append_extra_loras(command, params, model_profile)
 
     cwd = write_run_comfy_config(out_dir.parent, capability=imagegen_capability(mode), model_profile=model_profile) if model_profile else repo_root()
     return command, cwd

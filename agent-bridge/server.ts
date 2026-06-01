@@ -410,6 +410,9 @@ function createLokiSkillPiTool(
   const musicgenDescription = skill.id === "comfy-musicgen"
     ? " For ACE-Step music generation, the prompt parameter must be a comma-separated music caption/tag list, not a natural-language request. Never write phrases like \"generate a song\" or \"make music about\" in prompt. Rewrite the user request into tags such as genre, vocal intent, instruments, mood, production style, BPM, and key; put lyrics only in paramsJson.lyrics."
     : "";
+  const loraDescription = skill.id === "comfy-image-generate" || skill.id === "comfy-image-edit"
+    ? " If the user asks for a LoRA, include it in paramsJson as extraLora or lora. Use a resolved .safetensors path when known; otherwise pass the requested LoRA name so the runtime can search the active architecture folder such as loras/anima."
+    : "";
   const promptDescription = skill.id === "comfy-musicgen"
     ? "ACE-Step music caption only: comma-separated tags such as genre, vocal intent, instruments, mood, production style, BPM, and key. Do not pass natural-language instructions like 'generate a song'."
     : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
@@ -417,8 +420,8 @@ function createLokiSkillPiTool(
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${musicgenDescription}${selectedCardDescription}${attachmentDescription}`,
-    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${musicgenDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${musicgenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
+    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${musicgenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
         description: promptDescription,
