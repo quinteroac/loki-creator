@@ -3,12 +3,10 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cors } from "@elysiajs/cors";
 import {
-  AuthStorage,
   createAgentSession,
-  DefaultResourceLoader,
+  createAgentSessionServices,
   defineTool,
   getAgentDir,
-  ModelRegistry,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -191,12 +189,11 @@ type AgentRunState = {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
-const backendApiUrl = process.env.LOKI_BACKEND_URL ?? "http://127.0.0.1:8000";
+const backendApiUrl = process.env.LOKI_BACKEND_URL ?? "http://127.0.0.1:8001";
 const port = Number(process.env.LOKI_AGENT_BRIDGE_PORT ?? 8787);
 const skillRunWaitTimeoutMs = Number(process.env.LOKI_SKILL_RUN_WAIT_TIMEOUT_MS ?? 900000);
 const allowedOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+):\d+$/;
-const authStorage = AuthStorage.create();
-const modelRegistry = ModelRegistry.create(authStorage);
+let agentServicesPromise: ReturnType<typeof createAgentSessionServices> | undefined;
 const pendingConversations = new Map<string, PendingConversation>();
 
 const agents: LokiAgent[] = [
@@ -209,7 +206,17 @@ const agents: LokiAgent[] = [
   },
 ];
 
-function listAvailableModels(): LokiModel[] {
+async function getAgentServices() {
+  agentServicesPromise ??= createAgentSessionServices({
+    cwd: repoRoot,
+    agentDir: getAgentDir(),
+  });
+
+  return agentServicesPromise;
+}
+
+async function listAvailableModelsAsync(): Promise<LokiModel[]> {
+  const { modelRegistry } = await getAgentServices();
   modelRegistry.refresh();
 
   return modelRegistry.getAvailable().map((model) => ({
@@ -220,7 +227,8 @@ function listAvailableModels(): LokiModel[] {
   }));
 }
 
-function resolveSelectedModel(label: string) {
+async function resolveSelectedModel(label: string) {
+  const { modelRegistry } = await getAgentServices();
   modelRegistry.refresh();
 
   return modelRegistry
@@ -364,7 +372,6 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
       params: {
         ...(request.collectedArgs ?? {}),
         ...structuredParams,
-        model: request.model,
         skillPrompt: skillParams.prompt,
         outputText: skillParams.outputText,
         title: skillParams.title,
@@ -480,6 +487,34 @@ function createLokiSkillPiTool(
       };
     },
   });
+}
+
+function hasExplicitSkillSelection(selectedSkills: string[]) {
+  const normalizedSelected = selectedSkills.map(normalizeSkillName);
+  return normalizedSelected.length > 0 && !normalizedSelected.includes("auto");
+}
+
+async function runExplicitSelectedSkills(
+  selectedSkills: LokiSkill[],
+  request: AgentRunRequest,
+  runState: AgentRunState,
+) {
+  for (const skill of selectedSkills) {
+    const existingSkillCall = runState.skillCalls.get(skill.id);
+    const skillCall = existingSkillCall ?? runLokiSkill(skill, { prompt: request.prompt }, request);
+
+    if (!existingSkillCall) {
+      runState.skillCalls.set(skill.id, skillCall);
+    }
+
+    const { run, cardIds } = await skillCall;
+    runState.skillRunIds.push(run.id);
+    runState.cardIds.push(...cardIds);
+
+    if (run.status === "failed") {
+      runState.skillErrors.push(`${skill.name}: ${run.error ?? "unknown error"}`);
+    }
+  }
 }
 
 function createAskUserPiTool(runState: AgentRunState) {
@@ -650,16 +685,6 @@ function createInspectLokiContextPiTool(request: AgentRunRequest) {
       };
     },
   });
-}
-
-async function createResourceLoader() {
-  const loader = new DefaultResourceLoader({
-    cwd: repoRoot,
-    agentDir: getAgentDir(),
-  });
-
-  await loader.reload();
-  return loader;
 }
 
 function createMarkdownFence(content: string) {
@@ -945,13 +970,38 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       pendingConversations.delete(existingConversation.id);
     }
 
+    if (hasExplicitSkillSelection(selectedSkillIds) && selectedSkills.length > 0) {
+      await runExplicitSelectedSkills(selectedSkills, effectiveRequest, runState);
+
+      if (runState.skillErrors.length > 0 && runState.cardIds.length === 0) {
+        return {
+          id,
+          agentId,
+          status: "failed",
+          responseText: `Loki skill failed: ${runState.skillErrors.join("\n")}`,
+          skillRunIds: runState.skillRunIds,
+          cardIds: runState.cardIds,
+          error: runState.skillErrors.join("\n"),
+        };
+      }
+
+      return {
+        id,
+        agentId,
+        status: "succeeded",
+        responseText: "Selected Loki skill completed.",
+        skillRunIds: runState.skillRunIds,
+        cardIds: runState.cardIds,
+      };
+    }
+
     const customTools = [
       createAskUserPiTool(runState),
       createInspectLokiContextPiTool(effectiveRequest),
       ...selectedSkills.map((skill) => createLokiSkillPiTool(skill, effectiveRequest, runState)),
     ];
-    const resourceLoader = await createResourceLoader();
-    const model = resolveSelectedModel(effectiveRequest.model);
+    const { authStorage, modelRegistry, resourceLoader } = await getAgentServices();
+    const model = await resolveSelectedModel(effectiveRequest.model);
 
     const result = await createAgentSession({
       cwd: repoRoot,
@@ -1054,7 +1104,7 @@ const app = new Elysia()
   )
   .get("/api/health", () => ({ status: "ok" }))
   .get("/api/agents", () => agents)
-  .get("/api/models", () => listAvailableModels())
+  .get("/api/models", () => listAvailableModelsAsync())
   .post(
     "/api/agent-runs",
     async ({ body }) => runAgent(body),

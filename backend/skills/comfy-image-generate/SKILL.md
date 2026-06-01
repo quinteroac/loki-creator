@@ -3,6 +3,7 @@ name: comfy-image-generate
 description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
+    visibility: user
     capabilities: [image-generation, raster-card-output, comfy]
     runtime:
       modelsDir: .loki/models/comfyui

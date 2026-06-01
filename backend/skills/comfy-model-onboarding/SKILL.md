@@ -3,6 +3,7 @@ name: comfy-model-onboarding
 description: Configure local comfy-agent-tools model profiles and defaults. Use when the user has no .comfy-agent-tools.json config, wants to set models_dir, change a default capability profile, add a new checkpoint or fine-tune of a supported architecture, or diagnose profile/config errors such as unknown_profile, unsupported_capability, architecture_mismatch, config_error, missing_model_file, or unsupported_architecture.
 metadata:
   loki:
+    visibility: internal
     capabilities: [model-configuration, diagnostics, comfy]
     action:
       type: cli-local

@@ -3,6 +3,7 @@ name: comfy-image-upscale
 description: Upscale existing raster images with comfy-diffusion ClearReality. Use when the user selects or provides an image and wants a higher-resolution version saved into the workspace. Do not use for new image generation, semantic editing, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
+    visibility: user
     capabilities: [image-upscaling, raster-card-output, comfy]
     runtime:
       modelsDir: .loki/models/comfyui

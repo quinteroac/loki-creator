@@ -3,6 +3,7 @@ name: comfy-tools-setup
 description: Bootstrap and validate the comfy-agent-tools Python CLIs for agent use. Use when the user asks to setup, install, update, or diagnose comfy-agent-tools; when a required CLI such as comfy-imagegen, comfy-videogen, comfy-musicgen, or comfy-models is missing; or before another comfy skill runs a CLI on a new machine.
 metadata:
   loki:
+    visibility: internal
     capabilities: [setup, diagnostics, comfy]
     action:
       type: cli-local

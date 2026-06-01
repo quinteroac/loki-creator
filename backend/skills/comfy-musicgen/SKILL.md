@@ -3,6 +3,7 @@ name: comfy-musicgen
 description: Generate music locally with comfy-diffusion and ACE-Step 1.5 Base. Use ACE-Step caption/tag prompting, not natural-language instruction prompting. Use when the user wants local GPU-backed music or song generation saved as WAV in the workspace. Do not use for hosted audio APIs, image generation, video generation, voice cloning, speech-only TTS, model downloads, ComfyUI server workflows, UI work, or custom node installation.
 metadata:
   loki:
+    visibility: user
     capabilities: [music-generation, audio-card-output, comfy]
     action:
       type: cli-local

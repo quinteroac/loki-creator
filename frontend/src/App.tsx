@@ -88,8 +88,9 @@ export function App() {
       try {
         const skills = await listSkills();
         if (isMounted) {
-          setAvailableSkills(skills.map((skill) => skill.name));
-          setVisibleSkillIds(new Set(skills.map((skill) => skill.id)));
+          const userSkills = skills.filter((skill) => skill.visibility === "user");
+          setAvailableSkills(userSkills.map((skill) => skill.name));
+          setVisibleSkillIds(new Set(userSkills.map((skill) => skill.id)));
         }
       } catch {
         if (isMounted) {

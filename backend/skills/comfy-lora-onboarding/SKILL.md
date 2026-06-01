@@ -3,6 +3,7 @@ name: comfy-lora-onboarding
 description: Help organize and select local ComfyUI LoRAs for comfy-agent-tools. Use when the user wants to add, move, rename, organize, inspect, or apply LoRAs; when a requested LoRA is ambiguous; or when LoRAs are loose in .loki/models/comfyui/loras and should be arranged by architecture and purpose.
 metadata:
   loki:
+    visibility: internal
     capabilities: [lora-onboarding, diagnostics, comfy]
     action:
       type: cli-local

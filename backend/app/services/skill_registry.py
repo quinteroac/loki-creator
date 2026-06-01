@@ -46,6 +46,7 @@ class SkillRegistry:
         runtime_data = loki_metadata.get("runtime") if isinstance(loki_metadata.get("runtime"), dict) else None
         capabilities = loki_metadata.get("capabilities") if isinstance(loki_metadata.get("capabilities"), list) else []
         arguments_data = loki_metadata.get("arguments") if isinstance(loki_metadata.get("arguments"), list) else []
+        visibility = loki_metadata.get("visibility")
         action = SkillCardAction.model_validate(action_data) if action_data else None
 
         return SkillDefinition(
@@ -54,6 +55,7 @@ class SkillRegistry:
             description=str(frontmatter.get("description") or ""),
             path=str(skill_dir.relative_to(REPO_ROOT)),
             origin="built-in",
+            visibility=visibility if visibility in {"user", "internal"} else "internal",
             capabilities=[str(capability) for capability in capabilities],
             action=action,
             output=SkillOutputConfig.model_validate(output_data) if output_data else SkillOutputConfig(),

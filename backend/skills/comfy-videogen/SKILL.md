@@ -3,6 +3,7 @@ name: comfy-videogen
 description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
 metadata:
   loki:
+    visibility: user
     capabilities: [video-generation, image-to-video, raster-card-output, comfy]
     runtime:
       modelsDir: .loki/models/comfyui

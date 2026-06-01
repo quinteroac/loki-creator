@@ -3,6 +3,7 @@ name: comfy-motion-track-control
 description: Generate local LTX 2.3 videos guided by the configured HDR IC-LoRA through the motion-track control workflow. Use when the user wants an image animated along drawn sparse motion trajectories, spline overlays, point tracks, or a prepared motion-control reference video. Do not use for style-only LoRAs, Seedance API video, image-only generation, music-only generation, automatic point tracking from real video, or ComfyUI server-only workflows.
 metadata:
   loki:
+    visibility: user
     capabilities: [video-generation, motion-control, comfy]
     action:
       type: cli-local

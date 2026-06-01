@@ -3,6 +3,7 @@ name: comfy-image-edit
 description: Edit existing raster images with comfy-diffusion, including Qwen Image Edit 2511, FLUX.2 Klein 9B SNOFS, and remote Grok Imagine edit API nodes. Use when the user selects or provides an image and wants visual changes saved into the workspace. Do not use for new text-to-image generation without an input image, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
+    visibility: user
     capabilities: [image-editing, raster-card-output, comfy]
     runtime:
       modelsDir: .loki/models/comfyui

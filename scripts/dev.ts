@@ -11,7 +11,7 @@ const commands = [
   },
   {
     name: "backend",
-    cmd: ["uv", "run", "uvicorn", "app.main:app", "--reload"],
+    cmd: ["uv", "run", "uvicorn", "app.main:app", "--reload", "--port", "8001"],
     cwd: "backend",
   },
   {

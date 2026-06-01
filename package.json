@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun run scripts/dev.ts",
     "dev:frontend": "bun run --cwd frontend dev",
-    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload",
+    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload --port 8001",
     "dev:agent-bridge": "bun run agent-bridge/server.ts"
   },
   "dependencies": {

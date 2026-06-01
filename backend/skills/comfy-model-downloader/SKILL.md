@@ -3,6 +3,7 @@ name: comfy-model-downloader
 description: Download missing built-in comfy-agent-tools model files on demand by capability. Use when a generation/edit/upscale/music/video request needs local models that are missing, when comfy-models reports missing_model_file, or when the user asks to download supported base models. Do not use to download all models unless explicitly requested.
 metadata:
   loki:
+    visibility: internal
     capabilities: [model-download, diagnostics, comfy]
     action:
       type: cli-local

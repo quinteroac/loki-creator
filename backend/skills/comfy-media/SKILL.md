@@ -3,6 +3,7 @@ name: comfy-media
 description: Review generated comfy-agent-tools media, build local indexes, serve the gallery, and export selected artifacts into a HyperFrames review-reel project. Use after comfy-image-generate, comfy-image-edit, comfy-image-upscale, comfy-videogen, or comfy-musicgen creates outputs, or when the user wants to browse, compare, select, or compose generated media.
 metadata:
   loki:
+    visibility: internal
     capabilities: [media-review, diagnostics, comfy]
     action:
       type: cli-local

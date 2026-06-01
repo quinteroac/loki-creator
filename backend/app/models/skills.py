@@ -7,6 +7,7 @@ from app.models.instructions import GeneratedCard
 
 
 SkillOrigin = Literal["built-in", "user"]
+SkillVisibility = Literal["user", "internal"]
 SkillRunStatus = Literal["queued", "running", "succeeded", "failed"]
 SkillArgumentType = Literal["choice", "text"]
 SkillArgumentAskWhen = Literal["always", "missing"]
@@ -60,6 +61,7 @@ class SkillDefinition(BaseModel):
     description: str
     path: str
     origin: SkillOrigin = "built-in"
+    visibility: SkillVisibility = "internal"
     capabilities: list[str] = Field(default_factory=list)
     action: SkillCardAction | None = None
     output: SkillOutputConfig = Field(default_factory=SkillOutputConfig)

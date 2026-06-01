@@ -126,6 +126,7 @@ export type SkillDefinition = {
   name: string;
   description: string;
   origin: "built-in" | "user";
+  visibility: "user" | "internal";
   path: string;
   capabilities: string[];
   arguments: SkillArgumentDefinition[];

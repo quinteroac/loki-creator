@@ -341,7 +341,7 @@ function artifactFetchCandidates(src: string): string[] {
   return [
     API_URL ? `${API_URL}${src}` : "",
     src,
-    `http://127.0.0.1:8000${src}`,
+    `http://127.0.0.1:8001${src}`,
   ].filter((candidate, index, candidates) => Boolean(candidate) && candidates.indexOf(candidate) === index);
 }
 

@@ -23,7 +23,7 @@ bun run dev
 ```bash
 cd backend
 uv sync
-uv run uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload --port 8001
 ```
 
-El frontend espera la API en `http://localhost:8000`. Puedes cambiarlo con `VITE_API_URL`.
+El frontend espera la API en `http://localhost:8001`. Puedes cambiarlo con `VITE_API_URL`.
