@@ -497,29 +497,6 @@ function hasExplicitSkillSelection(selectedSkills: string[]) {
   return normalizedSelected.length > 0 && !normalizedSelected.includes("auto");
 }
 
-async function runExplicitSelectedSkills(
-  selectedSkills: LokiSkill[],
-  request: AgentRunRequest,
-  runState: AgentRunState,
-) {
-  for (const skill of selectedSkills) {
-    const existingSkillCall = runState.skillCalls.get(skill.id);
-    const skillCall = existingSkillCall ?? runLokiSkill(skill, { prompt: request.prompt }, request);
-
-    if (!existingSkillCall) {
-      runState.skillCalls.set(skill.id, skillCall);
-    }
-
-    const { run, cardIds } = await skillCall;
-    runState.skillRunIds.push(run.id);
-    runState.cardIds.push(...cardIds);
-
-    if (run.status === "failed") {
-      runState.skillErrors.push(`${skill.name}: ${run.error ?? "unknown error"}`);
-    }
-  }
-}
-
 function createAskUserPiTool(runState: AgentRunState) {
   return defineTool({
     name: "ask_user",
@@ -973,31 +950,6 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       pendingConversations.delete(existingConversation.id);
     }
 
-    if (hasExplicitSkillSelection(selectedSkillIds) && selectedSkills.length > 0) {
-      await runExplicitSelectedSkills(selectedSkills, effectiveRequest, runState);
-
-      if (runState.skillErrors.length > 0 && runState.cardIds.length === 0) {
-        return {
-          id,
-          agentId,
-          status: "failed",
-          responseText: `Loki skill failed: ${runState.skillErrors.join("\n")}`,
-          skillRunIds: runState.skillRunIds,
-          cardIds: runState.cardIds,
-          error: runState.skillErrors.join("\n"),
-        };
-      }
-
-      return {
-        id,
-        agentId,
-        status: "succeeded",
-        responseText: "Selected Loki skill completed.",
-        skillRunIds: runState.skillRunIds,
-        cardIds: runState.cardIds,
-      };
-    }
-
     const customTools = [
       createAskUserPiTool(runState),
       createInspectLokiContextPiTool(effectiveRequest),
@@ -1041,17 +993,17 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       return createNeedsInputResponse(id, agentId, conversation, runState.pendingQuestion, runState);
     }
 
-    if (hasRuntimeInputs(effectiveRequest) && runState.skillRunIds.length === 0) {
+    if ((hasExplicitSkillSelection(selectedSkillIds) || hasRuntimeInputs(effectiveRequest)) && runState.skillRunIds.length === 0) {
       return {
         id,
         agentId,
         status: "failed",
         responseText:
           responseChunks.join("").trim()
-          || "The request included selected cards or attachments, but the agent did not invoke a Loki skill. Try again with a concrete create, edit, transform, animate, or upscale instruction.",
+          || "The request selected or provided Loki runtime inputs, but the agent did not invoke a Loki skill. Try again with a concrete create, edit, transform, animate, or upscale instruction.",
         skillRunIds: [],
         cardIds: [],
-        error: "Agent did not invoke a Loki skill for the selected context.",
+        error: "Agent did not invoke a Loki skill for the selected runtime context.",
       };
     }
 
