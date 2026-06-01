@@ -1,12 +1,13 @@
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from app.models import (
     ArchiveArtifactsRequest,
     ArchiveArtifactsResponse,
+    ImportedArtifact,
     InstructionRequest,
     InstructionResponse,
     ProjectDocument,
@@ -131,6 +132,14 @@ def archive_artifacts(
     service: ArtifactArchiveService = Depends(get_artifact_archive_service),
 ) -> ArchiveArtifactsResponse:
     return ArchiveArtifactsResponse(artifacts=service.archive_artifact_urls(payload.artifact_urls))
+
+
+@router.post("/artifacts/import", response_model=ImportedArtifact)
+def import_artifact(
+    file: UploadFile = File(...),
+    service: ArtifactArchiveService = Depends(get_artifact_archive_service),
+) -> ImportedArtifact:
+    return service.import_upload(file)
 
 
 @router.get("/artifacts/{artifact_path:path}")

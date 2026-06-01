@@ -4,7 +4,9 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from app.models.artifacts import ArchivedArtifact
+from fastapi import UploadFile
+
+from app.models.artifacts import ArchivedArtifact, ImportedArtifact
 
 
 class ArtifactArchiveService:
@@ -43,6 +45,21 @@ class ArtifactArchiveService:
             status="archived",
         )
 
+    def import_upload(self, upload: UploadFile) -> ImportedArtifact:
+        filename = self._safe_filename(upload.filename or "attachment")
+        destination = self._unique_destination(self.artifacts_root / "imports" / f"{uuid4().hex}-{filename}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+
+        with destination.open("wb") as output:
+            shutil.copyfileobj(upload.file, output)
+
+        return ImportedArtifact(
+            artifactUrl=f"/api/artifacts/{destination.relative_to(self.artifacts_root).as_posix()}",
+            name=upload.filename or filename,
+            mimeType=upload.content_type or "application/octet-stream",
+            size=destination.stat().st_size,
+        )
+
     def _resolve_artifact_url(self, artifact_url: str) -> Path | None:
         if not artifact_url.startswith("/api/artifacts/"):
             return None
@@ -64,3 +81,8 @@ class ArtifactArchiveService:
             return destination
 
         return destination.with_name(f"{destination.stem}-{uuid4().hex[:8]}{destination.suffix}")
+
+    def _safe_filename(self, filename: str) -> str:
+        safe = "".join(character if character.isalnum() or character in {".", "-", "_"} else "-" for character in filename)
+        safe = safe.strip(".-_")
+        return safe[:120] or "attachment"

@@ -19,3 +19,12 @@ class ArchiveArtifactsResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     artifacts: list[ArchivedArtifact] = Field(default_factory=list)
+
+
+class ImportedArtifact(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    artifact_url: str = Field(alias="artifactUrl")
+    name: str
+    mime_type: str = Field(alias="mimeType")
+    size: int

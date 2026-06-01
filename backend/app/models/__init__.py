@@ -1,5 +1,5 @@
 from app.models.agents import AgentDefinition, AgentSkillDefinition, AgentSkillStep
-from app.models.artifacts import ArchiveArtifactsRequest, ArchiveArtifactsResponse, ArchivedArtifact
+from app.models.artifacts import ArchiveArtifactsRequest, ArchiveArtifactsResponse, ArchivedArtifact, ImportedArtifact
 from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
 from app.models.projects import ProjectCanvasNode, ProjectCanvasNodeFrame, ProjectDocument, ProjectSaveRequest, ProjectSummary
 from app.models.skills import (
@@ -24,6 +24,7 @@ __all__ = [
     "ArchiveArtifactsRequest",
     "ArchiveArtifactsResponse",
     "ArchivedArtifact",
+    "ImportedArtifact",
     "CardMetadata",
     "GeneratedCard",
     "InstructionRequest",

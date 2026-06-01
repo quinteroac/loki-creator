@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createAgentRun, listAgentModels } from "./api/agentRuns";
-import { archiveArtifacts } from "./api/artifacts";
+import { archiveArtifacts, importArtifact } from "./api/artifacts";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
 import { listSkills } from "./api/skills";
@@ -11,13 +11,14 @@ import { CanvasStage } from "./components/CanvasStage";
 import { Topbar } from "./components/Topbar";
 import { initialCanvasNodes, initialCardDocuments } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
-import { createAgentAttachments } from "./lib/attachments";
 import {
   assignUniqueDisplayTitles,
+  createCardDocumentForImportedArtifact,
   createCanvasNodeForDocument,
   createSelectedCardSnapshots,
   getCardArtifactUrls,
   getCardDisplayTitle,
+  getFileDimensions,
   normalizeCardDocument,
   renameCardDocument,
   type CardPreviewCapture,
@@ -370,25 +371,33 @@ export function App() {
     if (!files || files.length === 0) return;
 
     try {
-      const currentAttachmentBytes = attachments
-        .filter((attachment) => !attachment.omitted)
-        .reduce((totalBytes, attachment) => totalBytes + attachment.size, 0);
-      const nextAttachments = await createAgentAttachments(files, currentAttachmentBytes);
-      setAttachments((currentAttachments) => {
-        const updatedAttachments = [...currentAttachments, ...nextAttachments];
-        setPendingAgentRequest((currentRequest) =>
-          currentRequest
-            ? {
-              ...currentRequest,
-              attachments: updatedAttachments,
-              context: { ...currentRequest.context, attachments: updatedAttachments },
-            }
-            : currentRequest,
-        );
+      const importedDocuments = await Promise.all(
+        Array.from(files).map(async (file) => {
+          const [artifact, dimensions] = await Promise.all([
+            importArtifact(file),
+            getFileDimensions(file),
+          ]);
 
-        return updatedAttachments;
+          return createCardDocumentForImportedArtifact(artifact, dimensions);
+        }),
+      );
+      const canvasWidth = window.innerWidth;
+
+      setCardDocuments((currentDocuments) => {
+        const newDocuments = assignUniqueDisplayTitles(importedDocuments, currentDocuments);
+        setSelectedCards(newDocuments.map((document) => document.id));
+        setCanvasNodes((currentNodes) => [
+          ...currentNodes,
+          ...newDocuments.map((document, index) =>
+            createCanvasNodeForDocument(document, currentNodes.length + index, canvasWidth),
+          ),
+        ]);
+
+        return [...currentDocuments, ...newDocuments];
       });
-      setStatus(nextAttachments.length === 1 ? "1 file attached." : `${nextAttachments.length} files attached.`);
+      setStatus(importedDocuments.length === 1 ? "1 file added to canvas." : `${importedDocuments.length} files added to canvas.`);
+    } catch {
+      setStatus("Could not add file to canvas.");
     } finally {
       event.target.value = "";
     }

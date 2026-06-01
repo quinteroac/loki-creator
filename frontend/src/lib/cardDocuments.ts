@@ -1,4 +1,6 @@
 import type {
+  AgentAttachment,
+  CardAspectRatio,
   CardDocument,
   CardKind,
   CanvasNode,
@@ -7,6 +9,7 @@ import type {
   SelectedCardPreview,
   SelectedCardSnapshot,
 } from "../types";
+import type { ImportedArtifact } from "../api/artifacts";
 
 export const CARD_DEFAULT_WIDTH = 512;
 export const CARD_MIN_WIDTH = 240;
@@ -34,6 +37,14 @@ const DOWNLOAD_EXTENSION_BY_KIND: Partial<Record<CardKind, string>> = {
 };
 
 export type CardPreviewCapture = () => SelectedCardPreview | Promise<SelectedCardPreview>;
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 export function hasPlayableMedia(cardHtml: string): boolean {
   return /<(video|audio)\b/i.test(cardHtml);
@@ -178,6 +189,244 @@ function collectExistingTitleCounters(documents: CardDocument[]): Map<string, nu
   });
 
   return counters;
+}
+
+function attachmentCardBody(attachment: AgentAttachment): string {
+  const title = escapeHtml(attachment.name);
+  const mimeType = escapeHtml(attachment.mimeType);
+
+  if (attachment.omitted) {
+    return `<main><strong>${title}</strong><span>${mimeType}</span><p>Attachment omitted: ${escapeHtml(attachment.reason ?? "unavailable")}</p></main>`;
+  }
+
+  if (attachment.kind === "image" && attachment.dataUrl) {
+    return `<img src="${attachment.dataUrl}" alt="${title}" />`;
+  }
+
+  if (attachment.kind === "video" && attachment.dataUrl) {
+    return `<video src="${attachment.dataUrl}" controls playsinline preload="metadata"></video>`;
+  }
+
+  if (attachment.kind === "audio" && attachment.dataUrl) {
+    return `<main><strong>${title}</strong><audio src="${attachment.dataUrl}" controls preload="metadata"></audio></main>`;
+  }
+
+  if (attachment.kind === "pdf" && attachment.dataUrl) {
+    return `<iframe src="${attachment.dataUrl}" title="${title}"></iframe>`;
+  }
+
+  if ((attachment.kind === "text" || attachment.kind === "json") && attachment.text) {
+    return `<main class="text-card"><strong>${title}</strong><pre>${escapeHtml(attachment.text)}</pre></main>`;
+  }
+
+  if (attachment.dataUrl) {
+    return `<main><strong>${title}</strong><span>${mimeType}</span><a href="${attachment.dataUrl}" download="${title}">Open attachment</a></main>`;
+  }
+
+  return `<main><strong>${title}</strong><span>${mimeType}</span><p>No preview available.</p></main>`;
+}
+
+function attachmentCardHtml(attachment: AgentAttachment): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body { width: 100%; height: 100%; margin: 0; background: #111111; color: #ffffff; font-family: "DM Sans", Inter, sans-serif; }
+      body { display: grid; place-items: center; overflow: hidden; }
+      img, video, iframe { display: block; width: 100%; height: 100%; border: 0; object-fit: contain; background: #111111; }
+      main { box-sizing: border-box; width: 100%; height: 100%; display: grid; place-items: center; gap: 12px; padding: 24px; text-align: center; }
+      strong { max-width: 100%; overflow-wrap: anywhere; font-size: 18px; line-height: 1.4; }
+      span, p, a { margin: 0; color: #b5bac3; font-size: 13px; line-height: 1.5; }
+      a { color: #69d8ff; }
+      audio { width: min(360px, 90%); }
+      .text-card { place-items: stretch; text-align: left; }
+      pre { box-sizing: border-box; width: 100%; height: 100%; min-height: 0; margin: 0; overflow: auto; white-space: pre-wrap; word-break: break-word; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    </style>
+  </head>
+  <body>${attachmentCardBody(attachment)}</body>
+</html>`;
+}
+
+function attachmentCardKind(attachment: AgentAttachment): CardKind {
+  if (attachment.omitted) return "diagnostic";
+  if (attachment.kind === "pdf" || attachment.kind === "text" || attachment.kind === "json") return "interactive";
+  if (attachment.kind === "artifact") return "artifact";
+  return attachment.kind;
+}
+
+function attachmentPreferredAspectRatio(attachment: AgentAttachment): CardAspectRatio {
+  if (attachment.kind === "video") return "16:9";
+  if (attachment.kind === "text" || attachment.kind === "json" || attachment.kind === "pdf") return "4:3";
+  return "1:1";
+}
+
+function importedArtifactKind(artifact: ImportedArtifact): CardKind {
+  if (artifact.mimeType.startsWith("image/")) return "image";
+  if (artifact.mimeType.startsWith("video/")) return "video";
+  if (artifact.mimeType.startsWith("audio/")) return "audio";
+  if (artifact.mimeType === "application/pdf" || artifact.mimeType.startsWith("text/")) return "interactive";
+
+  return "artifact";
+}
+
+function importedArtifactPreferredAspectRatio(artifact: ImportedArtifact): CardAspectRatio {
+  if (artifact.mimeType.startsWith("video/")) return "16:9";
+  if (artifact.mimeType === "application/pdf" || artifact.mimeType.startsWith("text/")) return "4:3";
+
+  return "1:1";
+}
+
+function importedArtifactBody(artifact: ImportedArtifact): string {
+  const title = escapeHtml(artifact.name);
+  const source = escapeHtml(artifact.artifactUrl);
+  const mimeType = escapeHtml(artifact.mimeType);
+
+  if (artifact.mimeType.startsWith("image/")) {
+    return `<img src="${source}" alt="${title}" />`;
+  }
+
+  if (artifact.mimeType.startsWith("video/")) {
+    return `<video src="${source}" controls playsinline preload="metadata"></video>`;
+  }
+
+  if (artifact.mimeType.startsWith("audio/")) {
+    return `<main><strong>${title}</strong><audio src="${source}" controls preload="metadata"></audio></main>`;
+  }
+
+  if (artifact.mimeType === "application/pdf") {
+    return `<iframe src="${source}" title="${title}"></iframe>`;
+  }
+
+  if (artifact.mimeType.startsWith("text/")) {
+    return `<iframe src="${source}" title="${title}"></iframe>`;
+  }
+
+  return `<main><strong>${title}</strong><span>${mimeType}</span><a href="${source}">Open attachment</a></main>`;
+}
+
+function importedArtifactHtml(artifact: ImportedArtifact): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body { width: 100%; height: 100%; margin: 0; background: #111111; color: #ffffff; font-family: "DM Sans", Inter, sans-serif; }
+      body { display: grid; place-items: center; overflow: hidden; }
+      img, video, iframe { display: block; width: 100%; height: 100%; border: 0; object-fit: contain; background: #111111; }
+      main { box-sizing: border-box; width: 100%; height: 100%; display: grid; place-items: center; gap: 12px; padding: 24px; text-align: center; }
+      strong { max-width: 100%; overflow-wrap: anywhere; font-size: 18px; line-height: 1.4; }
+      span, p, a { margin: 0; color: #b5bac3; font-size: 13px; line-height: 1.5; }
+      a { color: #69d8ff; }
+      audio { width: min(360px, 90%); }
+    </style>
+  </head>
+  <body>${importedArtifactBody(artifact)}</body>
+</html>`;
+}
+
+function getFilePreviewObjectUrl(file: File): string {
+  return URL.createObjectURL(file);
+}
+
+function readImageDimensions(dataUrl: string): Promise<{ height: number; width: number } | null> {
+  return new Promise((resolve) => {
+    const image = new Image();
+
+    image.onload = () => resolve({ height: image.naturalHeight, width: image.naturalWidth });
+    image.onerror = () => resolve(null);
+    image.src = dataUrl;
+  });
+}
+
+function readVideoDimensions(dataUrl: string): Promise<{ height: number; width: number } | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement("video");
+
+    video.preload = "metadata";
+    video.onloadedmetadata = () => {
+      video.removeAttribute("src");
+      video.load();
+      resolve({ height: video.videoHeight, width: video.videoWidth });
+    };
+    video.onerror = () => resolve(null);
+    video.src = dataUrl;
+  });
+}
+
+async function getAttachmentDimensions(attachment: AgentAttachment): Promise<{ height: number; width: number } | null> {
+  if (!attachment.dataUrl || attachment.omitted) return null;
+  if (attachment.kind === "image") return readImageDimensions(attachment.dataUrl);
+  if (attachment.kind === "video") return readVideoDimensions(attachment.dataUrl);
+
+  return null;
+}
+
+export async function getFileDimensions(file: File): Promise<{ height: number; width: number } | null> {
+  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) return null;
+
+  const objectUrl = getFilePreviewObjectUrl(file);
+  try {
+    return file.type.startsWith("image/") ? await readImageDimensions(objectUrl) : await readVideoDimensions(objectUrl);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+export function createCardDocumentForImportedArtifact(
+  artifact: ImportedArtifact,
+  dimensions: { height: number; width: number } | null,
+): CardDocument {
+  const kind = importedArtifactKind(artifact);
+
+  return {
+    id: `card_import_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`,
+    name: artifact.name,
+    prompt: `Imported file: ${artifact.name}`,
+    html: importedArtifactHtml(artifact),
+    sourceSkillId: "attachment",
+    sourceActionId: "file-import",
+    metadata: {
+      kind,
+      title: artifact.name,
+      description: `${artifact.mimeType} imported file`,
+      artifactUrl: artifact.artifactUrl,
+      thumbnailUrl: kind === "image" ? artifact.artifactUrl : undefined,
+      createdAt: new Date().toISOString(),
+      tags: ["attachment", "import"],
+      capabilities: ["attachment"],
+      preferredAspectRatio: importedArtifactPreferredAspectRatio(artifact),
+      playableMedia: ["video", "audio", "interactive"].includes(kind),
+      ...(dimensions ?? {}),
+    },
+  };
+}
+
+export async function createCardDocumentForAttachment(attachment: AgentAttachment): Promise<CardDocument> {
+  const kind = attachmentCardKind(attachment);
+  const dimensions = await getAttachmentDimensions(attachment);
+
+  return {
+    id: `card_${attachment.id}`,
+    name: attachment.name,
+    prompt: `Attached file: ${attachment.name}`,
+    html: attachmentCardHtml(attachment),
+    sourceSkillId: "attachment",
+    sourceActionId: "file-picker",
+    metadata: {
+      kind,
+      title: attachment.name,
+      description: `${attachment.kind} attachment (${attachment.mimeType})`,
+      createdAt: new Date().toISOString(),
+      tags: ["attachment", attachment.kind],
+      capabilities: ["attachment"],
+      preferredAspectRatio: attachmentPreferredAspectRatio(attachment),
+      playableMedia: ["video", "audio", "pdf"].includes(attachment.kind),
+      ...(dimensions ?? {}),
+    },
+  };
 }
 
 export function getCardDisplayTitle(document: CardDocument): string {

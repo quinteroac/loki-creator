@@ -7,8 +7,8 @@ There is no legacy runtime compatibility layer. Public product concepts are skil
 ## Primary Flow
 
 1. The frontend loads skills from `GET /api/skills`.
-2. The user writes a prompt, optionally selects skills, optionally selects canvas cards, and optionally attaches bounded files.
-3. Selected cards are converted into multimodal snapshots containing HTML, detected media assets, metadata, and a rendered preview when available. Attachments are normalized into lightweight request artifacts.
+2. The user writes a prompt, optionally selects skills, optionally selects canvas cards, and optionally imports bounded files as canvas cards.
+3. Selected cards are converted into multimodal snapshots containing HTML, detected media assets, metadata, and a rendered preview when available. Imported file cards participate in this same selected-card snapshot flow.
 4. The agent bridge resolves required skill arguments. If a skill needs input, it returns one `needs_input` question instead of running the agent.
 5. Once arguments are collected, the agent bridge loads Agent Skills through Pi resource discovery and exposes selected Loki skills as agent-callable skill actions.
 6. When the agent needs to create or transform visible output, it invokes a Loki skill action.
@@ -157,15 +157,15 @@ The agent bridge summarizes selected cards in the prompt, exposes them through t
 
 For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact or operation to a skill action. Skill actions return artifacts and validate runtime-specific constraints; they do not replace the agent's creative reasoning.
 
-## Attachments
+## Imported Files
 
-Attachments are per-request artifact inputs, not persistent workspace cards. The frontend reads supported files into bounded inline payloads:
+Imported files become normal workspace cards instead of transient composer chips. The frontend uploads supported files to `.loki/imports/` through `POST /api/artifacts/import`, then wraps the returned artifact URL in a `CardDocument`:
 
-- images, videos, audio, and PDFs as data URLs,
-- text and JSON as UTF-8 text,
-- oversized or unreadable files as omitted attachment metadata.
+- images, videos, audio, and PDFs as artifact-backed media cards,
+- text and JSON as artifact-backed iframe cards,
+- other files as artifact cards with a link to the stored file.
 
-The current limits are 5 MB per file and 15 MB total per request. Attachments are summarized in the agent prompt, exposed through `inspect_loki_context`, and forwarded to skill actions through both `attachments` and `context.attachments`. PDF text extraction, OCR, and durable attachment storage are not part of the current runtime.
+Newly imported file cards are selected automatically so the agent bridge forwards them through `selectedCardSnapshots` and `context.selectedCardSnapshots`, just like generated cards. PDF text extraction and OCR are not part of the current runtime.
 
 ## Agent Bridge
 
