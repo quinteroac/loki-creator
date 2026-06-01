@@ -252,7 +252,7 @@ export function AgentComposer({
           <div className="composer-actions">
             <input ref={fileInputRef} type="file" hidden multiple onChange={onAttachFiles} />
             <button
-              className="chat-chip"
+              className="chat-chip agent-chip"
               type="button"
               data-popover-trigger
               aria-expanded={openMenu === "agents"}
@@ -262,7 +262,7 @@ export function AgentComposer({
               <span>Agent</span>
             </button>
             <button
-              className="chat-chip"
+              className="chat-chip model-chip"
               type="button"
               data-popover-trigger
               aria-expanded={openMenu === "model-picker"}
@@ -272,7 +272,7 @@ export function AgentComposer({
               <span>{selectedModel}</span>
             </button>
             <button
-              className="chat-chip"
+              className="chat-chip skill-chip"
               type="button"
               data-popover-trigger
               aria-expanded={openMenu === "skill-picker"}
@@ -283,7 +283,7 @@ export function AgentComposer({
               {selectedSkillCount > 1 && <small>{selectedSkillCount}</small>}
             </button>
             <button
-              className="chat-chip"
+              className="chat-chip selected-cards-chip"
               type="button"
               data-popover-trigger
               aria-expanded={openMenu === "selected-cards"}
@@ -294,7 +294,7 @@ export function AgentComposer({
               {selectedCardCount > 1 && <small>{selectedCardCount}</small>}
             </button>
             <button
-              className="chat-chip"
+              className="chat-chip attach-chip"
               type="button"
               aria-label="Attach file"
               title="Attach"

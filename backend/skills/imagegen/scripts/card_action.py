@@ -221,12 +221,12 @@ def build_codex_prompt(payload: dict, run_dir: Path, output_dir: Path, selected_
     resolution = normalize_resolution(params.get("resolution"))
     dimensions = RESOLUTION_VALUES[resolution]
     resolution_requirement = (
-        f"The final generated image file must be exactly {dimensions[0]}x{dimensions[1]} pixels."
+        f"Prefer an output near {dimensions[0]}x{dimensions[1]} pixels when the built-in image generator supports it."
         if dimensions
         else "Let Codex choose the output dimensions that best fit the request."
     )
     retry_requirement = (
-        "If an attempt returns any other pixel dimensions, regenerate with the requested resolution before choosing the final image."
+        "If the built-in image generator returns a different pixel size, accept the generated image and report its real dimensions."
         if dimensions
         else "Do not force a specific pixel size when resolution is auto."
     )
@@ -258,7 +258,7 @@ Output requirements:
 - If image attachments are present, treat them as visual input from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
 - {resolution_requirement}
 - {retry_requirement}
-- Do not crop, pad, stretch, upscale, downscale, or post-process an incorrectly sized output to fake the requested resolution.
+- Do not crop, pad, stretch, upscale, downscale, or post-process the output just to fake a requested resolution.
 - Save exactly one final image file inside this directory: {output_dir}
 - Do not save the final image only under CODEX_HOME or another temporary location; copy or move the chosen image into the output directory above.
 - Do not modify repository source files.
@@ -277,23 +277,6 @@ def normalize_resolution(value: object) -> str:
     raise RuntimeError(
         "imagegen requires params.resolution to be one of: "
         f"{', '.join(RESOLUTION_VALUES.keys())}"
-    )
-
-
-def validate_output_resolution(image_path: Path, resolution: str) -> tuple[int | None, int | None] | None:
-    target_dimensions = RESOLUTION_VALUES[resolution]
-    if target_dimensions is None:
-        return
-
-    with Image.open(image_path) as image:
-        width, height = image.size
-        if (width, height) == target_dimensions:
-            return width, height
-
-    raise RuntimeError(
-        f"Codex returned an image with resolution {width}x{height}, "
-        f"but Loki requested {resolution}. Regenerate with the requested resolution; "
-        "do not crop, pad, resize, or post-process an incorrect output."
     )
 
 
@@ -355,11 +338,12 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
     ]
     for image_path in selected_images:
         command.extend(["--image", str(image_path)])
-    command.append(prompt)
+    command.append("-")
 
     timeout_seconds = int(os.environ.get("LOKI_IMAGEGEN_CODEX_TIMEOUT_SECONDS", "900"))
     process = subprocess.run(
         command,
+        input=prompt,
         text=True,
         capture_output=True,
         timeout=timeout_seconds,
@@ -414,13 +398,13 @@ def main() -> None:
     image_path, mime_type = validate_output_image(result, run_dir)
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
     resolution = normalize_resolution(params.get("resolution"))
-    validated_dimensions = validate_output_resolution(image_path, resolution)
-    width, height = validated_dimensions if validated_dimensions else read_image_dimensions(image_path)
+    width, height = read_image_dimensions(image_path)
     title = first_text(result.get("title"), "Generated image")
     final_prompt = first_text(result.get("prompt"), payload.get("prompt"))
 
     metadata = {
         "resolution": resolution,
+        "requestedResolution": resolution,
         "tags": ["imagegen"],
         "capabilities": ["image-generation", "image-editing"],
     }

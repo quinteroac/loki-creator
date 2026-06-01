@@ -8,7 +8,7 @@ metadata:
     arguments:
       - id: resolution
         label: Resolution
-        description: Choose the exact output resolution before generation or editing.
+        description: Choose the preferred output resolution before generation or editing.
         type: choice
         required: true
         askWhen: always

@@ -691,11 +691,13 @@ button {
 }
 
 .composer-actions {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
+  width: 100%;
+  min-width: 0;
   min-height: 32px;
-  overflow-x: auto;
+  overflow: hidden;
   padding-bottom: 2px;
   scrollbar-width: none;
 }
@@ -715,6 +717,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   max-width: 220px;
   min-height: 30px;
   padding: 6px 8px 6px 10px;
@@ -733,6 +736,7 @@ button {
 }
 
 .attachment-chip-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -740,6 +744,7 @@ button {
 }
 
 .attachment-chip small {
+  flex: 0 0 auto;
   color: var(--dark-text-soft);
   font-size: 11px;
   font-weight: 600;
@@ -799,7 +804,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: max-content;
+  min-width: 0;
   min-height: 32px;
   padding: 7px 12px;
   color: var(--dark-text-muted);
@@ -809,6 +814,36 @@ textarea::placeholder {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
+}
+
+.chat-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-chip,
+.attach-chip {
+  flex: 0 0 auto;
+}
+
+.model-chip,
+.skill-chip,
+.selected-cards-chip {
+  flex: 0 1 auto;
+}
+
+.model-chip {
+  max-width: min(220px, 30vw);
+}
+
+.skill-chip {
+  max-width: min(190px, 24vw);
+}
+
+.selected-cards-chip {
+  max-width: min(240px, 30vw);
 }
 
 .chat-chip.active {
@@ -823,6 +858,7 @@ textarea::placeholder {
 
 .chat-chip small {
   display: inline-grid;
+  flex: 0 0 auto;
   min-width: 16px;
   height: 16px;
   place-items: center;
