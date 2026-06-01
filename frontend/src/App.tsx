@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { createAgentRun, listAgentModels } from "./api/agentRuns";
+import { archiveArtifacts } from "./api/artifacts";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
 import { listSkills } from "./api/skills";
@@ -15,6 +16,7 @@ import {
   assignUniqueDisplayTitles,
   createCanvasNodeForDocument,
   createSelectedCardSnapshots,
+  getCardArtifactUrls,
   getCardDisplayTitle,
   normalizeCardDocument,
   renameCardDocument,
@@ -443,6 +445,23 @@ export function App() {
     );
   }
 
+  function updateDocumentPrompt(cardDocumentId: string, prompt: string) {
+    setCardDocuments((currentDocuments) =>
+      currentDocuments.map((document) =>
+        document.id === cardDocumentId
+          ? {
+            ...document,
+            prompt,
+            metadata: {
+              ...document.metadata,
+              description: prompt,
+            },
+          }
+          : document,
+      ),
+    );
+  }
+
   function redoDocument(cardDocumentId: string) {
     const document = cardDocuments.find((candidate) => candidate.id === cardDocumentId);
     const prompt = document?.prompt.trim();
@@ -458,6 +477,23 @@ export function App() {
     setPendingCollectedArgs({});
     setPendingAgentRequest(null);
     setStatus("Prompt loaded from card.");
+  }
+
+  async function deleteDocument(cardDocumentId: string) {
+    const document = cardDocuments.find((candidate) => candidate.id === cardDocumentId);
+    const artifactUrls = document ? getCardArtifactUrls(document) : [];
+
+    setCardDocuments((currentDocuments) => currentDocuments.filter((candidate) => candidate.id !== cardDocumentId));
+    setCanvasNodes((currentNodes) => currentNodes.filter((node) => node.cardDocumentId !== cardDocumentId));
+    setSelectedCards((currentCards) => currentCards.filter((selectedCardId) => selectedCardId !== cardDocumentId));
+    previewCapturesRef.current.delete(cardDocumentId);
+    setStatus("Card removed from canvas.");
+
+    try {
+      await archiveArtifacts(artifactUrls);
+    } catch {
+      setStatus("Card removed from canvas. Could not archive its files.");
+    }
   }
 
   function openSaveProjectDialog() {
@@ -582,12 +618,13 @@ export function App() {
       <CanvasStage
         documentsById={documentsById}
         nodes={canvasNodes}
+        onDeleteDocument={deleteDocument}
         onRenameDocument={renameDocument}
         onRedoDocument={redoDocument}
         onRegisterPreviewCapture={registerPreviewCapture}
         onToggleNode={toggleCanvasNode}
+        onUpdateDocumentPrompt={updateDocumentPrompt}
         onUpdateNodeFrame={updateCanvasNodeFrame}
-        selectedDocument={selectedDocument}
         selectedIds={selectedCards}
       />
       <AgentComposer

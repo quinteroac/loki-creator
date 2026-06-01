@@ -22,7 +22,7 @@ const UNTITLED_CARD_TITLE = "Untitled card";
 const DISPLAY_SUBTITLE_MAX_LENGTH = 92;
 const TECHNICAL_TITLE_PATTERN = /^(?:card|node|job)_[a-z0-9-]{8,}$/i;
 const TITLE_COUNTER_PATTERN = /^(.*?)(?:\s+(\d+))?$/;
-const CARD_CHROME_HEIGHT = 108;
+const CARD_CHROME_HEIGHT = 0;
 const CARD_TALLEST_PREVIEW_ASPECT_RATIO = 9 / 16;
 const DOWNLOAD_EXTENSION_BY_KIND: Partial<Record<CardKind, string>> = {
   audio: "wav",
@@ -84,14 +84,14 @@ export function getCardPreviewAspectRatioCss(document?: CardDocument): string {
 }
 
 export function getCardHeight(width: number, document?: CardDocument) {
-  const contentWidth = Math.max(0, width - 28);
+  const contentWidth = Math.max(0, width);
   const previewHeight = contentWidth / getCardPreviewAspectRatioValue(document);
 
   return previewHeight + CARD_CHROME_HEIGHT;
 }
 
 export function getCardLayoutRowHeight(width: number) {
-  const contentWidth = Math.max(0, width - 28);
+  const contentWidth = Math.max(0, width);
 
   return contentWidth / CARD_TALLEST_PREVIEW_ASPECT_RATIO + CARD_CHROME_HEIGHT;
 }
@@ -184,6 +184,10 @@ export function getCardDisplayTitle(document: CardDocument): string {
   return getCardTitleBase(document);
 }
 
+export function getCardEditableTitle(document: CardDocument): string {
+  return document.metadata?.title ?? document.name;
+}
+
 export function getCardDisplaySubtitle(document: CardDocument): string {
   const subtitle = cleanLabel(document.metadata?.description) || cleanLabel(document.prompt);
 
@@ -213,7 +217,7 @@ export function assignUniqueDisplayTitles(
 }
 
 export function renameCardDocument(document: CardDocument, title: string): CardDocument {
-  const displayTitle = cleanLabel(title) || getCardDisplayTitle(document);
+  const displayTitle = title.trim() ? title : getCardDisplayTitle(document);
 
   return {
     ...document,
@@ -320,6 +324,18 @@ export function extractSelectedCardMediaAssets(cardHtml: string): SelectedCardMe
     Array.from(parsedDocument.querySelectorAll(selector)).map((element) =>
       createMediaAsset(element, kind, assetBudget),
     ),
+  );
+}
+
+export function getCardArtifactUrls(document: CardDocument): string[] {
+  const candidates = [
+    document.metadata?.artifactUrl,
+    document.metadata?.thumbnailUrl,
+    ...extractSelectedCardMediaAssets(document.html).flatMap((asset) => [asset.src, asset.dataUrl]),
+  ];
+
+  return candidates.filter((candidate, index): candidate is string =>
+    Boolean(candidate?.startsWith("/api/artifacts/")) && candidates.indexOf(candidate) === index,
   );
 }
 

@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Download, RotateCcw } from "lucide-react";
+import type { MouseEvent, PointerEvent } from "react";
+import { Download, RotateCcw, Trash2 } from "lucide-react";
 import {
   downloadCardDocument,
-  getCardDisplaySubtitle,
   getCardDisplayTitle,
   getCardPreviewAspectRatioCss,
   hasPlayableMedia,
@@ -22,12 +21,16 @@ type CanvasCardProps = {
   document: CardDocument;
   node: CanvasNode;
   isSelected: boolean;
-  onRenameDocument: (cardDocumentId: string, title: string) => void;
+  onDeleteDocument: (cardDocumentId: string) => void;
   onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
 };
+
+const CONTEXT_MENU_WIDTH = 176;
+const CONTEXT_MENU_ESTIMATED_HEIGHT = 152;
+const CONTEXT_MENU_OFFSET = 8;
 
 function resizeCanvas(canvas: HTMLCanvasElement) {
   const pixelRatio = window.devicePixelRatio || 1;
@@ -114,7 +117,7 @@ export function CanvasCard({
   document,
   node,
   isSelected,
-  onRenameDocument,
+  onDeleteDocument,
   onRedoDocument,
   onRegisterPreviewCapture,
   onToggleSelect,
@@ -123,7 +126,6 @@ export function CanvasCard({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
-  const titleInputRef = useRef<HTMLInputElement | null>(null);
   const previewReadyRef = useRef(false);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -139,11 +141,8 @@ export function CanvasCard({
   const [useIframeFallback, setUseIframeFallback] = useState(() => shouldUsePlayableMediaFallback(document));
   const [isDragging, setIsDragging] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const accessibleTitle = getCardDisplayTitle(document);
-  const caption = getCardDisplaySubtitle(document);
-  const [titleDraft, setTitleDraft] = useState(accessibleTitle);
   const frame = node.frame;
 
   useEffect(() => {
@@ -200,19 +199,6 @@ export function CanvasCard({
       window.removeEventListener("resize", scheduleRender);
     };
   }, [document]);
-
-  useEffect(() => {
-    if (!isEditingTitle) {
-      setTitleDraft(accessibleTitle);
-    }
-  }, [accessibleTitle, isEditingTitle]);
-
-  useEffect(() => {
-    if (isEditingTitle) {
-      titleInputRef.current?.focus();
-      titleInputRef.current?.select();
-    }
-  }, [isEditingTitle]);
 
   useEffect(() => {
     return onRegisterPreviewCapture(document.id, () => {
@@ -362,49 +348,22 @@ export function CanvasCard({
     event.stopPropagation();
 
     const bounds = event.currentTarget.getBoundingClientRect();
+    const menu = contextMenuRef.current;
+    const menuWidth = menu?.offsetWidth || CONTEXT_MENU_WIDTH;
+    const menuHeight = menu?.offsetHeight || CONTEXT_MENU_ESTIMATED_HEIGHT;
+    const maxX = Math.max(CONTEXT_MENU_OFFSET, bounds.width - menuWidth - CONTEXT_MENU_OFFSET);
+    const maxY = Math.max(CONTEXT_MENU_OFFSET, bounds.height - menuHeight - CONTEXT_MENU_OFFSET);
+    const preferredX = event.clientX - bounds.left + CONTEXT_MENU_OFFSET;
+    const preferredY = event.clientY - bounds.top + CONTEXT_MENU_OFFSET;
 
     setContextMenuPosition({
-      x: event.clientX - bounds.left,
-      y: event.clientY - bounds.top,
+      x: Math.min(Math.max(CONTEXT_MENU_OFFSET, preferredX), maxX),
+      y: Math.min(Math.max(CONTEXT_MENU_OFFSET, preferredY), maxY),
     });
   }
 
   function stopCardInteraction(event: MouseEvent<HTMLElement> | PointerEvent<HTMLElement>) {
     event.stopPropagation();
-  }
-
-  function startTitleEditing(event: MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    setTitleDraft(accessibleTitle);
-    setIsEditingTitle(true);
-  }
-
-  function commitTitleEdit() {
-    onRenameDocument(document.id, titleDraft);
-    setIsEditingTitle(false);
-  }
-
-  function cancelTitleEdit() {
-    setTitleDraft(accessibleTitle);
-    setIsEditingTitle(false);
-  }
-
-  function handleTitleInputChange(event: ChangeEvent<HTMLInputElement>) {
-    setTitleDraft(event.target.value);
-  }
-
-  function handleTitleInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      commitTitleEdit();
-      return;
-    }
-
-    if (event.key === "Escape") {
-      event.preventDefault();
-      cancelTitleEdit();
-    }
   }
 
   async function handleDownload() {
@@ -420,6 +379,11 @@ export function CanvasCard({
 
   function handleRedo() {
     onRedoDocument(document.id);
+    setContextMenuPosition(null);
+  }
+
+  function handleDelete() {
+    onDeleteDocument(document.id);
     setContextMenuPosition(null);
   }
 
@@ -459,34 +423,17 @@ export function CanvasCard({
             dangerouslySetInnerHTML={{ __html: document.html }}
           />
         </canvas>
-      </button>
-      <div className="canvas-card-meta">
-        {isEditingTitle ? (
-          <input
-            ref={titleInputRef}
-            className="canvas-card-title-input"
-            value={titleDraft}
-            onBlur={commitTitleEdit}
-            onChange={handleTitleInputChange}
-            onClick={stopCardInteraction}
-            onKeyDown={handleTitleInputKeyDown}
-            onPointerDown={stopCardInteraction}
-            aria-label={`Rename ${accessibleTitle}`}
-          />
-        ) : (
-          <button
-            className="canvas-card-title"
-            type="button"
-            onClick={startTitleEditing}
-            onDoubleClick={startTitleEditing}
-            onPointerDown={stopCardInteraction}
-            title="Rename card"
-          >
-            {accessibleTitle}
-          </button>
+        {isSelected && shouldUsePlayableMediaFallback(document) && (
+          <span className="canvas-card-interaction-strip" aria-hidden="true" />
         )}
-        {caption && <p>{caption}</p>}
-      </div>
+      </button>
+      {isSelected && (
+        <>
+          <span className="canvas-card-handle canvas-card-handle-top-left" aria-hidden="true" />
+          <span className="canvas-card-handle canvas-card-handle-top-right" aria-hidden="true" />
+          <span className="canvas-card-handle canvas-card-handle-bottom-left" aria-hidden="true" />
+        </>
+      )}
       <button
         className="canvas-card-resize"
         type="button"
@@ -524,6 +471,10 @@ export function CanvasCard({
           >
             <Download size={16} aria-hidden="true" />
             <span>{isDownloading ? "Descargando..." : "Descargar"}</span>
+          </button>
+          <button className="context-menu-item danger" type="button" role="menuitem" onClick={handleDelete}>
+            <Trash2 size={16} aria-hidden="true" />
+            <span>Eliminar</span>
           </button>
         </div>
       )}

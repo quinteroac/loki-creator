@@ -5,6 +5,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from app.models import (
+    ArchiveArtifactsRequest,
+    ArchiveArtifactsResponse,
     InstructionRequest,
     InstructionResponse,
     ProjectDocument,
@@ -14,7 +16,7 @@ from app.models import (
     SkillRun,
     SkillRunRequest,
 )
-from app.services import InstructionService, ProjectNotFoundError, ProjectService, SkillRegistry, SkillRunService
+from app.services import ArtifactArchiveService, InstructionService, ProjectNotFoundError, ProjectService, SkillRegistry, SkillRunService
 
 router = APIRouter(prefix="/api")
 skill_registry = SkillRegistry()
@@ -38,6 +40,10 @@ def get_skill_run_service() -> SkillRunService:
 
 def get_project_service() -> ProjectService:
     return ProjectService(projects_root)
+
+
+def get_artifact_archive_service() -> ArtifactArchiveService:
+    return ArtifactArchiveService(artifacts_root)
 
 
 @router.get("/health")
@@ -117,6 +123,14 @@ def get_skill_run(
         raise HTTPException(status_code=404, detail="Skill run not found")
 
     return run
+
+
+@router.post("/artifacts/archive", response_model=ArchiveArtifactsResponse)
+def archive_artifacts(
+    payload: ArchiveArtifactsRequest,
+    service: ArtifactArchiveService = Depends(get_artifact_archive_service),
+) -> ArchiveArtifactsResponse:
+    return ArchiveArtifactsResponse(artifacts=service.archive_artifact_urls(payload.artifact_urls))
 
 
 @router.get("/artifacts/{artifact_path:path}")

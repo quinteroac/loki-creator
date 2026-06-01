@@ -179,11 +179,28 @@ def write_b64_json(encoded: str, destination: Path, mime_type: str = "image/png"
     return path
 
 
-def selected_image_input(payload: dict[str, Any]) -> str:
+def selected_image_inputs(payload: dict[str, Any], limit: int = 3) -> list[str]:
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    inputs: list[str] = []
+
+    def add_input(source: str) -> None:
+        if len(inputs) >= limit:
+            return
+        normalized = normalize_image_source(source)
+        if normalized and normalized not in inputs:
+            inputs.append(normalized)
+
     explicit = first_text(params.get("image"), params.get("imageUrl"), params.get("imageDataUrl"))
     if explicit:
-        return normalize_image_source(explicit)
+        add_input(explicit)
+
+    explicit_images = params.get("images") or params.get("imageUrls") or params.get("imageDataUrls")
+    if isinstance(explicit_images, list):
+        for image in explicit_images:
+            if isinstance(image, dict):
+                add_input(first_text(image.get("url"), image.get("dataUrl"), image.get("src")))
+            else:
+                add_input(first_text(image))
 
     attachments = payload.get("attachments")
     if isinstance(attachments, list):
@@ -191,11 +208,11 @@ def selected_image_input(payload: dict[str, Any]) -> str:
             if isinstance(attachment, dict) and not attachment.get("omitted"):
                 data_url = first_text(attachment.get("dataUrl"))
                 if data_url.startswith("data:image/"):
-                    return data_url
+                    add_input(data_url)
 
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
-        return ""
+        return inputs
 
     for snapshot in snapshots:
         if not isinstance(snapshot, dict):
@@ -206,14 +223,18 @@ def selected_image_input(payload: dict[str, Any]) -> str:
                 if isinstance(asset, dict) and first_text(asset.get("kind")) == "image":
                     source = first_text(asset.get("dataUrl"), asset.get("src"))
                     if source:
-                        return normalize_image_source(source)
+                        add_input(source)
         preview = snapshot.get("preview")
         if isinstance(preview, dict) and not preview.get("omitted"):
             source = first_text(preview.get("dataUrl"))
             if source.startswith("data:image/"):
-                return source
+                add_input(source)
 
-    return ""
+    return inputs
+
+
+def selected_image_input(payload: dict[str, Any]) -> str:
+    return next(iter(selected_image_inputs(payload, limit=1)), "")
 
 
 def artifact(path: Path, kind: str, mime_type: str, prompt: str, title: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -233,10 +254,10 @@ def imagine_image(payload: dict[str, Any]) -> dict[str, Any]:
     if not prompt:
         raise RuntimeError("Grok Imagine image generation requires a prompt.")
 
+    image_inputs = selected_image_inputs(payload)
     request_body: dict[str, Any] = {
         "model": first_text(params.get("model"), DEFAULT_IMAGE_MODEL),
         "prompt": prompt,
-        "response_format": first_text(params.get("responseFormat"), params.get("response_format"), "b64_json"),
     }
     n = as_int(params.get("n"))
     if n is not None:
@@ -248,7 +269,20 @@ def imagine_image(payload: dict[str, Any]) -> dict[str, Any]:
     if resolution:
         request_body["resolution"] = resolution
 
-    data = request_json("POST", "/v1/images/generations", request_body)
+    endpoint = "/v1/images/edits" if image_inputs else "/v1/images/generations"
+    if len(image_inputs) == 1:
+        request_body["image"] = {"url": image_inputs[0], "type": "image_url"}
+    elif len(image_inputs) > 1:
+        request_body["images"] = [{"url": image_input, "type": "image_url"} for image_input in image_inputs[:3]]
+    response_format = first_text(
+        params.get("responseFormat"),
+        params.get("response_format"),
+        "" if image_inputs else "b64_json",
+    )
+    if response_format:
+        request_body["response_format"] = response_format
+
+    data = request_json("POST", endpoint, request_body)
     images = data.get("data") if isinstance(data.get("data"), list) else []
     if not images:
         raise RuntimeError("xAI image response did not include any images.")
@@ -278,6 +312,8 @@ def imagine_image(payload: dict[str, Any]) -> dict[str, Any]:
                     "model": request_body["model"],
                     "aspectRatio": aspect_ratio,
                     "resolution": resolution,
+                    "source": "image-edit" if image_inputs else "text-to-image",
+                    "inputImageCount": len(image_inputs),
                     "revisedPrompt": image.get("revised_prompt"),
                 },
             )

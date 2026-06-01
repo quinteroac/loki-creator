@@ -1,14 +1,14 @@
 ---
 name: grok-imagine-image
-description: Generate raster images with Grok Imagine through the xAI Imagine API. Use when the user explicitly asks for Grok, xAI, Imagine, or Grok image generation. Do not use for video, image editing, local ComfyUI generation, or non-Grok image models.
+description: Generate or edit raster images with Grok Imagine through the xAI Imagine API. Use when the user explicitly asks for Grok, xAI, Imagine, Grok image generation, or Grok image editing. If the user selected image cards or attached images, treat them as reference/edit inputs. Do not use for video, local ComfyUI generation, or non-Grok image models.
 metadata:
   loki:
     visibility: user
-    capabilities: [image-generation, raster-card-output, grok, xai]
+    capabilities: [image-generation, image-editing, raster-card-output, grok, xai]
     arguments:
       - id: aspectRatio
         label: Aspect ratio
-        description: Choose the image frame before generation.
+        description: Choose the image frame before generation or editing.
         type: choice
         required: true
         askWhen: always
@@ -51,9 +51,11 @@ metadata:
 
 # grok-imagine-image
 
-Use this skill for text-to-image generation through Grok Imagine / xAI Imagine.
-It calls the documented xAI image generation endpoint and returns materialized
-image artifacts for Loki cards.
+Use this skill for text-to-image and image-editing generation through Grok
+Imagine / xAI Imagine. If the user selected image cards or attached images, the
+action sends them to the documented xAI image edit endpoint as reference images;
+otherwise it calls the text-to-image generation endpoint. It returns
+materialized image artifacts for Loki cards.
 
 Auth resolution follows Grok Build media tooling:
 
@@ -72,6 +74,8 @@ Supported optional params:
 
 - `model`: override the xAI image model.
 - `n`: number of images.
+- `image`, `imageUrl`, or `imageDataUrl`: explicit single edit/reference source.
+- `images`, `imageUrls`, or `imageDataUrls`: explicit edit/reference sources, up to 3.
 - `responseFormat` or `response_format`: `b64_json` or `url`; defaults to `b64_json`.
 
 ## Prompt Guidance
