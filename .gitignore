@@ -20,7 +20,9 @@ backend/.venv/
 .env
 .env.*
 !.env.example
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 .grok/*
 !.grok/skills/
 !.grok/skills/**
