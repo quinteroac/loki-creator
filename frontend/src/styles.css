@@ -260,6 +260,11 @@ button {
     var(--workspace-bg);
   background-position: 0 0;
   background-size: 24px 24px;
+  cursor: grab;
+}
+
+.canvas.panning {
+  cursor: grabbing;
 }
 
 .canvas::before {
@@ -274,6 +279,7 @@ button {
   position: absolute;
   inset: 0 0 150px;
   z-index: 2;
+  transform-origin: top left;
 }
 
 .canvas-card {
@@ -292,6 +298,50 @@ button {
   will-change: transform;
 }
 
+.canvas-zoom-controls {
+  position: absolute;
+  z-index: 8;
+  top: 14px;
+  right: 14px;
+  display: inline-grid;
+  grid-template-columns: 34px minmax(52px, auto) 34px;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  color: var(--dark-text);
+  background: var(--panel-bg);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  box-shadow: rgba(36, 36, 36, 0.08) 0 12px 16px -4px;
+}
+
+.canvas-zoom-button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  padding: 0;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+}
+
+.canvas-zoom-button:disabled {
+  color: var(--dark-text-soft);
+  cursor: default;
+  opacity: 0.58;
+}
+
+.canvas-zoom-value {
+  min-width: 52px;
+  color: var(--dark-text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .canvas-card.selected {
   z-index: 3;
 }
@@ -300,6 +350,10 @@ button {
   z-index: 3;
   cursor: grabbing;
   box-shadow: none;
+}
+
+.canvas.panning .canvas-card-preview {
+  cursor: grabbing;
 }
 
 .canvas-card:has(.canvas-card-context-menu) {

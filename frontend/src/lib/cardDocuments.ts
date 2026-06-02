@@ -11,7 +11,7 @@ import type {
 } from "../types";
 import type { ImportedArtifact } from "../api/artifacts";
 
-export const CARD_DEFAULT_WIDTH = 512;
+export const CARD_DEFAULT_WIDTH = 256;
 export const CARD_MIN_WIDTH = 240;
 export const CARD_MAX_WIDTH = 720;
 export const CARD_ASPECT_HEIGHT_RATIO = 4 / 3;

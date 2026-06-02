@@ -26,6 +26,7 @@ type CanvasCardProps = {
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
+  zoom: number;
 };
 
 const CONTEXT_MENU_WIDTH = 176;
@@ -122,6 +123,7 @@ export function CanvasCard({
   onRegisterPreviewCapture,
   onToggleSelect,
   onUpdateFrame,
+  zoom,
 }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
@@ -292,9 +294,11 @@ export function CanvasCard({
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) return;
 
-    const deltaX = event.clientX - dragState.startClientX;
-    const deltaY = event.clientY - dragState.startClientY;
-    const hasMoved = Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3;
+    const screenDeltaX = event.clientX - dragState.startClientX;
+    const screenDeltaY = event.clientY - dragState.startClientY;
+    const deltaX = screenDeltaX / zoom;
+    const deltaY = screenDeltaY / zoom;
+    const hasMoved = Math.abs(screenDeltaX) > 3 || Math.abs(screenDeltaY) > 3;
     dragState.didDrag ||= hasMoved;
 
     if (hasMoved && dragState.mode === "drag") {
@@ -351,10 +355,12 @@ export function CanvasCard({
     const menu = contextMenuRef.current;
     const menuWidth = menu?.offsetWidth || CONTEXT_MENU_WIDTH;
     const menuHeight = menu?.offsetHeight || CONTEXT_MENU_ESTIMATED_HEIGHT;
-    const maxX = Math.max(CONTEXT_MENU_OFFSET, bounds.width - menuWidth - CONTEXT_MENU_OFFSET);
-    const maxY = Math.max(CONTEXT_MENU_OFFSET, bounds.height - menuHeight - CONTEXT_MENU_OFFSET);
-    const preferredX = event.clientX - bounds.left + CONTEXT_MENU_OFFSET;
-    const preferredY = event.clientY - bounds.top + CONTEXT_MENU_OFFSET;
+    const logicalWidth = bounds.width / zoom;
+    const logicalHeight = bounds.height / zoom;
+    const maxX = Math.max(CONTEXT_MENU_OFFSET, logicalWidth - menuWidth - CONTEXT_MENU_OFFSET);
+    const maxY = Math.max(CONTEXT_MENU_OFFSET, logicalHeight - menuHeight - CONTEXT_MENU_OFFSET);
+    const preferredX = (event.clientX - bounds.left) / zoom + CONTEXT_MENU_OFFSET;
+    const preferredY = (event.clientY - bounds.top) / zoom + CONTEXT_MENU_OFFSET;
 
     setContextMenuPosition({
       x: Math.min(Math.max(CONTEXT_MENU_OFFSET, preferredX), maxX),
