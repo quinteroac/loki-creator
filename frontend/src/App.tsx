@@ -53,6 +53,12 @@ const fallbackModels: AgentModel[] = [
   },
 ];
 
+function createClientId(prefix: string) {
+  const randomId = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
+    ?? `${Date.now().toString(36)}${Math.random().toString(16).slice(2)}`;
+  return `${prefix}_${randomId}`;
+}
+
 export function App() {
   const [instruction, setInstruction] = useState("");
   const [cardDocuments, setCardDocuments] = useState(initialCardDocuments);
@@ -263,7 +269,7 @@ export function App() {
         return [
           ...currentMessages,
           {
-            id: crypto.randomUUID(),
+            id: createClientId("agent_message"),
             role: "assistant",
             text: event.message ?? "",
             status: "running",
@@ -294,7 +300,7 @@ export function App() {
       return [
         ...currentMessages,
         {
-          id: crypto.randomUUID(),
+          id: createClientId("agent_message"),
           role,
           text: text ?? "",
           status: event.status,
@@ -412,7 +418,7 @@ export function App() {
 
     const answeredQuestion = pendingQuestion;
     const answerKey = pendingQuestion.argumentId ?? pendingQuestion.id;
-    const streamId = `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
+    const streamId = createClientId("agent_run");
     const request: AgentRunRequest = {
       ...pendingAgentRequest,
       streamId,
@@ -453,7 +459,7 @@ export function App() {
 
     try {
       setStatus("Running agent...");
-      const streamId = `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
+      const streamId = createClientId("agent_run");
       const request = await buildAgentRequest(text);
       request.streamId = streamId;
       startAgentRunStream(streamId);
