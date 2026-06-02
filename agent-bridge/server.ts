@@ -134,6 +134,7 @@ type AgentRunRequest = {
   conversationId?: string;
   answers?: Record<string, string>;
   collectedArgs?: Record<string, string>;
+  streamId?: string;
 };
 
 type AgentQuestion = {
@@ -185,6 +186,16 @@ type AgentRunState = {
   skillErrors: string[];
   skillCalls: Map<string, Promise<LokiSkillCallResult>>;
   pendingQuestion?: AgentQuestion;
+  emit: (event: AgentRunStreamEvent) => void;
+};
+
+type AgentRunStreamEvent = {
+  type: "status" | "user" | "assistant_delta" | "assistant_message" | "skill" | "question" | "done" | "error";
+  message?: string;
+  status?: AgentRunResponse["status"] | "running";
+  skillName?: string;
+  skillRunId?: string;
+  cardIds?: string[];
 };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -195,6 +206,8 @@ const skillRunWaitTimeoutMs = Number(process.env.LOKI_SKILL_RUN_WAIT_TIMEOUT_MS 
 const allowedOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+):\d+$/;
 let agentServicesPromise: ReturnType<typeof createAgentSessionServices> | undefined;
 const pendingConversations = new Map<string, PendingConversation>();
+const streamClients = new Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>();
+const encoder = new TextEncoder();
 
 const agents: LokiAgent[] = [
   {
@@ -205,6 +218,57 @@ const agents: LokiAgent[] = [
     defaultSkills: ["imagegen"],
   },
 ];
+
+function encodeSse(event: AgentRunStreamEvent) {
+  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function emitAgentRunEvent(streamId: string | undefined, event: AgentRunStreamEvent) {
+  if (!streamId) return;
+
+  const clients = streamClients.get(streamId);
+  if (!clients) return;
+
+  for (const controller of clients) {
+    try {
+      controller.enqueue(encodeSse(event));
+    } catch {
+      clients.delete(controller);
+    }
+  }
+}
+
+function createAgentRunEventStream(streamId: string) {
+  let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+        const clients = streamClients.get(streamId) ?? new Set<ReadableStreamDefaultController<Uint8Array>>();
+        clients.add(controller);
+        streamClients.set(streamId, clients);
+        controller.enqueue(encodeSse({ type: "status", status: "running", message: "Connected to agent stream." }));
+      },
+      cancel() {
+        const clients = streamClients.get(streamId);
+        if (!clients) return;
+        if (streamController) {
+          clients.delete(streamController);
+        }
+        if (clients.size === 0) {
+          streamClients.delete(streamId);
+        }
+      },
+    }),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    },
+  );
+}
 
 async function getAgentServices() {
   agentServicesPromise ??= createAgentSessionServices({
@@ -462,6 +526,7 @@ function createLokiSkillPiTool(
         };
       }
 
+      runState.emit({ type: "skill", status: "running", skillName: skill.name, message: `Invoking ${skill.name}.` });
       const skillCall = runLokiSkill(skill, params, request);
       runState.skillCalls.set(skill.id, skillCall);
       const { run, cards, cardIds } = await skillCall;
@@ -471,12 +536,27 @@ function createLokiSkillPiTool(
       if (run.status === "failed") {
         runState.skillCalls.delete(skill.id);
         runState.skillErrors.push(`${skill.name}: ${run.error ?? "unknown error"}`);
+        runState.emit({
+          type: "skill",
+          status: "failed",
+          skillName: skill.name,
+          skillRunId: run.id,
+          message: `${skill.name} failed: ${run.error ?? "unknown error"}`,
+        });
         return {
           content: [{ type: "text", text: `Loki skill ${skill.name} failed: ${run.error ?? "unknown error"}` }],
           details: { skillRunId: run.id, status: run.status, error: run.error },
         };
       }
 
+      runState.emit({
+        type: "skill",
+        status: "succeeded",
+        skillName: skill.name,
+        skillRunId: run.id,
+        cardIds,
+        message: `${skill.name} completed.`,
+      });
       return {
         content: [
           {
@@ -903,19 +983,23 @@ function hasRuntimeInputs(request: AgentRunRequest) {
 }
 
 async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
-  const id = `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
+  const id = request.streamId || `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
   const agentId = request.agentId || "base-agent";
+  const emit = (event: AgentRunStreamEvent) => emitAgentRunEvent(request.streamId, event);
   const runState: AgentRunState = {
     skillRunIds: [] as string[],
     cardIds: [] as string[],
     skillErrors: [] as string[],
     skillCalls: new Map<string, Promise<LokiSkillCallResult>>(),
+    emit,
   };
   const responseChunks: string[] = [];
 
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
 
   try {
+    emit({ type: "user", message: request.prompt });
+    emit({ type: "status", status: "running", message: "Preparing Loki context." });
     const availableSkills = await listFrontendSkills();
     const existingConversation = request.conversationId
       ? pendingConversations.get(request.conversationId)
@@ -943,6 +1027,8 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
         createdAt: existingConversation?.createdAt ?? Date.now(),
       };
       pendingConversations.set(conversationId, conversation);
+      emit({ type: "question", status: "needs_input", message: nextQuestion.text });
+      emit({ type: "done", status: "needs_input", message: "Agent needs input." });
       return createNeedsInputResponse(id, agentId, conversation, nextQuestion);
     }
 
@@ -974,9 +1060,11 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
     session.subscribe((event) => {
       if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
         responseChunks.push(event.assistantMessageEvent.delta);
+        emit({ type: "assistant_delta", message: event.assistantMessageEvent.delta });
       }
     });
 
+    emit({ type: "status", status: "running", message: "Agent is working." });
     await session.prompt(buildAgentPrompt(effectiveRequest, selectedSkills), { source: "api" });
 
     if (runState.pendingQuestion) {
@@ -990,17 +1078,22 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
         createdAt: Date.now(),
       };
       pendingConversations.set(conversationId, conversation);
+      emit({ type: "question", status: "needs_input", message: runState.pendingQuestion.text });
+      emit({ type: "done", status: "needs_input", message: "Agent needs input." });
       return createNeedsInputResponse(id, agentId, conversation, runState.pendingQuestion, runState);
     }
 
     if ((hasExplicitSkillSelection(selectedSkillIds) || hasRuntimeInputs(effectiveRequest)) && runState.skillRunIds.length === 0) {
+      const message = responseChunks.join("").trim()
+        || "The request selected or provided Loki runtime inputs, but the agent did not invoke a Loki skill.";
+      emit({ type: "error", status: "failed", message });
+      emit({ type: "done", status: "failed", message: "Agent finished without invoking a skill." });
       return {
         id,
         agentId,
         status: "failed",
         responseText:
-          responseChunks.join("").trim()
-          || "The request selected or provided Loki runtime inputs, but the agent did not invoke a Loki skill. Try again with a concrete create, edit, transform, animate, or upscale instruction.",
+          message,
         skillRunIds: [],
         cardIds: [],
         error: "Agent did not invoke a Loki skill for the selected runtime context.",
@@ -1008,6 +1101,8 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
     }
 
     if (runState.skillErrors.length > 0 && runState.cardIds.length === 0) {
+      emit({ type: "error", status: "failed", message: runState.skillErrors.join("\n") });
+      emit({ type: "done", status: "failed", message: "Loki skill failed." });
       return {
         id,
         agentId,
@@ -1019,16 +1114,21 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       };
     }
 
+    const responseText = responseChunks.join("").trim() || "Agent run completed.";
+    emit({ type: "assistant_message", message: responseText });
+    emit({ type: "done", status: "succeeded", message: "Agent completed.", cardIds: runState.cardIds });
     return {
       id,
       agentId,
       status: "succeeded",
-      responseText: responseChunks.join("").trim() || "Agent run completed.",
+      responseText,
       skillRunIds: runState.skillRunIds,
       cardIds: runState.cardIds,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Pi agent error";
+    emit({ type: "error", status: "failed", message });
+    emit({ type: "done", status: "failed", message: "Agent run failed." });
     return {
       id,
       agentId,
@@ -1060,6 +1160,7 @@ const app = new Elysia()
   .get("/api/health", () => ({ status: "ok" }))
   .get("/api/agents", () => agents)
   .get("/api/models", () => listAvailableModelsAsync())
+  .get("/api/agent-runs/:id/events", ({ params }) => createAgentRunEventStream(params.id))
   .post(
     "/api/agent-runs",
     async ({ body }) => runAgent(body),
@@ -1070,6 +1171,7 @@ const app = new Elysia()
         model: t.String({ minLength: 1 }),
         skills: t.Array(t.String()),
         selectedCards: t.Array(t.String()),
+        streamId: t.Optional(t.String()),
         conversationId: t.Optional(t.String()),
         answers: t.Optional(t.Record(t.String(), t.String())),
         collectedArgs: t.Optional(t.Record(t.String(), t.String())),

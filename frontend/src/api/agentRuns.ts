@@ -35,3 +35,7 @@ export async function createAgentRun(payload: AgentRunRequest): Promise<AgentRun
 
   return response.json();
 }
+
+export function agentRunEventsUrl(streamId: string) {
+  return `${AGENT_API_URL}/api/agent-runs/${encodeURIComponent(streamId)}/events`;
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
-import { createAgentRun, listAgentModels } from "./api/agentRuns";
+import { agentRunEventsUrl, createAgentRun, listAgentModels } from "./api/agentRuns";
 import { archiveArtifacts, importArtifact } from "./api/artifacts";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
@@ -31,10 +31,12 @@ import {
 } from "./lib/selection";
 import type {
   AgentAttachment,
+  AgentChatMessage,
   AgentModel,
   AgentQuestion,
   AgentRunRequest,
   AgentRunResponse,
+  AgentRunStreamEvent,
   CanvasNodeFrame,
   CardDocument,
   ProjectSummary,
@@ -63,6 +65,8 @@ export function App() {
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
+  const [agentChatMessages, setAgentChatMessages] = useState<AgentChatMessage[]>([]);
+  const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStreamEvent["status"] | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<AgentQuestion | null>(null);
   const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
   const [pendingCollectedArgs, setPendingCollectedArgs] = useState<Record<string, string>>({});
@@ -76,6 +80,7 @@ export function App() {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const agentEventSourceRef = useRef<EventSource | null>(null);
   const processedRunIdsRef = useRef<Set<string>>(new Set());
   const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
 
@@ -83,6 +88,8 @@ export function App() {
   useDismissablePopover(openMenu, closePopover);
   const closeAgentResponse = useCallback(() => setIsAgentResponseOpen(false), []);
   useDismissablePopover(isAgentResponseOpen ? "agent-response" : null, closeAgentResponse);
+
+  useEffect(() => () => agentEventSourceRef.current?.close(), []);
 
   useEffect(() => {
     let isMounted = true;
@@ -235,9 +242,101 @@ export function App() {
   const skillButtonLabel = selectedSkills[0] ?? "Auto";
   const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
 
+  function appendAgentStreamEvent(event: AgentRunStreamEvent) {
+    if (event.status) {
+      setAgentRunStatus(event.status);
+    }
+
+    const text = event.message?.trim();
+    if (!text && event.type !== "assistant_delta") return;
+
+    if (event.type === "assistant_delta") {
+      setAgentChatMessages((currentMessages) => {
+        const lastMessage = currentMessages[currentMessages.length - 1];
+        if (lastMessage?.role === "assistant" && lastMessage.status === "running") {
+          return [
+            ...currentMessages.slice(0, -1),
+            { ...lastMessage, text: `${lastMessage.text}${event.message ?? ""}` },
+          ];
+        }
+
+        return [
+          ...currentMessages,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: event.message ?? "",
+            status: "running",
+            createdAt: Date.now(),
+          },
+        ];
+      });
+      return;
+    }
+
+    const role: AgentChatMessage["role"] =
+      event.type === "user"
+        ? "user"
+        : event.type === "skill"
+          ? "skill"
+          : event.type === "assistant_message"
+            ? "assistant"
+            : "system";
+
+    setAgentChatMessages((currentMessages) => {
+      if (event.type === "assistant_message") {
+        const lastMessage = currentMessages[currentMessages.length - 1];
+        if (lastMessage?.role === "assistant" && lastMessage.text.trim() === text) {
+          return [...currentMessages.slice(0, -1), { ...lastMessage, status: event.status }];
+        }
+      }
+
+      return [
+        ...currentMessages,
+        {
+          id: crypto.randomUUID(),
+          role,
+          text: text ?? "",
+          status: event.status,
+          skillName: event.skillName,
+          createdAt: Date.now(),
+        },
+      ];
+    });
+  }
+
+  function startAgentRunStream(streamId: string) {
+    agentEventSourceRef.current?.close();
+    setAgentRunStatus("running");
+    setAgentChatMessages([]);
+    setIsAgentResponseOpen(true);
+
+    const source = new EventSource(agentRunEventsUrl(streamId));
+    agentEventSourceRef.current = source;
+    source.onmessage = (message) => {
+      try {
+        const event = JSON.parse(message.data) as AgentRunStreamEvent;
+        appendAgentStreamEvent(event);
+        if (event.type === "done") {
+          source.close();
+          if (agentEventSourceRef.current === source) {
+            agentEventSourceRef.current = null;
+          }
+        }
+      } catch {
+        appendAgentStreamEvent({ type: "error", status: "failed", message: "Could not read agent stream event." });
+      }
+    };
+    source.onerror = () => {
+      source.close();
+      if (agentEventSourceRef.current === source) {
+        agentEventSourceRef.current = null;
+      }
+    };
+  }
+
   async function handleAgentRunResponse(agentRun: AgentRunResponse, baseRequest: AgentRunRequest) {
     setLatestAgentResponse(agentRun);
-    setIsAgentResponseOpen(false);
 
     if (agentRun.status === "needs_input" && agentRun.question && agentRun.conversationId) {
       for (const runId of agentRun.skillRunIds) {
@@ -313,8 +412,10 @@ export function App() {
 
     const answeredQuestion = pendingQuestion;
     const answerKey = pendingQuestion.argumentId ?? pendingQuestion.id;
+    const streamId = `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
     const request: AgentRunRequest = {
       ...pendingAgentRequest,
+      streamId,
       conversationId: pendingConversationId,
       answers: {
         [answerKey]: text,
@@ -327,6 +428,7 @@ export function App() {
       setPendingQuestion(null);
       setInstruction("");
       setStatus("Continuing agent...");
+      startAgentRunStream(streamId);
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
     } catch {
@@ -351,7 +453,10 @@ export function App() {
 
     try {
       setStatus("Running agent...");
+      const streamId = `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
       const request = await buildAgentRequest(text);
+      request.streamId = streamId;
+      startAgentRunStream(streamId);
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
     } catch {
@@ -620,9 +725,11 @@ export function App() {
         </div>
       )}
       <AgentResponsePanel
+        messages={agentChatMessages}
         isOpen={isAgentResponseOpen}
         onToggle={() => setIsAgentResponseOpen((current) => !current)}
         response={latestAgentResponse}
+        status={agentRunStatus}
       />
       <CanvasStage
         documentsById={documentsById}

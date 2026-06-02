@@ -211,6 +211,7 @@ export type AgentRunRequest = {
   conversationId?: string;
   answers?: Record<string, string>;
   collectedArgs?: Record<string, string>;
+  streamId?: string;
 };
 
 export type AgentQuestion = {
@@ -233,4 +234,22 @@ export type AgentRunResponse = {
   question?: AgentQuestion;
   collectedArgs?: Record<string, string>;
   error?: string;
+};
+
+export type AgentRunStreamEvent = {
+  type: "status" | "user" | "assistant_delta" | "assistant_message" | "skill" | "question" | "done" | "error";
+  message?: string;
+  status?: AgentRunResponse["status"] | "running";
+  skillName?: string;
+  skillRunId?: string;
+  cardIds?: string[];
+};
+
+export type AgentChatMessage = {
+  id: string;
+  role: "user" | "assistant" | "system" | "skill";
+  text: string;
+  status?: AgentRunStreamEvent["status"];
+  skillName?: string;
+  createdAt: number;
 };
