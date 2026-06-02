@@ -92,7 +92,7 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const agentEventSourceRef = useRef<EventSource | null>(null);
   const agentRunStatusRef = useRef<AgentRunStreamEvent["status"] | null>(null);
-  const processedRunIdsRef = useRef<Set<string>>(new Set());
+  const processedCardIdsRef = useRef<Set<string>>(new Set());
   const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
@@ -190,14 +190,10 @@ export function App() {
   }, []);
 
   const addCardsFromRun = useCallback((run: SkillRun) => {
-    if (processedRunIdsRef.current.has(run.id)) return;
-
-    if (run.status !== "succeeded") return;
-
-    processedRunIdsRef.current.add(run.id);
     if (!visibleSkillIds.has(run.skillId)) return;
 
     const generatedCards = (run.result?.cards ?? []).filter((card) => {
+      if (processedCardIdsRef.current.has(card.id)) return false;
       if (!card.sourceSkillId) return true;
       return visibleSkillIds.has(card.sourceSkillId);
     }).map(normalizeCardDocument);
@@ -212,6 +208,7 @@ export function App() {
         return isFirstOccurrence && !currentDocumentIds.has(document.id);
       });
       if (newDocuments.length === 0) return currentDocuments;
+      newDocuments.forEach((document) => processedCardIdsRef.current.add(document.id));
 
       return [...currentDocuments, ...assignUniqueDisplayTitles(newDocuments, currentDocuments)];
     });
@@ -237,10 +234,13 @@ export function App() {
 
     async function syncCompletedSkillRuns() {
       try {
-        const runs = await listSkillRuns({ status: "succeeded" });
+        const [runningRuns, completedRuns] = await Promise.all([
+          listSkillRuns({ status: "running" }),
+          listSkillRuns({ status: "succeeded" }),
+        ]);
         if (!isMounted) return;
 
-        runs.forEach(addCardsFromRun);
+        [...runningRuns, ...completedRuns].forEach(addCardsFromRun);
       } catch {
         // Run sync is best-effort; the next interval will reconcile completed runs.
       }
@@ -763,8 +763,7 @@ export function App() {
   async function openProject(projectId: string) {
     try {
       const project = await loadProject(projectId);
-      const completedRuns = await listSkillRuns({ status: "succeeded" });
-      completedRuns.forEach((run) => processedRunIdsRef.current.add(run.id));
+      processedCardIdsRef.current = new Set(project.cardDocuments.map((document) => document.id));
 
       setCardDocuments(project.cardDocuments.map(normalizeCardDocument));
       setCanvasNodes(project.canvasNodes);

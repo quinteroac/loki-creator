@@ -30,6 +30,20 @@ VIDEO_BASE_DIMENSIONS = {
     "16:9": (512, 288),
     "9:16": (288, 512),
 }
+VIDEO_RESOLUTION_DIMENSIONS = {
+    "480p": {
+        "1:1": (480, 480),
+        "4:3": (640, 480),
+        "16:9": (848, 480),
+        "9:16": (480, 848),
+    },
+    "720p": {
+        "1:1": (720, 720),
+        "4:3": (960, 720),
+        "16:9": (1280, 720),
+        "9:16": (720, 1280),
+    },
+}
 MUSIC_QUALITY_DEFAULTS = {
     "steps": "64",
     "cfg": "7.0",
@@ -134,6 +148,7 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
         if not isinstance(snapshot, dict):
             continue
 
+        images_before_snapshot = len(media["image"])
         assets = snapshot.get("mediaAssets")
         if isinstance(assets, list):
             for asset_index, asset in enumerate(assets, start=1):
@@ -154,7 +169,7 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
                 if path is not None:
                     media[kind].append(path)
 
-        if not media["image"]:
+        if len(media["image"]) == images_before_snapshot:
             preview = snapshot.get("preview")
             if isinstance(preview, dict) and not preview.get("omitted"):
                 data_url = first_text(preview.get("dataUrl"))
@@ -187,7 +202,7 @@ def base_prompt(payload: dict[str, Any]) -> str:
 
 
 def command_from_params(params: dict[str, Any], default: str) -> str:
-    return first_text(params.get("command"), params.get("mode"), default)
+    return first_text(params.get("command"), params.get("videoMode"), params.get("mode"), default)
 
 
 def unique_items(values: list[str]) -> list[str]:
@@ -224,6 +239,13 @@ def normalize_video_mode(value: str) -> str:
         "seedance2-reference-image-to-video": "seedance2-r2v",
         "seedance2-first-last-frame": "seedance2-flf2v",
         "seedance2-first-last-frame-to-video": "seedance2-flf2v",
+        "wan-image-to-video": "wan22-i2v",
+        "wan-reference-to-video": "wan22-i2v",
+        "wan22-image-to-video": "wan22-i2v",
+        "wan22-reference-to-video": "wan22-i2v",
+        "wan-first-last-frame": "wan22-flf2v",
+        "wan22-first-last-frame": "wan22-flf2v",
+        "wan22-first-last-frame-to-video": "wan22-flf2v",
     }
     return aliases.get(normalized, normalized)
 
@@ -238,14 +260,16 @@ def dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
 
 
 def video_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
-    aspect_ratio = first_text(params.get("aspectRatio"))
-    if aspect_ratio in VIDEO_BASE_DIMENSIONS:
-        return VIDEO_BASE_DIMENSIONS[aspect_ratio]
-
     width = as_int(params.get("width"))
     height = as_int(params.get("height"))
     if width and height:
         return width, height
+    aspect_ratio = first_text(params.get("aspectRatio"))
+    resolution = first_text(params.get("resolution"))
+    if resolution in VIDEO_RESOLUTION_DIMENSIONS and aspect_ratio in VIDEO_RESOLUTION_DIMENSIONS[resolution]:
+        return VIDEO_RESOLUTION_DIMENSIONS[resolution][aspect_ratio]
+    if aspect_ratio in VIDEO_BASE_DIMENSIONS:
+        return VIDEO_BASE_DIMENSIONS[aspect_ratio]
     return width, height
 
 
@@ -442,11 +466,34 @@ def normalize_video_model_profile(value: str) -> str:
         "seedance2": "seedance2-api",
         "seedance-2": "seedance2-api",
         "seedance-2.0": "seedance2-api",
+        "wan": "wan22-i2v",
+        "wan2.2": "wan22-i2v",
+        "wan-2.2": "wan22-i2v",
+        "wan22": "wan22-i2v",
+        "wan-normal": "wan22-i2v",
+        "wan22-normal": "wan22-i2v",
+        "dasiwa": "wan22-dasiwa-tastysin-i2v",
+        "dasiwa-tastysin": "wan22-dasiwa-tastysin-i2v",
+        "tastysin": "wan22-dasiwa-tastysin-i2v",
+        "dasiwa-boundbite": "wan22-dasiwa-boundbite-i2v",
+        "boundbite": "wan22-dasiwa-boundbite-i2v",
     }
     return aliases.get(value, value)
 
 
+def is_wan22_profile(model_profile: str) -> bool:
+    return model_profile in {
+        "wan22-i2v",
+        "wan22-dasiwa-tastysin-i2v",
+        "wan22-dasiwa-boundbite-i2v",
+    }
+
+
 def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[Path]]) -> str:
+    if is_wan22_profile(model_profile):
+        if mode == "wan22-flf2v" or mode == "flf2v" or len(media.get("image", [])) >= 2:
+            return "wan22-flf2v"
+        return "wan22-i2v"
     if model_profile == "ltx23-10eros" and mode.startswith("seedance2-"):
         if mode == "seedance2-flf2v":
             return "flf2v"
@@ -460,6 +507,16 @@ def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[
     if mode in {"i2v", "ia2av", "motion-track"} or selected_input(media, "image"):
         return "seedance2-r2v"
     return "seedance2-t2v"
+
+
+def default_video_fps(mode: str) -> int:
+    return 16 if mode.startswith("wan22-") else 24
+
+
+def video_length_from_duration(mode: str, duration: int, fps: int) -> int:
+    if mode.startswith("wan22-"):
+        return duration * fps + 1
+    return duration * fps
 
 
 def divisible_by_16(value: int) -> int:
@@ -492,7 +549,7 @@ def half_scale_image_input(path: Path, inputs_dir: Path, label: str) -> Path:
 
 
 def maybe_half_scale_ltx_image_input(path_value: str, out_dir: Path, mode: str) -> str:
-    if mode.startswith("seedance2-") or mode not in {"i2v", "ia2av", "flf2v", "motion-track"}:
+    if mode.startswith(("seedance2-", "wan22-")) or mode not in {"i2v", "ia2av", "flf2v", "motion-track"}:
         return path_value
     if not path_value:
         return path_value
@@ -513,6 +570,22 @@ def selected_input(media: dict[str, list[Path]], kind: str) -> Path | None:
     return media.get(kind, [None])[0] if media.get(kind) else None
 
 
+def storyboard_image_segments(mode: str, images: list[Path]) -> list[tuple[Path, Path | None]]:
+    if not mode.endswith("flf2v"):
+        return [(image, None) for image in images]
+    if not images:
+        return []
+    if len(images) == 1:
+        return [(images[0], images[0])]
+
+    segments: list[tuple[Path, Path | None]] = []
+    for index in range(0, len(images), 2):
+        first = images[index]
+        last = images[index + 1] if index + 1 < len(images) else first
+        segments.append((first, last))
+    return segments
+
+
 def imagegen_capability(mode: str) -> str:
     return {
         "generate": "imagegen.generate",
@@ -521,6 +594,53 @@ def imagegen_capability(mode: str) -> str:
         "grok-generate": "imagegen.grok-generate",
         "grok-edit": "imagegen.grok-edit",
     }.get(mode, f"imagegen.{mode}")
+
+
+def videogen_capability(mode: str) -> str:
+    return f"videogen.{mode}"
+
+
+def command_without_options(command: list[str], option_names: set[str]) -> list[str]:
+    result: list[str] = []
+    skip_next = False
+    for index, token in enumerate(command):
+        if skip_next:
+            skip_next = False
+            continue
+        if token in option_names:
+            if index + 1 < len(command) and not command[index + 1].startswith("--"):
+                skip_next = True
+            continue
+        result.append(token)
+    return result
+
+
+def storyboard_commands(
+    command: list[str],
+    cwd: Path,
+    mode: str,
+    out_dir: Path,
+    media: dict[str, list[Path]],
+) -> list[tuple[list[str], Path]]:
+    if mode not in {"i2v", "flf2v", "wan22-i2v", "wan22-flf2v", "seedance2-r2v", "seedance2-flf2v"}:
+        return [(command, cwd)]
+
+    images = media.get("image", [])
+    segments = storyboard_image_segments(mode, images)
+    if len(segments) <= 1:
+        return [(command, cwd)]
+
+    base = command_without_options(command, {"--input", "--first", "--last", "--out"})
+    commands: list[tuple[list[str], Path]] = []
+    for index, (first, last) in enumerate(segments, start=1):
+        segment_out = out_dir / f"storyboard-{index:02d}"
+        segment_command = [*base, "--out", str(segment_out)]
+        if mode.endswith("flf2v"):
+            segment_command.extend(["--first", str(first), "--last", str(last or first)])
+        else:
+            segment_command.extend(["--input", str(first)])
+        commands.append((segment_command, cwd))
+    return commands
 
 
 def local_comfy_config() -> dict[str, Any]:
@@ -905,15 +1025,20 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             raise RuntimeError("comfy-videogen requires params.modelProfile. The agent must ask the user which video model to use.")
         mode = normalize_video_mode(command_from_params(params, default_mode))
         mode = video_mode_for_profile(mode, model_profile, media)
+        cwd = write_run_comfy_config(
+            out_dir.parent,
+            capability=videogen_capability(mode),
+            model_profile=model_profile,
+        ) if model_profile else repo_root()
         command = ["comfy-videogen", mode, "--out", str(out_dir)]
         if not mode.startswith("seedance2-"):
             command.extend(["--models-dir", str(model_dir)])
         command.extend(["--prompt", prompt])
         image_input = first_text(params.get("inputPath")) or str(selected_input(media, "image") or "")
         image_input = maybe_half_scale_ltx_image_input(image_input, out_dir, mode)
-        if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v"} and image_input:
+        if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v", "wan22-i2v"} and image_input:
             command.extend(["--input", image_input])
-        if mode in {"flf2v", "seedance2-flf2v"}:
+        if mode in {"flf2v", "seedance2-flf2v", "wan22-flf2v"}:
             image_inputs = media.get("image", [])
             first = maybe_half_scale_ltx_image_input(
                 first_text(params.get("firstPath")) or str(image_inputs[0] if image_inputs else ""),
@@ -940,20 +1065,35 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             command.extend(["--width", str(width), "--height", str(height)])
         if first_text(params.get("aspectRatio")) and mode.startswith("seedance2-"):
             command.extend(["--ratio", first_text(params.get("aspectRatio"))])
+        if first_text(params.get("resolution")) and mode.startswith("seedance2-"):
+            command.extend(["--resolution", first_text(params.get("resolution"))])
         duration = as_int(params.get("duration"))
         if duration is not None:
             if mode.startswith("seedance2-"):
                 command.extend(["--duration", str(duration)])
             elif as_int(params.get("length")) is None:
-                fps = as_int(params.get("fps")) or 24
-                command.extend(["--length", str(duration * fps)])
+                fps = as_int(params.get("fps")) or default_video_fps(mode)
+                length = video_length_from_duration(mode, duration, fps)
+                command.extend(["--length", str(length)])
         for key in ("length", "fps", "duration", "seed"):
             value = as_int(params.get(key))
             if key == "duration" and duration is not None:
                 continue
             if value is not None:
                 command.extend([f"--{key}", str(value)])
-        return command, repo_root()
+        if mode.startswith("wan22-"):
+            for key, cli_key in (
+                ("highNoiseSteps", "high-steps"),
+                ("highSteps", "high-steps"),
+                ("high_steps", "high-steps"),
+                ("lowNoiseSteps", "low-steps"),
+                ("lowSteps", "low-steps"),
+                ("low_steps", "low-steps"),
+            ):
+                value = as_int(params.get(key))
+                if value is not None:
+                    command.extend([f"--{cli_key}", str(value)])
+        return command, cwd
 
     if skill_id == "comfy-musicgen":
         prompt, music_params = normalized_music_params(prompt, params)
@@ -1103,6 +1243,47 @@ def raw_result_from_cli(payload: dict[str, Any], command: list[str], prompt: str
     }
 
 
+def combine_raw_results(results: list[dict[str, Any]]) -> dict[str, Any]:
+    combined: dict[str, Any] = {
+        "artifacts": [],
+        "diagnostics": [],
+        "cards": [],
+    }
+    for result in results:
+        for key in ("artifacts", "diagnostics", "cards"):
+            values = result.get(key)
+            if isinstance(values, list):
+                combined[key].extend(values)
+        for key in ("html", "text"):
+            value = result.get(key)
+            if value:
+                existing = first_text(combined.get(key))
+                combined[key] = f"{existing}\n\n{value}".strip() if existing else value
+
+    return {key: value for key, value in combined.items() if value}
+
+
+def annotate_storyboard_raw_result(
+    raw: dict[str, Any],
+    *,
+    segment_index: int,
+    segment_count: int,
+    source_images: tuple[Path, Path | None],
+) -> None:
+    for artifact in raw.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        metadata = artifact.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            artifact["metadata"] = metadata
+        metadata["storyboard"] = {
+            "segmentIndex": segment_index,
+            "segmentCount": segment_count,
+            "sourceImages": [str(image) for image in source_images if image is not None],
+        }
+
+
 def prompt_from_command(command: list[str], fallback: str) -> str:
     try:
         index = command.index("--prompt")
@@ -1118,12 +1299,40 @@ def main() -> None:
     run_dir = output_dir(payload)
     input_media = materialize_selected_media(payload, run_dir.parent / "inputs")
     command, cwd = build_cli_command(payload, run_dir, input_media)
+    commands = storyboard_commands(command, cwd, command[1] if len(command) > 1 else "", run_dir, input_media)
     if shutil.which(command[0]) is None:
         raise RuntimeError(
             f"Comfy CLI not found: {command[0]}. Install with `uv tool install git+https://github.com/quinteroac/comfy-agent-tools`."
         )
-    result = run_command(command, cwd)
-    print(json.dumps(raw_result_from_cli(result, command, prompt_from_command(command, base_prompt(payload)))))
+    results: list[dict[str, Any]] = []
+    segments = storyboard_image_segments(command[1] if len(command) > 1 else "", input_media.get("image", []))
+
+    for index, (segment_command, segment_cwd) in enumerate(commands, start=1):
+        result = run_command(segment_command, segment_cwd)
+        raw = raw_result_from_cli(result, segment_command, prompt_from_command(segment_command, base_prompt(payload)))
+        if len(segments) == len(commands):
+            annotate_storyboard_raw_result(
+                raw,
+                segment_index=index,
+                segment_count=len(commands),
+                source_images=segments[index - 1],
+            )
+        for artifact in raw.get("artifacts", []):
+            if isinstance(artifact, dict):
+                artifact["title"] = f"{first_text(artifact.get('title'), 'Comfy video')} {index}" if len(commands) > 1 else artifact.get("title")
+        if len(commands) > 1:
+            print(f"__LOKI_PARTIAL_RESULT__{json.dumps(raw)}", flush=True)
+        results.append(raw)
+    if len(commands) > 1:
+        print(json.dumps({
+            "diagnostics": [{
+                "level": "info",
+                "title": "Storyboard video generation completed",
+                "message": f"Generated {len(commands)} storyboard video segment(s).",
+            }]
+        }))
+    else:
+        print(json.dumps(combine_raw_results(results)))
 
 
 if __name__ == "__main__":

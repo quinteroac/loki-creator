@@ -589,7 +589,17 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
     }),
   });
 
-  const completedRun = await waitForSkillRun(createdRun.id);
+  let completedRun: LokiSkillRun;
+  try {
+    completedRun = await waitForSkillRun(createdRun.id);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error waiting for Loki skill run";
+    completedRun = {
+      ...createdRun,
+      status: "failed",
+      error: `Loki skill run ${createdRun.id} was created, but the bridge could not observe it to completion: ${message}`,
+    };
+  }
   const cards = completedRun.result?.cards ?? [];
 
   return {

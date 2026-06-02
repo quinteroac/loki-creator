@@ -1,6 +1,6 @@
 ---
 name: comfy-videogen
-description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
+description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros, local WAN 2.2 image/first-last-frame workflows, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, WAN 2.2 image-guided video, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
 metadata:
   loki:
     visibility: user
@@ -19,6 +19,15 @@ metadata:
           - value: ltx23-10eros
             label: LTX 2.3 Local
             description: Local GPU-backed LTX 2.3 10Eros workflows.
+          - value: wan22-i2v
+            label: WAN 2.2 FP8
+            description: Local GPU-backed WAN 2.2 image-to-video and first/last-frame workflows. Default 10 high-noise steps and 10 low-noise steps.
+          - value: wan22-dasiwa-tastysin-i2v
+            label: WAN 2.2 Dasiwa TastySin
+            description: Local Dasiwa WAN 2.2 TastySin profile. Default 2 high-noise steps and 2 low-noise steps.
+          - value: wan22-dasiwa-boundbite-i2v
+            label: WAN 2.2 Dasiwa BoundBite
+            description: Local Dasiwa WAN 2.2 BoundBite profile. Default 2 high-noise steps and 2 low-noise steps.
           - value: seedance2-api
             label: Seedance 2.0 API
             description: Remote ByteDance Seedance 2.0 API nodes through ComfyUI API Nodes.
@@ -42,14 +51,45 @@ metadata:
           - value: "4:3"
             label: Classic 4:3
             description: Classic landscape frame.
+      - id: resolution
+        label: Resolution
+        description: Choose the target video resolution. Use 480p for fast previews and 720p when the extra detail is worth the heavier run.
+        type: choice
+        required: true
+        askWhen: always
+        order: 30
+        options:
+          - value: 480p
+            label: 480p
+            description: Faster, lighter generation for previews and iteration.
+          - value: 720p
+            label: 720p
+            description: Higher detail with a heavier generation cost.
+      - id: videoMode
+        label: Video mode
+        description: Choose how selected images become video segments.
+        type: choice
+        required: true
+        askWhen: always
+        order: 40
+        options:
+          - value: i2v
+            label: Image to video
+            description: Create one video per selected image.
+          - value: flf2v
+            label: First/last frame
+            description: Use selected images as storyboard pairs. One image duplicates as first and last; two images create one transition; three or four images create two transitions.
       - id: duration
         label: Duration
         description: Choose the target video duration.
         type: choice
         required: true
         askWhen: always
-        order: 30
+        order: 50
         options:
+          - value: "3"
+            label: 3 seconds
+            description: Short, fast preview clip.
           - value: "5"
             label: 5 seconds
             description: Short clip for quick preview.
@@ -62,6 +102,22 @@ metadata:
           - value: "15"
             label: 15 seconds
             description: Maximum standard clip duration for LTX 2.3 and Seedance 2.0.
+      - id: highNoiseSteps
+        label: WAN high-noise steps
+        description: Optional WAN 2.2 high-noise model steps. More high steps usually means more motion.
+        type: text
+        required: false
+        askWhen: missing
+        order: 60
+        options: []
+      - id: lowNoiseSteps
+        label: WAN low-noise steps
+        description: Optional WAN 2.2 low-noise model steps. More low steps usually means more detail/refinement.
+        type: text
+        required: false
+        askWhen: missing
+        order: 70
+        options: []
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -74,14 +130,14 @@ metadata:
 # comfy-videogen
 
 Use this skill for video generation through the `comfy-videogen` CLI. Local LTX
-2.3 modes use model files under `.loki/models/comfyui`. Remote Seedance 2.0 modes
-use ComfyUI API Nodes vendored by `comfy-diffusion` and require
+2.3 and WAN 2.2 modes use model files under `.loki/models/comfyui`.
+Remote Seedance 2.0 modes use ComfyUI API Nodes vendored by `comfy-diffusion` and require
 `COMFY_ORG_API_KEY`.
 
-If a built-in LTX 2.3 profile is missing files, use `comfy-model-downloader` for
-the requested local `videogen.<mode>` capability before running inference. Do
-not use the downloader for Seedance 2.0; `seedance2-api` has no local model
-files.
+If a built-in LTX 2.3 or WAN 2.2 profile is missing files, use
+`comfy-model-downloader` for the requested local `videogen.<mode>` capability
+before running inference. Do not use the downloader for Seedance 2.0;
+`seedance2-api` has no local model files.
 
 The CLI is quiet by default and prints only final JSON. Use `--verbose` only when
 debugging ComfyUI runtime output, warnings, or progress bars.
@@ -92,15 +148,26 @@ outside the repo, let `comfy-tools-setup` install the CLIs with `uv tool`.
 
 ## Required Arguments
 
-Loki declares `modelProfile`, `aspectRatio`, and `duration` as required skill
-arguments. The bridge asks which video model/runtime to use first, then asks for
-the frame, then asks for the target duration before the agent invokes this skill.
+Loki declares `modelProfile`, `aspectRatio`, `resolution`, `videoMode`, and
+`duration` as required skill arguments. The bridge asks which video model/runtime
+to use first, then asks for the frame, resolution, image/storyboard mode, and
+target duration before the agent invokes this skill.
 
 Available model profiles:
 
 - `ltx23-10eros`: local GPU-backed LTX 2.3 10Eros workflows. Use this for local
   text-to-video, image-to-video, image+audio-to-video, first/last-frame, and
   motion-track workflows.
+- `wan22-i2v`: local GPU-backed WAN 2.2 workflows. Use this for image-to-video
+  and first/last-frame video when the user explicitly asks for WAN/Wan 2.2 or
+  wants the standard WAN local model. Defaults: `highNoiseSteps=10`,
+  `lowNoiseSteps=10`.
+- `wan22-dasiwa-tastysin-i2v`: local Dasiwa WAN 2.2 TastySin profile. Use when
+  the user asks for Dasiwa/TastySin. Defaults: `highNoiseSteps=2`,
+  `lowNoiseSteps=2`.
+- `wan22-dasiwa-boundbite-i2v`: local Dasiwa WAN 2.2 BoundBite profile. Use when
+  the user asks for Dasiwa/BoundBite. Defaults: `highNoiseSteps=2`,
+  `lowNoiseSteps=2`.
 - `seedance2-api`: remote ByteDance Seedance 2.0 API workflows. Use this for
   text-to-video, reference-image-to-video, and first/last-frame video when
   `COMFY_ORG_API_KEY` is configured.
@@ -112,11 +179,44 @@ Aspect ratio choices:
 - `1:1`: square.
 - `4:3`: classic landscape.
 
-Duration choices:
+Resolution choices:
 
-- `5`, `7`, `10`, or `15` seconds. Local LTX converts duration to `length` frames
+- `480p`: lighter preview/iteration resolution. Local dimensions are `848x480`
+  for `16:9`, `480x848` for `9:16`, `480x480` for `1:1`, and `640x480` for
+  `4:3`.
+- `720p`: higher-detail resolution. Local dimensions are `1280x720` for `16:9`,
+  `720x1280` for `9:16`, `720x720` for `1:1`, and `960x720` for `4:3`.
+- Seedance 2.0 receives this value directly as `--resolution`.
+
+Video mode choices:
+
+- `i2v`: image-to-video. Each selected image becomes one video segment/card.
+- `flf2v`: first/last-frame storyboard. Selected images are consumed in order as
+  pairs: one image duplicates as both first and last frame for one video; two
+  images create one transition; three images create two videos using `(1,2)` and
+  `(3,3)`; four images create two videos using `(1,2)` and `(3,4)`.
+- Treat multiple generated videos as connected storyboard beats in the same
+  story. Keep prompts coherent across segments while respecting each image pair.
+- Local video generation is GPU-exclusive and must run sequentially. Do not try
+  to parallelize storyboard segments, spawn multiple local video jobs at once, or
+  ask the user to run concurrent local generations. Loki publishes each segment
+  to the canvas as it completes.
+
+Duration and WAN step choices:
+
+- `3`, `5`, `7`, `10`, or `15` seconds. Local LTX converts duration to `length` frames
   using `fps=24` unless another fps is explicitly provided. Seedance receives
   the same value as `--duration`.
+- WAN 2.2 uses `fps=16` by default and should use full-second frame counts with
+  one terminal frame: `49` frames for 3 seconds, `81` for 5 seconds, `113` for
+  7 seconds, `161` for 10 seconds, and `241` for 15 seconds. Do not cut WAN
+  clips to `duration * fps` frames such as `80` at 16 FPS, because it weakens
+  motion and first/last-frame adherence.
+- WAN 2.2 accepts optional `highNoiseSteps` and `lowNoiseSteps` params. More
+  high-noise steps usually means more motion; more low-noise steps usually means
+  more detail/refinement. If both are omitted, the selected profile defaults are
+  used. If only one is provided, the CLI derives the other from total `steps`
+  when available.
 
 At the start of every video workflow, start or reuse the local Comfy Media
 gallery for the active output directory:
@@ -134,7 +234,8 @@ checkpoint/fine-tune/default such as an LTX 2.3 variant, use
 
 If model validation fails with `missing_model_file`, use `comfy-model-downloader`
 for the exact mode: `videogen.t2v`, `videogen.i2v`, `videogen.flf2v`,
-`videogen.ia2av`, or `videogen.motion-track`.
+`videogen.ia2av`, `videogen.motion-track`, `videogen.wan22-i2v`, or
+`videogen.wan22-flf2v`.
 
 If the user asks to use or organize a LoRA by name or purpose, use
 `comfy-lora-onboarding` to search `loras/ltx23/` first and pass the chosen file
@@ -153,6 +254,8 @@ with `--extra-lora` only to modes that support ad hoc LoRA insertion.
 - `motion-track`: input image plus motion-track control video plus prompt to MP4
   with audio. Use `comfy-motion-track-control` for IC-LoRA setup and control
   video preparation.
+- `wan22-i2v`: WAN 2.2 input image plus prompt to MP4.
+- `wan22-flf2v`: WAN 2.2 first image plus last image plus prompt to MP4.
 - `seedance2-t2v`: remote Seedance 2.0 text prompt to MP4.
 - `seedance2-r2v`: remote Seedance 2.0 reference image plus prompt to MP4.
 - `seedance2-flf2v`: remote Seedance 2.0 first image plus last image plus
@@ -213,6 +316,33 @@ uv run comfy-videogen motion-track \
   --out outputs
 ```
 
+WAN 2.2 image to video:
+
+```bash
+uv run comfy-videogen wan22-i2v \
+  --input path/to/image.png \
+  --prompt "cinematic camera drift, subtle subject motion, natural lighting" \
+  --length 81 \
+  --fps 16 \
+  --high-steps 10 \
+  --low-steps 10 \
+  --out outputs
+```
+
+WAN 2.2 first/last frame:
+
+```bash
+uv run comfy-videogen wan22-flf2v \
+  --first path/to/start.png \
+  --last path/to/end.png \
+  --prompt "smooth cinematic transition between both frames, coherent motion" \
+  --length 81 \
+  --fps 16 \
+  --high-steps 2 \
+  --low-steps 2 \
+  --out outputs
+```
+
 Seedance 2.0 text to video:
 
 ```bash
@@ -253,15 +383,10 @@ drift, dance movement, performance gestures, or environmental reaction. The
 video duration is controlled by `--length / --fps`; long songs are trimmed to
 that window unless `--audio-start-time` or `--audio-duration` is passed.
 
-This sizing rule applies only to local LTX 2.3 modes. It does not apply to
-Seedance 2.0 remote API modes or other non-LTX pipelines. Local LTX 2.3 runs a
-two-step pipeline with latent x2 spatial upscaling/refinement, so treat
-`--width` and `--height` as the base generation size, not the desired final MP4
-size. When the user asks for a final resolution, pass half the requested
-dimensions to avoid OOM and to hit the intended output: for final `1080x720`,
-use `--width 540 --height 360`; for final `768x512`, use `--width 384 --height
-256`. Read `width` and `height` from the final JSON to confirm the actual saved
-MP4 size.
+Use the collected `resolution` and `aspectRatio` arguments instead of inventing
+raw dimensions. Loki translates `480p`/`720p` plus the selected frame into
+managed `--width`/`--height` values for local modes, and passes `--resolution`
+directly to Seedance 2.0.
 
 ## Defaults
 
@@ -278,6 +403,19 @@ MP4 size.
 - Motion-track params: `attention_strength=1.0`, `reference_downscale=1.0`
 - IA2AV audio params: `audio_start_time=0.0`, `audio_duration=length/fps` by default
 - Dependency: `comfy-diffusion[comfyui,video,audio]` v2.2.0 or newer for HDR IC-LoRA
+
+### WAN 2.2 Local
+
+- Models directory: `.loki/models/comfyui`
+- Profile: `wan22-i2v`
+- Dasiwa profiles: `wan22-dasiwa-tastysin-i2v`, `wan22-dasiwa-boundbite-i2v`
+- Supported modes: `wan22-i2v`, `wan22-flf2v`
+- Video params: `fps=16`; recommended frame counts are `49` for 3 seconds,
+  `81` for 5 seconds, `113` for 7 seconds, `161` for 10 seconds, and `241` for
+  15 seconds.
+- Standard default steps: `highNoiseSteps=10`, `lowNoiseSteps=10`
+- Dasiwa default steps: `highNoiseSteps=2`, `lowNoiseSteps=2`
+- Required local files include WAN 2.2 high/low-noise diffusion models, text encoder, and VAE as reported by `comfy-models validate-profile <profile>`.
 
 Extra LoRAs are optional and ad hoc. Use repeatable
 `--extra-lora PATH[:MODEL_STRENGTH[:CLIP_STRENGTH]]` after resolving the file

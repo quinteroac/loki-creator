@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.models import SkillRun, SkillRunRequest
+from app.models import SkillRawResult, SkillResult, SkillRun, SkillRunRequest
 from app.services.card_packager import CardPackagerService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
@@ -53,6 +53,16 @@ class SkillRunService:
             return
 
         try:
+            def handle_partial_result(raw_result: SkillRawResult) -> None:
+                partial_result = self.packager.package(
+                    skill=skill,
+                    run_id=run_id,
+                    prompt=payload.prompt,
+                    params=payload.params,
+                    raw_result=raw_result,
+                )
+                self._append_result_cards(run_id, partial_result)
+
             raw_result = self.invoker.invoke(
                 skill,
                 {
@@ -65,6 +75,7 @@ class SkillRunService:
                     "attachments": payload.attachments,
                     "params": payload.params,
                 },
+                on_partial_result=handle_partial_result,
             )
             result = self.packager.package(
                 skill=skill,
@@ -78,11 +89,12 @@ class SkillRunService:
             return
 
         now = datetime.now(timezone.utc)
+        current_run = self._runs[run_id]
         self._runs[run_id] = run.model_copy(
             update={
                 "status": "succeeded",
                 "updated_at": now,
-                "result": result,
+                "result": self._merge_results(current_run.result, result),
                 "error": None,
             },
         )
@@ -102,3 +114,22 @@ class SkillRunService:
                 "error": error,
             },
         )
+
+    def _append_result_cards(self, run_id: str, result: SkillResult) -> None:
+        run = self._runs[run_id]
+        self._runs[run_id] = run.model_copy(
+            update={
+                "updated_at": datetime.now(timezone.utc),
+                "result": self._merge_results(run.result, result),
+            },
+        )
+
+    def _merge_results(self, left: SkillResult | None, right: SkillResult | None) -> SkillResult | None:
+        if left is None:
+            return right
+        if right is None:
+            return left
+
+        existing_ids = {card.id for card in left.cards}
+        cards = [*left.cards, *[card for card in right.cards if card.id not in existing_ids]]
+        return SkillResult(cards=cards)

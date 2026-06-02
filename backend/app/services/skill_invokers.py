@@ -1,7 +1,7 @@
 import json
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import ValidationError
 
@@ -16,7 +16,12 @@ class SkillInvocationError(RuntimeError):
 
 
 class SkillActionInvoker:
-    def invoke(self, skill: SkillDefinition, payload: dict[str, Any]) -> SkillRawResult:
+    def invoke(
+        self,
+        skill: SkillDefinition,
+        payload: dict[str, Any],
+        on_partial_result: Callable[[SkillRawResult], None] | None = None,
+    ) -> SkillRawResult:
         action = skill.action
         if action is None:
             raise SkillInvocationError(f"Skill {skill.id} does not declare an action")
@@ -31,22 +36,48 @@ class SkillActionInvoker:
         except ValueError as exc:
             raise SkillInvocationError(f"Skill path is outside the repository: {skill.path}") from exc
 
-        process = subprocess.run(
+        process = subprocess.Popen(
             action.command,
-            input=json.dumps(payload),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            capture_output=True,
             cwd=skill_dir,
-            timeout=action.timeout_seconds,
-            check=False,
         )
+        stdout_lines: list[str] = []
+        stderr_text = ""
+        try:
+            assert process.stdin is not None
+            process.stdin.write(json.dumps(payload))
+            process.stdin.close()
+
+            assert process.stdout is not None
+            for line in process.stdout:
+                stripped = line.strip()
+                if stripped.startswith("__LOKI_PARTIAL_RESULT__"):
+                    if on_partial_result is None:
+                        continue
+                    partial_json = stripped.removeprefix("__LOKI_PARTIAL_RESULT__")
+                    try:
+                        on_partial_result(SkillRawResult.model_validate(json.loads(partial_json)))
+                    except (json.JSONDecodeError, ValidationError) as exc:
+                        raise SkillInvocationError("Skill action returned an invalid partial result") from exc
+                    continue
+                if stripped:
+                    stdout_lines.append(line)
+
+            stderr_text = process.stderr.read() if process.stderr is not None else ""
+            process.wait(timeout=action.timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            process.kill()
+            raise SkillInvocationError(f"Skill action timed out after {action.timeout_seconds}s") from exc
 
         if process.returncode != 0:
-            message = process.stderr.strip() or process.stdout.strip() or "skill action failed"
+            message = stderr_text.strip() or "".join(stdout_lines).strip() or "skill action failed"
             raise SkillInvocationError(message)
 
         try:
-            decoded = json.loads(process.stdout)
+            decoded = json.loads("".join(stdout_lines))
         except json.JSONDecodeError as exc:
             raise SkillInvocationError("Skill action did not return valid JSON") from exc
 
