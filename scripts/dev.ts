@@ -5,33 +5,41 @@ type DevProcess = {
 
 const commands = [
   {
-    name: "frontend",
-    cmd: ["bun", "run", "dev"],
-    cwd: "frontend",
-  },
-  {
     name: "backend",
     cmd: ["uv", "run", "uvicorn", "app.main:app", "--reload", "--port", "8001"],
     cwd: "backend",
+    healthUrl: "http://127.0.0.1:8001/api/health",
   },
   {
     name: "agent-bridge",
     cmd: ["bun", "run", "agent-bridge/server.ts"],
     cwd: ".",
+    healthUrl: "http://127.0.0.1:8787/api/health",
+  },
+  {
+    name: "frontend",
+    cmd: ["bun", "run", "dev"],
+    cwd: "frontend",
   },
 ] as const;
 
-const processes: DevProcess[] = commands.map(({ name, cmd, cwd }) => ({
-  name,
-  process: Bun.spawn(cmd, {
+const processes: DevProcess[] = [];
+
+let shuttingDown = false;
+
+function startProcess({ name, cmd, cwd }: (typeof commands)[number]) {
+  const process = Bun.spawn(cmd, {
     cwd,
     stdin: "inherit",
     stdout: "pipe",
     stderr: "pipe",
-  }),
-}));
-
-let shuttingDown = false;
+  });
+  processes.push({ name, process });
+  console.log(`[dev] started ${name}`);
+  void prefixStream(name, process.stdout);
+  void prefixStream(name, process.stderr);
+  void watchProcessExit(name, process);
+}
 
 async function prefixStream(name: string, stream: ReadableStream<Uint8Array> | null) {
   if (!stream) {
@@ -79,21 +87,50 @@ function stopAll(exitCode = 0) {
   process.exit(exitCode);
 }
 
+async function waitForHealth(name: string, url: string) {
+  let attempt = 0;
+
+  while (!shuttingDown) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        console.log(`[dev] ${name} is ready`);
+        return;
+      }
+    } catch {
+      // The service is still starting.
+    }
+
+    attempt += 1;
+    if (attempt % 10 === 0) {
+      console.log(`[dev] waiting for ${name} at ${url}`);
+    }
+    await Bun.sleep(250);
+  }
+}
+
+async function watchProcessExit(name: string, process: DevProcess["process"]) {
+  const exitCode = await process.exited;
+  if (!shuttingDown && exitCode !== 0) {
+    console.error(`${name} exited with code ${exitCode}`);
+  }
+  stopAll(exitCode);
+}
+
 process.on("SIGINT", () => stopAll());
 process.on("SIGTERM", () => stopAll());
 
-for (const { name, process } of processes) {
-  console.log(`[dev] started ${name}`);
-  void prefixStream(name, process.stdout);
-  void prefixStream(name, process.stderr);
+const runtimeCommands = commands.filter((command) => "healthUrl" in command);
+const frontendCommand = commands.find((command) => command.name === "frontend");
+
+for (const command of runtimeCommands) {
+  startProcess(command);
 }
 
-await Promise.race(
-  processes.map(async ({ name, process }) => {
-    const exitCode = await process.exited;
-    if (!shuttingDown && exitCode !== 0) {
-      console.error(`${name} exited with code ${exitCode}`);
-    }
-    stopAll(exitCode);
-  }),
-);
+await Promise.all(runtimeCommands.map((command) => waitForHealth(command.name, command.healthUrl)));
+
+if (frontendCommand) {
+  startProcess(frontendCommand);
+}
+
+await new Promise(() => {});

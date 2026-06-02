@@ -10,7 +10,7 @@ BASE_AGENT = AgentDefinition(
     slug="base-agent",
     name="Base Agent",
     description="Default Loki agent behavior for creating canvas cards through skills.",
-    default_model="Loki Default",
+    default_model="GPT-5.4 mini (openai-codex)",
     default_skills=BASE_AGENT_DEFAULT_SKILLS,
     agent_skill_id="base-agent",
 )

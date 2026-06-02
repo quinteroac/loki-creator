@@ -237,19 +237,35 @@ export type AgentRunResponse = {
 };
 
 export type AgentRunStreamEvent = {
-  type: "status" | "user" | "assistant_delta" | "assistant_message" | "skill" | "question" | "done" | "error";
+  type:
+    | "status"
+    | "user"
+    | "assistant_delta"
+    | "assistant_message"
+    | "thinking_delta"
+    | "tool_start"
+    | "tool_update"
+    | "tool_end"
+    | "skill"
+    | "question"
+    | "done"
+    | "error";
   message?: string;
   status?: AgentRunResponse["status"] | "running";
   skillName?: string;
+  toolName?: string;
+  toolCallId?: string;
   skillRunId?: string;
   cardIds?: string[];
 };
 
 export type AgentChatMessage = {
   id: string;
-  role: "user" | "assistant" | "system" | "skill";
+  role: "user" | "assistant" | "system" | "skill" | "thinking" | "tool";
   text: string;
   status?: AgentRunStreamEvent["status"];
   skillName?: string;
+  toolName?: string;
+  toolCallId?: string;
   createdAt: number;
 };

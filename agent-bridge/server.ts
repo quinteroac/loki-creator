@@ -186,14 +186,35 @@ type AgentRunState = {
   skillErrors: string[];
   skillCalls: Map<string, Promise<LokiSkillCallResult>>;
   pendingQuestion?: AgentQuestion;
+  diagnostics: string[];
+  thinkingChunks: string[];
+  textDeltaCount: number;
+  thinkingDeltaCount: number;
+  toolEventCount: number;
   emit: (event: AgentRunStreamEvent) => void;
 };
 
+type AgentRuntimeMode = "pi-tools" | "grok-build-stdio";
+
 type AgentRunStreamEvent = {
-  type: "status" | "user" | "assistant_delta" | "assistant_message" | "skill" | "question" | "done" | "error";
+  type:
+    | "status"
+    | "user"
+    | "assistant_delta"
+    | "assistant_message"
+    | "thinking_delta"
+    | "tool_start"
+    | "tool_update"
+    | "tool_end"
+    | "skill"
+    | "question"
+    | "done"
+    | "error";
   message?: string;
   status?: AgentRunResponse["status"] | "running";
   skillName?: string;
+  toolName?: string;
+  toolCallId?: string;
   skillRunId?: string;
   cardIds?: string[];
 };
@@ -204,6 +225,7 @@ const backendApiUrl = process.env.LOKI_BACKEND_URL ?? "http://127.0.0.1:8001";
 const port = Number(process.env.LOKI_AGENT_BRIDGE_PORT ?? 8787);
 const skillRunWaitTimeoutMs = Number(process.env.LOKI_SKILL_RUN_WAIT_TIMEOUT_MS ?? 900000);
 const allowedOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+):\d+$/;
+const preferredAgentModelId = "gpt-5.4-mini";
 let agentServicesPromise: ReturnType<typeof createAgentSessionServices> | undefined;
 const pendingConversations = new Map<string, PendingConversation>();
 const streamClients = new Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>();
@@ -214,7 +236,7 @@ const agents: LokiAgent[] = [
     id: "base-agent",
     name: "Base Agent",
     description: "Default Loki agent behavior for creating canvas cards through skills.",
-    defaultModel: "Loki Default",
+    defaultModel: "GPT-5.4 mini (openai-codex)",
     defaultSkills: ["imagegen"],
   },
 ];
@@ -236,6 +258,73 @@ function emitAgentRunEvent(streamId: string | undefined, event: AgentRunStreamEv
       clients.delete(controller);
     }
   }
+}
+
+function hasAgentRunEventClients(streamId: string | undefined) {
+  if (!streamId) return false;
+  return (streamClients.get(streamId)?.size ?? 0) > 0;
+}
+
+function appendRunDiagnostic(runState: AgentRunState, message: string) {
+  const timestamp = new Date().toISOString();
+  runState.diagnostics.push(`${timestamp} ${message}`);
+  runState.emit({ type: "status", status: "running", message: `[diagnostic] ${message}` });
+}
+
+function formatRunDiagnostics(runState: AgentRunState) {
+  if (runState.diagnostics.length === 0) return "";
+
+  return `\n\nDiagnostics:\n${runState.diagnostics.map((entry) => `- ${entry}`).join("\n")}`;
+}
+
+function truncateText(value: string, maxLength = 900) {
+  const text = value.trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}...`;
+}
+
+function stringifyCompact(value: unknown, maxLength = 700) {
+  if (value === undefined || value === null) return "";
+
+  try {
+    return truncateText(JSON.stringify(value, null, 2), maxLength);
+  } catch {
+    return truncateText(String(value), maxLength);
+  }
+}
+
+function extractTextContent(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const content = record.content;
+  if (!Array.isArray(content)) return stringifyCompact(value);
+
+  const text = content
+    .map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const itemRecord = item as Record<string, unknown>;
+      return typeof itemRecord.text === "string" ? itemRecord.text : "";
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  return text ? truncateText(text) : stringifyCompact(value);
+}
+
+function summarizeToolStart(toolName: string, args: unknown) {
+  const argsSummary = stringifyCompact(args, 500);
+  return argsSummary ? `${toolName} started.\n${argsSummary}` : `${toolName} started.`;
+}
+
+function summarizeToolProgress(toolName: string, partialResult: unknown) {
+  const resultSummary = extractTextContent(partialResult);
+  return resultSummary ? `${toolName} is running.\n${resultSummary}` : `${toolName} is running.`;
+}
+
+function summarizeToolEnd(toolName: string, result: unknown, isError: boolean) {
+  const resultSummary = extractTextContent(result);
+  const state = isError ? "failed" : "completed";
+  return resultSummary ? `${toolName} ${state}.\n${resultSummary}` : `${toolName} ${state}.`;
 }
 
 function createAgentRunEventStream(streamId: string) {
@@ -283,12 +372,19 @@ async function listAvailableModelsAsync(): Promise<LokiModel[]> {
   const { modelRegistry } = await getAgentServices();
   modelRegistry.refresh();
 
-  return modelRegistry.getAvailable().map((model) => ({
-    id: model.id,
-    provider: model.provider,
-    name: model.name,
-    label: `${model.name} (${model.provider})`,
-  }));
+  return modelRegistry
+    .getAvailable()
+    .map((model) => ({
+      id: model.id,
+      provider: model.provider,
+      name: model.name,
+      label: `${model.name} (${model.provider})`,
+    }))
+    .sort((left, right) => {
+      if (left.id === preferredAgentModelId) return -1;
+      if (right.id === preferredAgentModelId) return 1;
+      return 0;
+    });
 }
 
 async function resolveSelectedModel(label: string) {
@@ -365,6 +461,10 @@ function toPiSkillToolName(skill: LokiSkill) {
   return `loki_skill_${skill.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
 }
 
+function getAgentRuntimeMode(model: LokiModel | undefined): AgentRuntimeMode {
+  return model?.provider === "pi-grok-build" ? "grok-build-stdio" : "pi-tools";
+}
+
 function getDefaultSkillIds(agentId: string) {
   return agents.find((agent) => agent.id === agentId)?.defaultSkills ?? [];
 }
@@ -421,6 +521,26 @@ function summarizeSkillInvocation(skill: LokiSkill, skillParams: LokiSkillParams
     parts.push(`Prompt: ${promptPreview}${skillParams.prompt.length > 180 ? "..." : ""}`);
   }
   return parts.join(" ");
+}
+
+function extractOperationalPromptFromAgentText(agentText: string, fallbackPrompt: string) {
+  const normalized = agentText.replace(/\r/g, "\n");
+  const patterns = [
+    /good prompt:\s*["“]([^"”\n]{8,1200})["”]/gi,
+    /(?:final|operational|refined)?\s*prompt\s*:\s*["“]([^"”\n]{8,1200})["”]/gi,
+    /with prompt\s+["“]([^"”\n]{8,1200})["”]/gi,
+    /prompt should be\s+(?:something like\s+)?["“]([^"”\n]{8,1200})["”]/gi,
+  ];
+  const matches: string[] = [];
+
+  for (const pattern of patterns) {
+    for (const match of normalized.matchAll(pattern)) {
+      const candidate = match[1]?.trim();
+      if (candidate) matches.push(candidate);
+    }
+  }
+
+  return matches.at(-1) ?? fallbackPrompt;
 }
 
 async function waitForSkillRun(runId: string): Promise<LokiSkillRun> {
@@ -598,6 +718,71 @@ function createLokiSkillPiTool(
       };
     },
   });
+}
+
+async function runSelectedSkillFromGrokBuildReasoning(
+  selectedSkills: LokiSkill[],
+  effectiveRequest: AgentRunRequest,
+  runState: AgentRunState,
+  agentText: string,
+) {
+  if (selectedSkills.length !== 1) {
+    appendRunDiagnostic(
+      runState,
+      `grok-build stdio fallback skipped: expected exactly one selected skill, got ${selectedSkills.length}`,
+    );
+    return;
+  }
+
+  const skill = selectedSkills[0];
+  const operationalPrompt = extractOperationalPromptFromAgentText(agentText, effectiveRequest.prompt);
+  const skillParams: LokiSkillParams = {
+    prompt: operationalPrompt,
+    paramsJson: JSON.stringify(effectiveRequest.collectedArgs ?? {}),
+  };
+
+  appendRunDiagnostic(
+    runState,
+    `grok-build stdio fallback invoking ${skill.id} with extractedPrompt=${JSON.stringify(operationalPrompt.slice(0, 220))}`,
+  );
+  runState.emit({
+    type: "skill",
+    status: "running",
+    skillName: skill.name,
+    message: summarizeSkillInvocation(skill, skillParams),
+  });
+
+  const skillCall = runLokiSkill(skill, skillParams, effectiveRequest);
+  runState.skillCalls.set(skill.id, skillCall);
+  const { run, cards, cardIds } = await skillCall;
+  runState.skillRunIds.push(run.id);
+  runState.cardIds.push(...cardIds);
+
+  if (run.status === "failed") {
+    runState.skillCalls.delete(skill.id);
+    runState.skillErrors.push(`${skill.name}: ${run.error ?? "unknown error"}`);
+    runState.emit({
+      type: "skill",
+      status: "failed",
+      skillName: skill.name,
+      skillRunId: run.id,
+      message: `${skill.name} failed: ${run.error ?? "unknown error"}`,
+    });
+    return;
+  }
+
+  runState.emit({
+    type: "skill",
+    status: "succeeded",
+    skillName: skill.name,
+    skillRunId: run.id,
+    cardIds,
+    message: `${skill.name} completed.`,
+  });
+  appendRunDiagnostic(
+    runState,
+    `grok-build stdio fallback completed ${skill.id} run=${run.id} cards=${cards.length}`,
+  );
 }
 
 function hasExplicitSkillSelection(selectedSkills: string[]) {
@@ -973,11 +1158,44 @@ Collected skill arguments:
 ${entries.map(([key, value]) => `- ${key}: ${value}`).join("\n")}`;
 }
 
-function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[]) {
+function formatExplicitSkillSelection(request: AgentRunRequest, exposedSkills: LokiSkill[], runtimeMode: AgentRuntimeMode) {
+  if (!hasExplicitSkillSelection(request.skills) || exposedSkills.length === 0) return "";
+
+  if (runtimeMode === "grok-build-stdio") {
+    return `
+Explicit user-selected project skills:
+${exposedSkills.map((skill) => `- ${skill.name} (${skill.id}) at .grok/skills/${skill.id}/SKILL.md`).join("\n")}
+
+The user selected these skills explicitly. This is not a suggestion or a list of optional capabilities.
+- Use the selected project skill for this request.
+- Read and follow the selected skill's instructions before deciding the final operational prompt.
+- If a required user choice is still missing, ask one concise question and stop.
+- Otherwise produce the artifact intent for the selected skill. Do not mention Loki internal tools or loki_skill_* names.
+- If your runtime cannot call the skill directly, finish with a concise final operational prompt for that selected skill; the Loki bridge will execute it.`;
+  }
+
+  return `
+Explicit user-selected Loki skills:
+${exposedSkills.map((skill) => `- ${skill.name} (${toPiSkillToolName(skill)})`).join("\n")}
+
+The user selected these skills explicitly. This is not a suggestion or a list of optional capabilities.
+- Use the selected Loki skill for this request.
+- If a required user choice is still missing, call ask_user and stop.
+- Otherwise invoke exactly one selected Loki skill tool during this turn.
+- Pass a complete operational prompt to the skill tool. Do not pass a terse copy of the user's request if the skill needs a refined prompt.
+- Do not finish with plain text only. The bridge will reject this run unless a selected Loki skill tool is invoked.`;
+}
+
+function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[], runtimeMode: AgentRuntimeMode) {
   const agentId = request.agentId ?? "base-agent";
-  const skillNames = exposedSkills.map((skill) => `${skill.name} (${toPiSkillToolName(skill)})`).join(", ") || "none";
+  const skillNames = exposedSkills
+    .map((skill) => runtimeMode === "grok-build-stdio" ? `${skill.name} (${skill.id})` : `${skill.name} (${toPiSkillToolName(skill)})`)
+    .join(", ") || "none";
   const selectedCardInputs = formatSelectedCardInputs(request.selectedCardSnapshots ?? []);
   const attachmentInputs = formatAttachmentInputs(request.attachments ?? []);
+  const completionInstruction = runtimeMode === "grok-build-stdio"
+    ? "Use the selected project skill when the request requires producing canvas cards. If the Grok runtime cannot execute the project skill directly, finish with the complete operational prompt and structured parameters you want Loki to execute. Return a concise final response for the UI response panel."
+    : "Use the exposed Loki skills when the request requires producing canvas cards. Invoke each selected skill at most once per user request; one successful skill call is enough to create the canvas card. Return a concise final response for the UI response panel.";
 
   return `User request:
 ${request.prompt}
@@ -991,6 +1209,7 @@ Loki context:
 ${selectedCardInputs}
 ${attachmentInputs}
 ${formatCollectedArgs(request.collectedArgs)}
+${formatExplicitSkillSelection(request, exposedSkills, runtimeMode)}
 
 Loki runtime model:
 - Skills are the primary runtime unit. Their SKILL.md files contain instructions.
@@ -1003,7 +1222,24 @@ Loki runtime model:
 - Do not rely on a skill action to infer creative transformations from a short instruction.
 - If important information is missing after declared skill arguments are collected, call ask_user with concise options before invoking a skill. Do not write clarification questions as final text; the UI only renders choices from ask_user.
 
-Use the exposed Loki skills when the request requires producing canvas cards. Invoke each selected skill at most once per user request; one successful skill call is enough to create the canvas card. Return a concise final response for the UI response panel.`;
+${completionInstruction}`;
+}
+
+function buildExplicitSkillRetryPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[]) {
+  return `The previous assistant turn did not invoke a selected Loki skill.
+
+This request has an explicit user-selected Loki skill:
+${exposedSkills.map((skill) => `- ${skill.name} (${toPiSkillToolName(skill)})`).join("\n") || "- none"}
+
+Original user request:
+${request.prompt}
+${formatCollectedArgs(request.collectedArgs)}
+
+You must now do exactly one of these:
+- If a required user choice is still missing, call ask_user and stop.
+- Otherwise invoke exactly one selected Loki skill tool with a complete operational prompt.
+
+Do not answer in plain text only.`;
 }
 
 function hasRuntimeInputs(request: AgentRunRequest) {
@@ -1019,6 +1255,11 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
     cardIds: [] as string[],
     skillErrors: [] as string[],
     skillCalls: new Map<string, Promise<LokiSkillCallResult>>(),
+    diagnostics: [] as string[],
+    thinkingChunks: [] as string[],
+    textDeltaCount: 0,
+    thinkingDeltaCount: 0,
+    toolEventCount: 0,
     emit,
   };
   const responseChunks: string[] = [];
@@ -1026,14 +1267,25 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
 
   try {
+    appendRunDiagnostic(
+      runState,
+      `run started streamId=${request.streamId ?? "none"} streamConnected=${hasAgentRunEventClients(request.streamId)}`,
+    );
     emit({ type: "user", message: request.prompt });
     emit({ type: "status", status: "running", message: "Preparing Loki context." });
     const availableSkills = await listFrontendSkills();
+    appendRunDiagnostic(runState, `loaded backend skills count=${availableSkills.length}`);
     const existingConversation = request.conversationId
       ? pendingConversations.get(request.conversationId)
       : undefined;
     const selectedSkillIds = existingConversation?.selectedSkillIds ?? request.skills;
     const selectedSkills = selectSkillsForAgent(availableSkills, selectedSkillIds, agentId);
+    appendRunDiagnostic(
+      runState,
+      `selectedSkillIds=${JSON.stringify(selectedSkillIds)} resolvedSkills=${
+        selectedSkills.map((skill) => skill.id).join(",") || "none"
+      } explicit=${hasExplicitSkillSelection(selectedSkillIds)}`,
+    );
     const collectedArgs = existingConversation
       ? mergeConversationAnswers(existingConversation, request)
       : { ...(request.collectedArgs ?? {}) };
@@ -1043,6 +1295,10 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       collectedArgs,
     };
     const nextQuestion = findNextSkillQuestion(selectedSkills, collectedArgs);
+    appendRunDiagnostic(
+      runState,
+      `collectedArgs=${JSON.stringify(collectedArgs)} nextQuestion=${nextQuestion?.id ?? "none"}`,
+    );
 
     if (nextQuestion) {
       const conversationId = existingConversation?.id ?? `conversation_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -1064,13 +1320,25 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       pendingConversations.delete(existingConversation.id);
     }
 
+    const { authStorage, modelRegistry, resourceLoader } = await getAgentServices();
+    const model = await resolveSelectedModel(effectiveRequest.model);
+    const runtimeMode = getAgentRuntimeMode(model);
+    appendRunDiagnostic(
+      runState,
+      `resolvedModel=${model?.name ?? effectiveRequest.model} provider=${model?.provider ?? "unknown"} runtimeMode=${runtimeMode}`,
+    );
+
     const customTools = [
       createAskUserPiTool(runState),
       createInspectLokiContextPiTool(effectiveRequest),
-      ...selectedSkills.map((skill) => createLokiSkillPiTool(skill, effectiveRequest, runState)),
+      ...(runtimeMode === "grok-build-stdio"
+        ? []
+        : selectedSkills.map((skill) => createLokiSkillPiTool(skill, effectiveRequest, runState))),
     ];
-    const { authStorage, modelRegistry, resourceLoader } = await getAgentServices();
-    const model = await resolveSelectedModel(effectiveRequest.model);
+    appendRunDiagnostic(
+      runState,
+      `customTools=${customTools.map((tool) => tool.name).join(",") || "none"}`,
+    );
 
     const result = await createAgentSession({
       cwd: repoRoot,
@@ -1084,16 +1352,91 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       tools: customTools.map((tool) => tool.name),
     });
     session = result.session;
+    appendRunDiagnostic(runState, "Pi session created");
 
     session.subscribe((event) => {
-      if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-        responseChunks.push(event.assistantMessageEvent.delta);
-        emit({ type: "assistant_delta", message: event.assistantMessageEvent.delta });
+      if (event.type === "message_update") {
+        if (event.assistantMessageEvent.type === "text_delta") {
+          runState.textDeltaCount += 1;
+          responseChunks.push(event.assistantMessageEvent.delta);
+          emit({ type: "assistant_delta", message: event.assistantMessageEvent.delta });
+        }
+        if (event.assistantMessageEvent.type === "thinking_delta") {
+          runState.thinkingDeltaCount += 1;
+          runState.thinkingChunks.push(event.assistantMessageEvent.delta);
+          emit({ type: "thinking_delta", status: "running", message: event.assistantMessageEvent.delta });
+        }
+        return;
+      }
+
+      if (event.type === "tool_execution_start") {
+        runState.toolEventCount += 1;
+        emit({
+          type: "tool_start",
+          status: "running",
+          toolName: event.toolName,
+          toolCallId: event.toolCallId,
+          message: summarizeToolStart(event.toolName, event.args),
+        });
+        return;
+      }
+
+      if (event.type === "tool_execution_update") {
+        runState.toolEventCount += 1;
+        emit({
+          type: "tool_update",
+          status: "running",
+          toolName: event.toolName,
+          toolCallId: event.toolCallId,
+          message: summarizeToolProgress(event.toolName, event.partialResult),
+        });
+        return;
+      }
+
+      if (event.type === "tool_execution_end") {
+        runState.toolEventCount += 1;
+        emit({
+          type: "tool_end",
+          status: event.isError ? "failed" : "succeeded",
+          toolName: event.toolName,
+          toolCallId: event.toolCallId,
+          message: summarizeToolEnd(event.toolName, event.result, event.isError),
+        });
       }
     });
 
+    const agentPrompt = buildAgentPrompt(effectiveRequest, selectedSkills, runtimeMode);
+    appendRunDiagnostic(
+      runState,
+      `agentPrompt length=${agentPrompt.length} startsWith=${JSON.stringify(agentPrompt.slice(0, 120))}`,
+    );
     emit({ type: "status", status: "running", message: "Agent is working." });
-    await session.prompt(buildAgentPrompt(effectiveRequest, selectedSkills), { source: "api" });
+    appendRunDiagnostic(
+      runState,
+      `session.prompt starting streamConnected=${hasAgentRunEventClients(request.streamId)}`,
+    );
+    const promptStartedAt = Date.now();
+    await session.prompt(agentPrompt, { source: "api" });
+    appendRunDiagnostic(
+      runState,
+      `session.prompt finished elapsedMs=${Date.now() - promptStartedAt} textDeltas=${runState.textDeltaCount} thinkingDeltas=${runState.thinkingDeltaCount} toolEvents=${runState.toolEventCount} skillRunIds=${runState.skillRunIds.length}`,
+    );
+
+    if (
+      runtimeMode !== "grok-build-stdio"
+      && hasExplicitSkillSelection(selectedSkillIds)
+      && runState.skillRunIds.length === 0
+      && !runState.pendingQuestion
+    ) {
+      appendRunDiagnostic(runState, "explicit selected skill was not invoked after first agent turn; requesting corrective tool invocation");
+      emit({ type: "status", status: "running", message: "Agent is retrying the selected skill invocation." });
+      const retryStartedAt = Date.now();
+      await session.prompt(buildExplicitSkillRetryPrompt(effectiveRequest, selectedSkills), { source: "api" });
+      appendRunDiagnostic(
+        runState,
+        `explicit selected skill retry finished elapsedMs=${Date.now() - retryStartedAt} textDeltas=${runState.textDeltaCount} thinkingDeltas=${runState.thinkingDeltaCount} toolEvents=${runState.toolEventCount} skillRunIds=${runState.skillRunIds.length}`,
+      );
+    }
 
     if (runState.pendingQuestion) {
       const conversationId = `conversation_${crypto.randomUUID().replaceAll("-", "")}`;
@@ -1111,9 +1454,30 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       return createNeedsInputResponse(id, agentId, conversation, runState.pendingQuestion, runState);
     }
 
+    const responseText = responseChunks.join("").trim();
+    if (
+      runtimeMode === "grok-build-stdio"
+      && hasExplicitSkillSelection(selectedSkillIds)
+      && runState.skillRunIds.length === 0
+      && !runState.pendingQuestion
+    ) {
+      emit({
+        type: "status",
+        status: "running",
+        message: "Grok Build finished reasoning; Loki is executing the selected skill.",
+      });
+      await runSelectedSkillFromGrokBuildReasoning(
+        selectedSkills,
+        effectiveRequest,
+        runState,
+        `${responseText}\n${runState.thinkingChunks.join("")}`,
+      );
+    }
+
     if ((hasExplicitSkillSelection(selectedSkillIds) || hasRuntimeInputs(effectiveRequest)) && runState.skillRunIds.length === 0) {
       const message = responseChunks.join("").trim()
         || "The request selected or provided Loki runtime inputs, but the agent did not invoke a Loki skill.";
+      appendRunDiagnostic(runState, "guardrail failed: no skillRunIds after agent turn");
       emit({ type: "error", status: "failed", message });
       emit({ type: "done", status: "failed", message: "Agent finished without invoking a skill." });
       return {
@@ -1121,7 +1485,7 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
         agentId,
         status: "failed",
         responseText:
-          message,
+          `${message}${formatRunDiagnostics(runState)}`,
         skillRunIds: [],
         cardIds: [],
         error: "Agent did not invoke a Loki skill for the selected runtime context.",
@@ -1135,33 +1499,34 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
         id,
         agentId,
         status: "failed",
-        responseText: `Loki skill failed: ${runState.skillErrors.join("\n")}`,
+        responseText: `Loki skill failed: ${runState.skillErrors.join("\n")}${formatRunDiagnostics(runState)}`,
         skillRunIds: runState.skillRunIds,
         cardIds: runState.cardIds,
         error: runState.skillErrors.join("\n"),
       };
     }
 
-    const responseText = responseChunks.join("").trim() || "Agent run completed.";
-    emit({ type: "assistant_message", message: responseText });
+    const finalResponseText = responseText || "Agent run completed.";
+    emit({ type: "assistant_message", message: finalResponseText });
     emit({ type: "done", status: "succeeded", message: "Agent completed.", cardIds: runState.cardIds });
     return {
       id,
       agentId,
       status: "succeeded",
-      responseText,
+      responseText: finalResponseText,
       skillRunIds: runState.skillRunIds,
       cardIds: runState.cardIds,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown Pi agent error";
+    appendRunDiagnostic(runState, `run failed in catch: ${message}`);
     emit({ type: "error", status: "failed", message });
     emit({ type: "done", status: "failed", message: "Agent run failed." });
     return {
       id,
       agentId,
       status: "failed",
-      responseText: `Agent run failed: ${message}`,
+      responseText: `Agent run failed: ${message}${formatRunDiagnostics(runState)}`,
       skillRunIds: runState.skillRunIds,
       cardIds: runState.cardIds,
       error: message,

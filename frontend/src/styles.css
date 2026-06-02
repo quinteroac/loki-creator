@@ -695,14 +695,20 @@ button {
   overflow-wrap: anywhere;
 }
 
-.agent-chat-message.skill .agent-chat-bubble {
+.agent-chat-message.skill .agent-chat-bubble,
+.agent-chat-message.tool .agent-chat-bubble {
   color: var(--ink);
   background: var(--brand-blue-200);
   border-color: var(--brand-blue-deep);
 }
 
-.agent-chat-message.system .agent-chat-bubble {
+.agent-chat-message.system .agent-chat-bubble,
+.agent-chat-message.thinking .agent-chat-bubble {
   color: var(--dark-text-soft);
+}
+
+.agent-chat-message.thinking .agent-chat-bubble {
+  border-style: dashed;
 }
 
 .agent-chat-bubble.agent-activity-note {

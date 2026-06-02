@@ -16,6 +16,8 @@ type AgentResponsePanelProps = {
 function messageLabel(message: AgentChatMessage) {
   if (message.role === "user") return "You";
   if (message.role === "skill") return message.skillName ?? "Skill";
+  if (message.role === "tool") return message.toolName ?? "Tool";
+  if (message.role === "thinking") return "Thinking";
   if (message.role === "assistant") return "Agent";
   return "System";
 }
@@ -81,7 +83,11 @@ export function AgentResponsePanel({
             {messages.map((message) => (
               <article className={`agent-chat-message ${message.role}`} key={message.id}>
                 <div className="agent-chat-avatar" aria-hidden="true">
-                  {message.role === "skill" ? <Wrench size={14} strokeWidth={2} /> : <MessageCircle size={14} strokeWidth={2} />}
+                  {message.role === "skill" || message.role === "tool" ? (
+                    <Wrench size={14} strokeWidth={2} />
+                  ) : (
+                    <MessageCircle size={14} strokeWidth={2} />
+                  )}
                 </div>
                 <div className="agent-chat-bubble">
                   <div className="agent-chat-meta">

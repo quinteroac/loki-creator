@@ -52,6 +52,7 @@ const fallbackModels: AgentModel[] = [
     label: "Loki Default",
   },
 ];
+const preferredAgentModelId = "gpt-5.4-mini";
 
 function createClientId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
@@ -165,9 +166,14 @@ export function App() {
         if (!isMounted || models.length === 0) return;
 
         setAvailableModels(models);
-        setSelectedModel((currentModel) =>
-          models.some((model) => model.label === currentModel) ? currentModel : models[0].label,
-        );
+        setSelectedModel((currentModel) => {
+          const preferredModel = models.find((model) => model.id === preferredAgentModelId);
+          const currentModelEntry = models.find((model) => model.label === currentModel);
+          if (!currentModelEntry || currentModelEntry.id === "gpt-5.2" || currentModel === fallbackModels[0].label) {
+            return preferredModel?.label ?? models[0].label;
+          }
+          return currentModel;
+        });
       } catch {
         if (isMounted) {
           setAvailableModels(fallbackModels);
@@ -288,6 +294,54 @@ export function App() {
             createdAt: Date.now(),
           },
         ];
+      });
+      return;
+    }
+
+    if (event.type === "thinking_delta") {
+      setAgentChatMessages((currentMessages) => {
+        const lastMessage = currentMessages[currentMessages.length - 1];
+        if (lastMessage?.role === "thinking" && lastMessage.status === "running") {
+          return [
+            ...currentMessages.slice(0, -1),
+            { ...lastMessage, text: `${lastMessage.text}${event.message ?? ""}` },
+          ];
+        }
+
+        return [
+          ...currentMessages,
+          {
+            id: createClientId("agent_message"),
+            role: "thinking",
+            text: event.message ?? "",
+            status: "running",
+            createdAt: Date.now(),
+          },
+        ];
+      });
+      return;
+    }
+
+    if (event.type === "tool_start" || event.type === "tool_update" || event.type === "tool_end") {
+      setAgentChatMessages((currentMessages) => {
+        const existingIndex = event.toolCallId
+          ? currentMessages.findIndex((message) => message.toolCallId === event.toolCallId)
+          : -1;
+        const nextMessage: AgentChatMessage = {
+          id: existingIndex >= 0 ? currentMessages[existingIndex].id : createClientId("agent_message"),
+          role: "tool",
+          text: text ?? "",
+          status: event.status,
+          toolName: event.toolName,
+          toolCallId: event.toolCallId,
+          createdAt: existingIndex >= 0 ? currentMessages[existingIndex].createdAt : Date.now(),
+        };
+
+        if (existingIndex >= 0) {
+          return currentMessages.map((message, index) => (index === existingIndex ? nextMessage : message));
+        }
+
+        return [...currentMessages, nextMessage];
       });
       return;
     }
