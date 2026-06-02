@@ -73,6 +73,9 @@ export function App() {
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [agentChatMessages, setAgentChatMessages] = useState<AgentChatMessage[]>([]);
   const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStreamEvent["status"] | null>(null);
+  const [agentRunStartedAt, setAgentRunStartedAt] = useState<number | null>(null);
+  const [agentLastActivityAt, setAgentLastActivityAt] = useState<number | null>(null);
+  const [agentClockTick, setAgentClockTick] = useState(0);
   const [pendingQuestion, setPendingQuestion] = useState<AgentQuestion | null>(null);
   const [pendingConversationId, setPendingConversationId] = useState<string | null>(null);
   const [pendingCollectedArgs, setPendingCollectedArgs] = useState<Record<string, string>>({});
@@ -87,6 +90,7 @@ export function App() {
   const [status, setStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const agentEventSourceRef = useRef<EventSource | null>(null);
+  const agentRunStatusRef = useRef<AgentRunStreamEvent["status"] | null>(null);
   const processedRunIdsRef = useRef<Set<string>>(new Set());
   const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
 
@@ -96,6 +100,12 @@ export function App() {
   useDismissablePopover(isAgentResponseOpen ? "agent-response" : null, closeAgentResponse);
 
   useEffect(() => () => agentEventSourceRef.current?.close(), []);
+
+  useEffect(() => {
+    if (agentRunStatus !== "running") return;
+    const intervalId = window.setInterval(() => setAgentClockTick((tick) => tick + 1), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [agentRunStatus]);
 
   useEffect(() => {
     let isMounted = true;
@@ -249,7 +259,9 @@ export function App() {
   const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
 
   function appendAgentStreamEvent(event: AgentRunStreamEvent) {
+    setAgentLastActivityAt(Date.now());
     if (event.status) {
+      agentRunStatusRef.current = event.status;
       setAgentRunStatus(event.status);
     }
 
@@ -313,6 +325,10 @@ export function App() {
 
   function startAgentRunStream(streamId: string) {
     agentEventSourceRef.current?.close();
+    const now = Date.now();
+    setAgentRunStartedAt(now);
+    setAgentLastActivityAt(now);
+    agentRunStatusRef.current = "running";
     setAgentRunStatus("running");
     setAgentChatMessages([]);
     setIsAgentResponseOpen(true);
@@ -338,13 +354,28 @@ export function App() {
       if (agentEventSourceRef.current === source) {
         agentEventSourceRef.current = null;
       }
+      if (agentRunStatusRef.current === "running") {
+        appendAgentStreamEvent({
+          type: "status",
+          status: "running",
+          message: "Agent stream paused. Waiting for the final run response.",
+        });
+      }
     };
   }
 
   async function handleAgentRunResponse(agentRun: AgentRunResponse, baseRequest: AgentRunRequest) {
     setLatestAgentResponse(agentRun);
+    agentRunStatusRef.current = agentRun.status;
+    setAgentRunStatus(agentRun.status);
+    setAgentLastActivityAt(Date.now());
 
     if (agentRun.status === "needs_input" && agentRun.question && agentRun.conversationId) {
+      appendAgentStreamEvent({
+        type: "question",
+        status: "needs_input",
+        message: agentRun.question.text,
+      });
       for (const runId of agentRun.skillRunIds) {
         const completedRun = await waitForSkillRun(runId);
         addCardsFromRun(completedRun);
@@ -365,6 +396,11 @@ export function App() {
     setPendingAgentRequest(null);
 
     if (agentRun.status === "failed") {
+      appendAgentStreamEvent({
+        type: "error",
+        status: "failed",
+        message: agentRun.error || "Agent run failed.",
+      });
       setStatus(agentRun.error || "Agent run failed.");
       return;
     }
@@ -380,6 +416,11 @@ export function App() {
 
     setInstruction("");
     setAttachments([]);
+    appendAgentStreamEvent({
+      type: "done",
+      status: "succeeded",
+      message: "Agent completed.",
+    });
     setStatus("Agent completed.");
   }
 
@@ -731,10 +772,13 @@ export function App() {
         </div>
       )}
       <AgentResponsePanel
+        clockTick={agentClockTick}
+        lastActivityAt={agentLastActivityAt}
         messages={agentChatMessages}
         isOpen={isAgentResponseOpen}
         onToggle={() => setIsAgentResponseOpen((current) => !current)}
         response={latestAgentResponse}
+        runStartedAt={agentRunStartedAt}
         status={agentRunStatus}
       />
       <CanvasStage

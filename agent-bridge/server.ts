@@ -400,6 +400,29 @@ function parseSkillParamsJson(value?: string) {
   return parsed as Record<string, unknown>;
 }
 
+function summarizeSkillInvocation(skill: LokiSkill, skillParams: LokiSkillParams) {
+  let structuredParams: Record<string, unknown> = {};
+  try {
+    structuredParams = parseSkillParamsJson(skillParams.paramsJson);
+  } catch {
+    return `Invoking ${skill.name}. paramsJson is invalid JSON.`;
+  }
+
+  const visibleParams = Object.entries(structuredParams)
+    .filter(([key]) => !["image", "imageDataUrl", "images", "attachments"].includes(key))
+    .slice(0, 8)
+    .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+  const promptPreview = skillParams.prompt.trim().slice(0, 180);
+  const parts = [`Invoking ${skill.name}.`];
+  if (visibleParams.length > 0) {
+    parts.push(`Params: ${visibleParams.join(", ")}.`);
+  }
+  if (promptPreview) {
+    parts.push(`Prompt: ${promptPreview}${skillParams.prompt.length > 180 ? "..." : ""}`);
+  }
+  return parts.join(" ");
+}
+
 async function waitForSkillRun(runId: string): Promise<LokiSkillRun> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < skillRunWaitTimeoutMs) {
@@ -526,7 +549,12 @@ function createLokiSkillPiTool(
         };
       }
 
-      runState.emit({ type: "skill", status: "running", skillName: skill.name, message: `Invoking ${skill.name}.` });
+      runState.emit({
+        type: "skill",
+        status: "running",
+        skillName: skill.name,
+        message: summarizeSkillInvocation(skill, params),
+      });
       const skillCall = runLokiSkill(skill, params, request);
       runState.skillCalls.set(skill.id, skillCall);
       const { run, cards, cardIds } = await skillCall;

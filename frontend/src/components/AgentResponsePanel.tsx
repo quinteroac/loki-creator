@@ -3,10 +3,13 @@ import { Bot, MessageCircle, Wrench } from "lucide-react";
 import type { AgentChatMessage, AgentRunResponse, AgentRunStreamEvent } from "../types";
 
 type AgentResponsePanelProps = {
+  clockTick: number;
   isOpen: boolean;
+  lastActivityAt: number | null;
   messages: AgentChatMessage[];
   onToggle: () => void;
   response: AgentRunResponse | null;
+  runStartedAt: number | null;
   status: AgentRunStreamEvent["status"] | null;
 };
 
@@ -17,9 +20,29 @@ function messageLabel(message: AgentChatMessage) {
   return "System";
 }
 
-export function AgentResponsePanel({ isOpen, messages, onToggle, response, status }: AgentResponsePanelProps) {
+function formatDuration(milliseconds: number) {
+  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+export function AgentResponsePanel({
+  clockTick: _clockTick,
+  isOpen,
+  lastActivityAt,
+  messages,
+  onToggle,
+  response,
+  runStartedAt,
+  status,
+}: AgentResponsePanelProps) {
   const hasActivity = messages.length > 0 || Boolean(response);
   const isRunning = status === "running";
+  const now = Date.now();
+  const elapsedLabel = runStartedAt ? formatDuration(now - runStartedAt) : null;
+  const idleMilliseconds = lastActivityAt ? now - lastActivityAt : 0;
+  const idleLabel = lastActivityAt ? formatDuration(idleMilliseconds) : null;
+  const isWaitingForUpdate = isRunning && idleMilliseconds >= 15_000;
   const threadRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -38,6 +61,12 @@ export function AgentResponsePanel({ isOpen, messages, onToggle, response, statu
             <div>
               <span>Base Agent</span>
               <small>{isRunning ? "Working" : response?.status ?? status ?? "Idle"}</small>
+              {elapsedLabel && (
+                <small>
+                  {elapsedLabel} elapsed
+                  {isRunning && idleLabel ? ` · ${idleLabel} since update` : ""}
+                </small>
+              )}
             </div>
             <Bot size={18} strokeWidth={2} />
           </div>
@@ -63,6 +92,20 @@ export function AgentResponsePanel({ isOpen, messages, onToggle, response, statu
                 </div>
               </article>
             ))}
+            {isWaitingForUpdate && idleLabel && (
+              <article className="agent-chat-message system">
+                <div className="agent-chat-avatar" aria-hidden="true">
+                  <Bot size={14} strokeWidth={2} />
+                </div>
+                <div className="agent-chat-bubble agent-activity-note">
+                  <div className="agent-chat-meta">
+                    <span>System</span>
+                    <small>Waiting</small>
+                  </div>
+                  <p>No agent updates for {idleLabel}. The run may still be waiting on a tool or model.</p>
+                </div>
+              </article>
+            )}
             {isRunning && (
               <article className="agent-chat-message system">
                 <div className="agent-chat-avatar" aria-hidden="true">
