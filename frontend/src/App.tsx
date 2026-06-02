@@ -431,9 +431,9 @@ export function App() {
       startAgentRunStream(streamId);
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
-    } catch {
+    } catch (error) {
       setPendingQuestion(answeredQuestion);
-      setStatus("Could not connect to the agent bridge.");
+      setStatus(error instanceof Error ? error.message : "Could not connect to the agent bridge.");
     }
   }
 
@@ -459,8 +459,8 @@ export function App() {
       startAgentRunStream(streamId);
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
-    } catch {
-      setStatus("Could not connect to the agent bridge.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not connect to the agent bridge.");
     }
   }
 

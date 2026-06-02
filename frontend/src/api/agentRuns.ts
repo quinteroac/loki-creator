@@ -1,6 +1,11 @@
 import type { AgentDefinition, AgentRunRequest, AgentRunResponse, AgentModel } from "../types";
 
-const AGENT_API_URL = import.meta.env.VITE_AGENT_API_URL ?? "http://127.0.0.1:8787";
+function defaultAgentApiUrl() {
+  if (typeof window === "undefined") return "http://127.0.0.1:8787";
+  return `${window.location.protocol}//${window.location.hostname}:8787`;
+}
+
+const AGENT_API_URL = import.meta.env.VITE_AGENT_API_URL ?? defaultAgentApiUrl();
 
 export async function listAgents(): Promise<AgentDefinition[]> {
   const response = await fetch(`${AGENT_API_URL}/api/agents`);
@@ -30,7 +35,8 @@ export async function createAgentRun(payload: AgentRunRequest): Promise<AgentRun
   });
 
   if (!response.ok) {
-    throw new Error("Agent run request failed");
+    const message = await response.text();
+    throw new Error(message || `Agent run request failed: ${response.status}`);
   }
 
   return response.json();
