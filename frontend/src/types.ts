@@ -1,4 +1,4 @@
-export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive";
+export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive" | "note";
 
 export type CardAspectRatio = "1:1" | "4:3" | "16:9" | "9:16" | "auto";
 
@@ -87,6 +87,7 @@ export type AgentAttachment = {
 };
 
 export type CanvasNodeFrame = {
+  height?: number;
   width: number;
   x: number;
   y: number;

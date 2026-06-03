@@ -218,16 +218,6 @@ Duration and WAN step choices:
   used. If only one is provided, the CLI derives the other from total `steps`
   when available.
 
-At the start of every video workflow, start or reuse the local Comfy Media
-gallery for the active output directory:
-
-```bash
-uv run comfy-media gallery --out outputs --host 127.0.0.1 --port 8765
-```
-
-Use `comfy-media --help` only if the CLI is missing or behaves unexpectedly; do
-not skip the gallery just because generation can run headless.
-
 If `.comfy-agent-tools.json` is missing or the user wants to configure a new
 checkpoint/fine-tune/default such as an LTX 2.3 variant, use
 `comfy-model-onboarding` first.

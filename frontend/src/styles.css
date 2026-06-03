@@ -23,6 +23,7 @@
   --on-dark: #ffffff;
   --success-bg: #e8f7ed;
   --success-text: #176b36;
+  --note-postit-bg: #fff2a8;
   --primary: var(--ink-strong);
   --font-sans: "DM Sans", Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
   --workspace-bg: var(--ink-strong);
@@ -360,8 +361,49 @@ button {
   z-index: 4;
 }
 
-.canvas-card .canvas-card-context-menu {
+.context-menu {
   position: absolute;
+  display: grid;
+  gap: 6px;
+  min-width: 184px;
+  padding: 8px;
+  color: var(--dark-text);
+  background: var(--panel-bg);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 16px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 4px 6px 0;
+}
+
+.context-menu .context-menu-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  color: var(--dark-text);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.context-menu .context-menu-item svg {
+  width: 16px;
+  height: 16px;
+}
+
+.context-menu .context-menu-item:focus-visible,
+.context-menu .context-menu-item:hover {
+  background: var(--panel-soft);
+  outline: 0;
+}
+
+.canvas-card .canvas-card-context-menu {
   z-index: 5;
   top: auto;
   right: auto;
@@ -372,11 +414,14 @@ button {
   max-width: calc(100% - 16px);
 }
 
-.canvas-card-context-menu .context-menu-item {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
+.canvas-context-menu {
+  z-index: 9;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  width: 184px;
+  min-width: 184px;
 }
 
 .canvas-card-context-menu .context-menu-item:disabled {
@@ -395,6 +440,7 @@ button {
 
 .canvas-card-resize {
   position: absolute;
+  z-index: 6;
   right: -5px;
   bottom: -5px;
   display: none;
@@ -413,7 +459,7 @@ button {
 
 .canvas-card-handle {
   position: absolute;
-  z-index: 2;
+  z-index: 6;
   width: 10px;
   height: 10px;
   background: var(--canvas);
@@ -471,6 +517,103 @@ button {
   pointer-events: auto;
 }
 
+.canvas-note-card {
+  position: relative;
+  display: block;
+  min-height: 160px;
+  padding: 0;
+  color: var(--ink);
+  background: var(--note-postit-bg);
+  border: 0;
+  border-radius: 2px;
+  box-shadow:
+    rgba(0, 0, 0, 0.08) 0 4px 6px 0,
+    rgba(36, 36, 36, 0.08) 0 12px 16px -4px;
+  cursor: grab;
+}
+
+.canvas-note-title {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  width: 100%;
+  min-width: 0;
+  height: 52px;
+  padding: 18px 64px 4px 22px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+}
+
+.canvas-note-drag-handle {
+  position: absolute;
+  top: 14px;
+  right: 18px;
+  width: 28px;
+  height: 20px;
+  cursor: grab;
+}
+
+.canvas-note-drag-handle::before {
+  position: absolute;
+  inset: 5px 0 auto;
+  height: 10px;
+  content: "";
+  background:
+    radial-gradient(circle, var(--slate) 1.5px, transparent 2px) 0 0 / 9px 5px,
+    radial-gradient(circle, var(--slate) 1.5px, transparent 2px) 4px 5px / 9px 5px;
+  opacity: 0.42;
+}
+
+.canvas-note-text {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  bottom: auto;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: calc(100% - 52px);
+  min-height: 0;
+  padding: 4px 22px 24px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  caret-color: var(--ink);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.canvas-note-title::placeholder,
+.canvas-note-text:empty::before {
+  color: var(--slate);
+}
+
+.canvas-note-text:empty::before {
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.canvas-note-title:focus,
+.canvas-note-text:focus {
+  outline: 0;
+}
+
 .canvas-card-interaction-strip {
   position: absolute;
   z-index: 2;
@@ -514,70 +657,62 @@ button {
   border-radius: 9999px;
 }
 
-.selected-card-editor {
+.canvas-card-metadata-note {
   position: absolute;
-  z-index: 6;
-  top: min(var(--selected-card-editor-top, calc(100% - 232px)), calc(100% - 232px));
-  left: clamp(
-    24px,
-    var(--selected-card-editor-left, calc(50% - var(--selected-card-editor-width, 720px) / 2)),
-    calc(100% - var(--selected-card-editor-width, 720px) - 24px)
-  );
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: grid;
-  grid-template-columns: minmax(120px, 220px) minmax(240px, 480px);
-  gap: 8px;
-  width: min(var(--selected-card-editor-width, 720px), calc(100% - 48px));
-  padding: 8px;
-  color: var(--dark-text);
-  background: var(--panel-bg);
-  border: 1px solid var(--dark-hairline);
-  border-radius: 18px;
-  box-shadow: rgba(36, 36, 36, 0.08) 0 12px 16px -4px;
+  grid-template-rows: 48px minmax(84px, 1fr);
+  gap: 0;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--note-postit-bg) 72%, transparent);
+  border: 0;
+  border-radius: 2px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 -4px 12px 0;
+  backdrop-filter: blur(1px);
+  pointer-events: auto;
 }
 
-.selected-card-editor label {
-  display: grid;
-  min-width: 0;
-  gap: 5px;
-}
-
-.selected-card-editor span {
-  padding: 0 8px;
-  color: var(--dark-text-soft);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.3;
-  text-transform: uppercase;
-}
-
-.selected-card-editor input,
-.selected-card-editor textarea {
+.canvas-card-metadata-note input,
+.canvas-card-metadata-note textarea {
   width: 100%;
   min-width: 0;
-  color: var(--dark-text);
-  background: var(--panel-soft);
-  border: 1px solid var(--dark-hairline);
-  border-radius: 10px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
   outline: 0;
-  font-size: 13px;
+  letter-spacing: 0;
+}
+
+.canvas-card-metadata-note input {
+  height: 48px;
+  padding: 16px 22px 4px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+}
+
+.canvas-card-metadata-note textarea {
+  height: 100%;
+  min-height: 0;
+  padding: 2px 22px 18px;
+  resize: none;
+  font-size: 16px;
+  font-weight: 500;
   line-height: 1.45;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 
-.selected-card-editor input {
-  height: 36px;
-  padding: 7px 10px;
-}
-
-.selected-card-editor textarea {
-  min-height: 36px;
-  max-height: 74px;
-  padding: 7px 10px;
-  resize: vertical;
-}
-
-.selected-card-editor input:focus,
-.selected-card-editor textarea:focus {
-  border-color: var(--brand-blue-deep);
+.canvas-card-metadata-note input::placeholder,
+.canvas-card-metadata-note textarea::placeholder {
+  color: var(--slate);
 }
 
 .agent-response-dock {
@@ -1336,18 +1471,6 @@ textarea::placeholder {
 
   .canvas {
     min-height: calc(100vh - 290px);
-    border-radius: 16px;
-  }
-
-  .selected-card-editor {
-    top: min(var(--selected-card-editor-top, calc(100% - 238px)), calc(100% - 238px));
-    left: clamp(
-      16px,
-      var(--selected-card-editor-left, calc(50% - var(--selected-card-editor-width, 420px) / 2)),
-      calc(100% - min(var(--selected-card-editor-width, 420px), calc(100% - 32px)) - 16px)
-    );
-    grid-template-columns: minmax(0, 1fr);
-    width: min(420px, calc(100% - 32px));
     border-radius: 16px;
   }
 

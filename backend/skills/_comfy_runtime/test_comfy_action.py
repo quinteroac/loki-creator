@@ -12,12 +12,14 @@ import comfy_action
 
 
 class ComfyActionTest(unittest.TestCase):
-    def test_anima_generation_adapts_natural_language_prompt(self) -> None:
+    def test_anima_generation_preserves_natural_language_prompt(self) -> None:
+        original_prompt = "Una chica samurai en un bosque lluvioso con luz cinematica"
+
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             command, _cwd = comfy_action.build_imagegen_command(
                 mode="generate",
                 params={"modelProfile": "anima-base", "aspectRatio": "1:1"},
-                prompt="Una chica samurai en un bosque lluvioso con luz cinematica",
+                prompt=original_prompt,
                 out_dir=Path(tmpdir) / "outputs",
                 media={"image": [], "audio": [], "video": []},
                 require_model_profile=True,
@@ -26,13 +28,7 @@ class ComfyActionTest(unittest.TestCase):
                 skill_label="comfy-image-generate",
             )
 
-        prompt = command[command.index("--prompt") + 1]
-        self.assertIn("masterpiece", prompt)
-        self.assertIn("1girl", prompt)
-        self.assertIn("samurai", prompt)
-        self.assertIn("forest", prompt)
-        self.assertIn("rain", prompt)
-        self.assertIn("cinematic lighting", prompt)
+        self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
 
     def test_anima_generation_preserves_existing_tag_prompt(self) -> None:
         original_prompt = "masterpiece, best quality, score_7, safe, 1girl, anime style"

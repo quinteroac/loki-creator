@@ -31,6 +31,7 @@ DM Sans anchors every surface from oversized 80px hero displays down to 12px mic
 - **Canvas White** ({colors.canvas}): Primary page background and card surface.
 - **Surface** ({colors.surface}): Subtle section backgrounds, search-pill rest, sidebar-nav active state.
 - **Surface Soft** ({colors.surface-soft}): Quieter section divisions.
+- **Note Post-it Background** ({colors.note-postit-bg}): Classic sticky-note yellow for editable canvas notes and lightweight spatial annotations.
 - **Hairline** ({colors.hairline}): 1px input border and primary divider.
 - **Hairline Soft** ({colors.hairline-soft}): Quieter table-row divider and secondary section break.
 

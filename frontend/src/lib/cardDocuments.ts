@@ -12,6 +12,10 @@ import type {
 import type { ImportedArtifact } from "../api/artifacts";
 
 export const CARD_DEFAULT_WIDTH = 256;
+export const NOTE_DEFAULT_WIDTH = 300;
+export const NOTE_DEFAULT_HEIGHT = 240;
+export const NOTE_MAX_HEIGHT = 1200;
+export const NOTE_MIN_HEIGHT = 160;
 export const CARD_MIN_WIDTH = 240;
 export const CARD_MAX_WIDTH = 720;
 export const CARD_ASPECT_HEIGHT_RATIO = 4 / 3;
@@ -33,6 +37,7 @@ const DOWNLOAD_EXTENSION_BY_KIND: Partial<Record<CardKind, string>> = {
   generic: "html",
   image: "png",
   interactive: "html",
+  note: "html",
   video: "mp4",
 };
 
@@ -94,7 +99,11 @@ export function getCardPreviewAspectRatioCss(document?: CardDocument): string {
   }
 }
 
-export function getCardHeight(width: number, document?: CardDocument) {
+export function getCardHeight(width: number, document?: CardDocument, frame?: CanvasNodeFrame) {
+  if (document?.metadata?.kind === "note") {
+    return Math.max(NOTE_MIN_HEIGHT, frame?.height ?? width / getCardPreviewAspectRatioValue(document));
+  }
+
   const contentWidth = Math.max(0, width);
   const previewHeight = contentWidth / getCardPreviewAspectRatioValue(document);
 
@@ -224,6 +233,26 @@ function attachmentCardBody(attachment: AgentAttachment): string {
   }
 
   return `<main><strong>${title}</strong><span>${mimeType}</span><p>No preview available.</p></main>`;
+}
+
+function noteCardHtml(title: string, text: string): string {
+  const escapedTitle = escapeHtml(title);
+  const escapedText = escapeHtml(text);
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      html, body { width: 100%; height: 100%; margin: 0; color: #111111; background: #fff2a8; font-family: "DM Sans", Inter, sans-serif; }
+      body { box-sizing: border-box; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; overflow: hidden; padding: 18px 22px 24px; }
+      h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 20px; font-weight: 700; line-height: 1.3; }
+      p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 18px; line-height: 1.45; }
+    </style>
+  </head>
+  <body><h1>${escapedTitle}</h1><p>${escapedText}</p></body>
+</html>`;
 }
 
 function attachmentCardHtml(attachment: AgentAttachment): string {
@@ -404,6 +433,43 @@ export function createCardDocumentForImportedArtifact(
   };
 }
 
+export function createNoteCardDocument(text = ""): CardDocument {
+  const id = `card_note_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`;
+  const title = "Nota";
+
+  return {
+    id,
+    name: title,
+    prompt: text,
+    html: noteCardHtml(title, text),
+    sourceSkillId: "note",
+    sourceActionId: "canvas-note",
+    metadata: {
+      kind: "note",
+      title,
+      description: text || "Canvas note",
+      createdAt: new Date().toISOString(),
+      tags: ["note"],
+      capabilities: ["note"],
+      preferredAspectRatio: "4:3",
+    },
+  };
+}
+
+export function updateNoteCardDocumentText(document: CardDocument, text: string): CardDocument {
+  const title = getCardEditableTitle(document);
+
+  return {
+    ...document,
+    prompt: text,
+    html: noteCardHtml(title, text),
+    metadata: {
+      ...document.metadata,
+      description: text || "Canvas note",
+    },
+  };
+}
+
 export async function createCardDocumentForAttachment(attachment: AgentAttachment): Promise<CardDocument> {
   const kind = attachmentCardKind(attachment);
   const dimensions = await getAttachmentDimensions(attachment);
@@ -466,14 +532,16 @@ export function assignUniqueDisplayTitles(
 }
 
 export function renameCardDocument(document: CardDocument, title: string): CardDocument {
-  const displayTitle = title.trim() ? title : getCardDisplayTitle(document);
+  const htmlTitle = title.trim() || "Nota";
+  const html = document.metadata?.kind === "note" ? noteCardHtml(htmlTitle, document.prompt) : document.html;
 
   return {
     ...document,
-    name: displayTitle,
+    html,
+    name: title,
     metadata: {
       ...document.metadata,
-      title: displayTitle,
+      title,
     },
   };
 }
@@ -817,15 +885,31 @@ export function clampCanvasNodeFrame(
 ): CanvasNodeFrame {
   const maxWidth = Math.min(CARD_MAX_WIDTH, Math.max(CARD_MIN_WIDTH, canvasWidth - CANVAS_PADDING * 2));
   const width = Math.min(Math.max(frame.width, CARD_MIN_WIDTH), maxWidth);
-  const height = getCardHeight(width, document);
+  const isNote = document?.metadata?.kind === "note";
+  const maxHeight = isNote ? NOTE_MAX_HEIGHT : Math.max(NOTE_MIN_HEIGHT, canvasHeight - CANVAS_PADDING * 2);
+  const unclampedHeight = getCardHeight(width, document, frame);
+  const height = isNote
+    ? Math.min(Math.max(unclampedHeight, NOTE_MIN_HEIGHT), maxHeight)
+    : unclampedHeight;
   const maxX = Math.max(0, canvasWidth - width - CANVAS_PADDING);
-  const maxY = Math.max(0, canvasHeight - height - CANVAS_PADDING);
+  const maxY = isNote && height > canvasHeight - CANVAS_PADDING
+    ? Math.max(0, frame.y)
+    : Math.max(0, canvasHeight - height - CANVAS_PADDING);
 
-  return {
+  const clampedFrame = {
     x: Math.min(Math.max(0, frame.x), maxX),
     y: Math.min(Math.max(0, frame.y), maxY),
     width,
   };
+
+  if (isNote) {
+    return {
+      ...clampedFrame,
+      height,
+    };
+  }
+
+  return clampedFrame;
 }
 
 export function getInitialCanvasNodeFrame(index: number, canvasWidth: number): CanvasNodeFrame {

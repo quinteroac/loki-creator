@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { MouseEvent, PointerEvent } from "react";
+import type { ChangeEvent, ClipboardEvent, FormEvent, MouseEvent, PointerEvent } from "react";
 import { Download, RotateCcw, Trash2 } from "lucide-react";
 import {
   downloadCardDocument,
+  getCardEditableTitle,
   getCardDisplayTitle,
+  getCardHeight,
   getCardPreviewAspectRatioCss,
   hasPlayableMedia,
   isDataUrlWithinLimit,
@@ -22,8 +24,10 @@ type CanvasCardProps = {
   node: CanvasNode;
   isSelected: boolean;
   onDeleteDocument: (cardDocumentId: string) => void;
+  onRenameDocument: (cardDocumentId: string, title: string) => void;
   onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
+  onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
   zoom: number;
@@ -32,6 +36,7 @@ type CanvasCardProps = {
 const CONTEXT_MENU_WIDTH = 176;
 const CONTEXT_MENU_ESTIMATED_HEIGHT = 152;
 const CONTEXT_MENU_OFFSET = 8;
+const NOTE_TITLE_HEIGHT = 52;
 
 function resizeCanvas(canvas: HTMLCanvasElement) {
   const pixelRatio = window.devicePixelRatio || 1;
@@ -119,14 +124,19 @@ export function CanvasCard({
   node,
   isSelected,
   onDeleteDocument,
+  onRenameDocument,
   onRedoDocument,
   onRegisterPreviewCapture,
+  onUpdateDocumentPrompt,
   onToggleSelect,
   onUpdateFrame,
   zoom,
 }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const htmlRef = useRef<HTMLDivElement | null>(null);
+  const noteTitleRef = useRef<HTMLInputElement | null>(null);
+  const noteTextRef = useRef<HTMLDivElement | null>(null);
+  const lastRequestedNoteHeightRef = useRef<number | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const previewReadyRef = useRef(false);
   const dragStateRef = useRef<{
@@ -135,6 +145,7 @@ export function CanvasCard({
     startClientY: number;
     startX: number;
     startY: number;
+    startHeight: number;
     startWidth: number;
     didDrag: boolean;
     mode: "drag" | "resize";
@@ -145,7 +156,44 @@ export function CanvasCard({
   const [isDownloading, setIsDownloading] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const accessibleTitle = getCardDisplayTitle(document);
+  const editableTitle = getCardEditableTitle(document);
+  const isNote = document.metadata?.kind === "note";
   const frame = node.frame;
+  const frameHeight = getCardHeight(frame.width, document, frame);
+  const metadataPanelHeight = Math.min(Math.max(frameHeight * 0.22, 132), 204);
+
+  useEffect(() => {
+    if (isNote && isSelected && !document.prompt.trim()) {
+      noteTitleRef.current?.focus();
+      noteTitleRef.current?.select();
+    }
+  }, [document.id, document.prompt, isNote, isSelected]);
+
+  useEffect(() => {
+    const textElement = noteTextRef.current;
+    if (!isNote || !textElement || window.document.activeElement === textElement) return;
+    if (textElement.textContent !== document.prompt) {
+      textElement.textContent = document.prompt;
+    }
+  }, [document.prompt, isNote]);
+
+  useEffect(() => {
+    const textElement = noteTextRef.current;
+    if (!isNote || !textElement) return;
+
+    const neededHeight = Math.ceil(NOTE_TITLE_HEIGHT + textElement.scrollHeight);
+    if (neededHeight <= frameHeight + 1) {
+      lastRequestedNoteHeightRef.current = null;
+      return;
+    }
+
+    if (lastRequestedNoteHeightRef.current === neededHeight) return;
+    lastRequestedNoteHeightRef.current = neededHeight;
+    onUpdateFrame(node.id, {
+      ...frame,
+      height: neededHeight,
+    });
+  }, [document.prompt, frame, frameHeight, isNote, node.id, onUpdateFrame]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -265,6 +313,7 @@ export function CanvasCard({
       startClientY: event.clientY,
       startX: frame.x,
       startY: frame.y,
+      startHeight: frameHeight,
       startWidth: frame.width,
       didDrag: false,
       mode: "drag",
@@ -283,6 +332,7 @@ export function CanvasCard({
       startClientY: event.clientY,
       startX: frame.x,
       startY: frame.y,
+      startHeight: frameHeight,
       startWidth: frame.width,
       didDrag: false,
       mode: "resize",
@@ -303,6 +353,7 @@ export function CanvasCard({
 
     if (hasMoved && dragState.mode === "drag") {
       onUpdateFrame(node.id, {
+        height: isNote ? dragState.startHeight : undefined,
         width: dragState.startWidth,
         x: Math.max(0, dragState.startX + deltaX),
         y: Math.max(0, dragState.startY + deltaY),
@@ -311,7 +362,8 @@ export function CanvasCard({
 
     if (hasMoved && dragState.mode === "resize") {
       onUpdateFrame(node.id, {
-        width: dragState.startWidth + Math.max(deltaX, deltaY * 0.75),
+        height: isNote ? dragState.startHeight + deltaY : undefined,
+        width: isNote ? dragState.startWidth + deltaX : dragState.startWidth + Math.max(deltaX, deltaY * 0.75),
         x: dragState.startX,
         y: dragState.startY,
       });
@@ -345,6 +397,30 @@ export function CanvasCard({
     }
 
     onToggleSelect(node.id);
+  }
+
+  function handleNoteFocus() {
+    if (!isSelected) {
+      onToggleSelect(node.id);
+    }
+  }
+
+  function handleNoteTitleChange(event: ChangeEvent<HTMLInputElement>) {
+    onRenameDocument(document.id, event.target.value);
+  }
+
+  function handleNoteTextInput(event: FormEvent<HTMLDivElement>) {
+    onUpdateDocumentPrompt(document.id, event.currentTarget.textContent ?? "");
+  }
+
+  function handleCardPromptChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    onUpdateDocumentPrompt(document.id, event.target.value);
+  }
+
+  function handleNoteTextPaste(event: ClipboardEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    window.document.execCommand("insertText", false, text);
   }
 
   function handleContextMenu(event: MouseEvent<HTMLElement>) {
@@ -407,32 +483,97 @@ export function CanvasCard({
         width: `${frame.width}px`,
       }}
     >
-      <button
-        className={`canvas-card-preview ${shouldUsePlayableMediaFallback(document) ? "has-playable-media" : ""}`}
-        type="button"
-        aria-label={`Select ${accessibleTitle}`}
-        aria-pressed={isSelected}
-        style={{ aspectRatio: getCardPreviewAspectRatioCss(document) }}
-      >
-        {useIframeFallback && (
-          <iframe
-            title={accessibleTitle}
-            srcDoc={createIframeSrcDoc(document.html)}
-            sandbox="allow-same-origin"
-            loading="lazy"
+      {isNote ? (
+        <div
+          className="canvas-card-preview canvas-note-card"
+          role="group"
+          aria-label={accessibleTitle}
+          style={{ height: `${frameHeight}px` }}
+        >
+          <input
+            ref={noteTitleRef}
+            className="canvas-note-title"
+            value={editableTitle}
+            placeholder="Título"
+            aria-label={`${accessibleTitle} title`}
+            onChange={handleNoteTitleChange}
+            onClick={stopCardInteraction}
+            onContextMenu={stopCardInteraction}
+            onFocus={handleNoteFocus}
+            onPointerDown={stopCardInteraction}
           />
-        )}
-        <canvas className={useIframeFallback ? "html-canvas-hidden" : undefined} ref={canvasRef} layoutsubtree="">
+          <span className="canvas-note-drag-handle" aria-hidden="true" />
           <div
-            className="html-canvas-source"
-            ref={htmlRef}
-            dangerouslySetInnerHTML={{ __html: document.html }}
+            ref={noteTextRef}
+            className="canvas-note-text"
+            contentEditable
+            data-placeholder="Escribe una nota..."
+            aria-label={`${accessibleTitle} text`}
+            onClick={stopCardInteraction}
+            onContextMenu={stopCardInteraction}
+            onFocus={handleNoteFocus}
+            onInput={handleNoteTextInput}
+            onPaste={handleNoteTextPaste}
+            onPointerDown={stopCardInteraction}
+            role="textbox"
+            aria-multiline="true"
+            suppressContentEditableWarning
           />
-        </canvas>
-        {isSelected && shouldUsePlayableMediaFallback(document) && (
-          <span className="canvas-card-interaction-strip" aria-hidden="true" />
-        )}
-      </button>
+        </div>
+      ) : (
+        <button
+          className={`canvas-card-preview ${shouldUsePlayableMediaFallback(document) ? "has-playable-media" : ""}`}
+          type="button"
+          aria-label={`Select ${accessibleTitle}`}
+          aria-pressed={isSelected}
+          style={{ aspectRatio: getCardPreviewAspectRatioCss(document) }}
+        >
+          {useIframeFallback && (
+            <iframe
+              title={accessibleTitle}
+              srcDoc={createIframeSrcDoc(document.html)}
+              sandbox="allow-same-origin"
+              loading="lazy"
+            />
+          )}
+          <canvas className={useIframeFallback ? "html-canvas-hidden" : undefined} ref={canvasRef} layoutsubtree="">
+            <div
+              className="html-canvas-source"
+              ref={htmlRef}
+              dangerouslySetInnerHTML={{ __html: document.html }}
+            />
+          </canvas>
+          {isSelected && shouldUsePlayableMediaFallback(document) && (
+            <span className="canvas-card-interaction-strip" aria-hidden="true" />
+          )}
+        </button>
+      )}
+      {isSelected && !isNote && (
+        <aside
+          className="canvas-card-metadata-note"
+          aria-label={`${accessibleTitle} details`}
+          style={{ height: `${metadataPanelHeight}px` }}
+          onClick={stopCardInteraction}
+          onContextMenu={stopCardInteraction}
+          onPointerDown={stopCardInteraction}
+        >
+          <input
+            className="canvas-card-metadata-title"
+            value={editableTitle}
+            onChange={handleNoteTitleChange}
+            aria-label={`${accessibleTitle} title`}
+            placeholder="Título"
+          />
+          <textarea
+            className="canvas-card-metadata-prompt"
+            value={document.prompt}
+            onChange={handleCardPromptChange}
+            aria-label={`${accessibleTitle} prompt`}
+            placeholder="Prompt"
+            rows={4}
+          />
+        </aside>
+      )}
       {isSelected && (
         <>
           <span className="canvas-card-handle canvas-card-handle-top-left" aria-hidden="true" />
@@ -448,7 +589,7 @@ export function CanvasCard({
       />
       {contextMenuPosition && (
         <div
-          className="popover canvas-card-context-menu"
+          className="context-menu canvas-card-context-menu"
           ref={contextMenuRef}
           data-popover
           role="menu"

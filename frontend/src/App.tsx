@@ -15,11 +15,13 @@ import {
   assignUniqueDisplayTitles,
   createCardDocumentForImportedArtifact,
   createCanvasNodeForDocument,
+  createNoteCardDocument,
   createSelectedCardSnapshots,
   getCardArtifactUrls,
   getCardDisplayTitle,
   getFileDimensions,
   normalizeCardDocument,
+  updateNoteCardDocumentText,
   renameCardDocument,
   type CardPreviewCapture,
 } from "./lib/cardDocuments";
@@ -37,6 +39,7 @@ import type {
   AgentRunRequest,
   AgentRunResponse,
   AgentRunStreamEvent,
+  CanvasNode,
   CanvasNodeFrame,
   CardDocument,
   ProjectSummary,
@@ -58,6 +61,22 @@ function createClientId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
     ?? `${Date.now().toString(36)}${Math.random().toString(16).slice(2)}`;
   return `${prefix}_${randomId}`;
+}
+
+function dedupeCanvasNodesByDocumentId(nodes: CanvasNode[]): CanvasNode[] {
+  const seenDocumentIds = new Set<string>();
+  let hasDuplicate = false;
+  const dedupedNodes = nodes.filter((node) => {
+    if (seenDocumentIds.has(node.cardDocumentId)) {
+      hasDuplicate = true;
+      return false;
+    }
+
+    seenDocumentIds.add(node.cardDocumentId);
+    return true;
+  });
+
+  return hasDuplicate ? dedupedNodes : nodes;
 }
 
 export function App() {
@@ -101,6 +120,10 @@ export function App() {
   useDismissablePopover(isAgentResponseOpen ? "agent-response" : null, closeAgentResponse);
 
   useEffect(() => () => agentEventSourceRef.current?.close(), []);
+
+  useEffect(() => {
+    setCanvasNodes((currentNodes) => dedupeCanvasNodesByDocumentId(currentNodes));
+  }, [canvasNodes]);
 
   useEffect(() => {
     if (agentRunStatus !== "running") return;
@@ -588,19 +611,25 @@ export function App() {
         }),
       );
       const canvasWidth = window.innerWidth;
+      const importedDocumentIds = importedDocuments.map((document) => document.id);
 
       setCardDocuments((currentDocuments) => {
         const newDocuments = assignUniqueDisplayTitles(importedDocuments, currentDocuments);
-        setSelectedCards(newDocuments.map((document) => document.id));
-        setCanvasNodes((currentNodes) => [
+
+        return [...currentDocuments, ...newDocuments];
+      });
+      setCanvasNodes((currentNodes) => {
+        const currentDocumentIds = new Set(currentNodes.map((node) => node.cardDocumentId));
+        const newDocuments = importedDocuments.filter((document) => !currentDocumentIds.has(document.id));
+
+        return [
           ...currentNodes,
           ...newDocuments.map((document, index) =>
             createCanvasNodeForDocument(document, currentNodes.length + index, canvasWidth),
           ),
-        ]);
-
-        return [...currentDocuments, ...newDocuments];
+        ];
       });
+      setSelectedCards(importedDocumentIds);
       setStatus(importedDocuments.length === 1 ? "1 file added to canvas." : `${importedDocuments.length} files added to canvas.`);
     } catch {
       setStatus("Could not add file to canvas.");
@@ -652,6 +681,28 @@ export function App() {
     );
   }
 
+  function createNote(frame: CanvasNodeFrame) {
+    const noteDocument = createNoteCardDocument();
+    const noteNode = {
+      id: `node_${noteDocument.id}`,
+      cardDocumentId: noteDocument.id,
+      frame,
+    };
+
+    setCardDocuments((currentDocuments) => {
+      const [document] = assignUniqueDisplayTitles([noteDocument], currentDocuments);
+
+      return [...currentDocuments, document];
+    });
+    setCanvasNodes((currentNodes) => {
+      if (currentNodes.some((node) => node.cardDocumentId === noteDocument.id)) return currentNodes;
+
+      return [...currentNodes, noteNode];
+    });
+    setSelectedCards([noteDocument.id]);
+    setStatus("Note created.");
+  }
+
   function renameDocument(cardDocumentId: string, title: string) {
     setCardDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
@@ -664,14 +715,16 @@ export function App() {
     setCardDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
         document.id === cardDocumentId
-          ? {
-            ...document,
-            prompt,
-            metadata: {
-              ...document.metadata,
-              description: prompt,
-            },
-          }
+          ? document.metadata?.kind === "note"
+            ? updateNoteCardDocumentText(document, prompt)
+            : {
+              ...document,
+              prompt,
+              metadata: {
+                ...document.metadata,
+                description: prompt,
+              },
+            }
           : document,
       ),
     );
@@ -746,11 +799,15 @@ export function App() {
     }
 
     try {
+      const cleanCanvasNodes = dedupeCanvasNodesByDocumentId(canvasNodes);
       const project = await saveProject({
         name,
         cardDocuments,
-        canvasNodes,
+        canvasNodes: cleanCanvasNodes,
       });
+      if (cleanCanvasNodes !== canvasNodes) {
+        setCanvasNodes(cleanCanvasNodes);
+      }
       setCurrentProjectName(project.name);
       setProjects(await listProjects());
       setIsSaveProjectOpen(false);
@@ -766,7 +823,7 @@ export function App() {
       processedCardIdsRef.current = new Set(project.cardDocuments.map((document) => document.id));
 
       setCardDocuments(project.cardDocuments.map(normalizeCardDocument));
-      setCanvasNodes(project.canvasNodes);
+      setCanvasNodes(dedupeCanvasNodesByDocumentId(project.canvasNodes));
       setCurrentProjectName(project.name);
       setSelectedCards([]);
       setOpenMenu(null);
@@ -837,6 +894,7 @@ export function App() {
       <CanvasStage
         documentsById={documentsById}
         nodes={canvasNodes}
+        onCreateNote={createNote}
         onDeleteDocument={deleteDocument}
         onRenameDocument={renameDocument}
         onRedoDocument={redoDocument}

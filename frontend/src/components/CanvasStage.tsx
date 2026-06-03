@@ -1,12 +1,12 @@
-import { useRef, useState } from "react";
-import type { CSSProperties, ChangeEvent, MouseEvent, PointerEvent, WheelEvent } from "react";
-import { ZoomIn, ZoomOut } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { MouseEvent, PointerEvent, WheelEvent } from "react";
+import { StickyNote, ZoomIn, ZoomOut } from "lucide-react";
 import {
   CARD_DEFAULT_WIDTH,
   CANVAS_PADDING,
+  NOTE_DEFAULT_HEIGHT,
+  NOTE_DEFAULT_WIDTH,
   clampCanvasNodeFrame,
-  getCardEditableTitle,
-  getCardDisplayTitle,
   getCardHeight,
 } from "../lib/cardDocuments";
 import { CanvasCard } from "./CanvasCard";
@@ -16,6 +16,7 @@ type CanvasStageProps = {
   documentsById: Record<string, CardDocument>;
   nodes: CanvasNode[];
   selectedIds: string[];
+  onCreateNote: (frame: CanvasNodeFrame) => void;
   onDeleteDocument: (cardDocumentId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
@@ -29,12 +30,16 @@ const DEFAULT_CANVAS_ZOOM = 1.3;
 const CANVAS_ZOOM_STEP = 0.1;
 const CANVAS_ZOOM_MIN = 0.3;
 const CANVAS_ZOOM_MAX = 2;
+const CANVAS_CONTEXT_MENU_WIDTH = 184;
+const CANVAS_CONTEXT_MENU_HEIGHT = 56;
+const CANVAS_CONTEXT_MENU_OFFSET = 8;
 const CANVAS_LEFT_MOUSE_BUTTON = 0;
 const CANVAS_MIDDLE_MOUSE_BUTTON = 1;
 const CANVAS_WHEEL_INTERACTIVE_SELECTOR = [
   ".canvas-zoom-controls",
+  ".context-menu",
   ".popover",
-  ".selected-card-editor",
+  ".canvas-card-metadata-note",
   "input",
   "select",
   "textarea",
@@ -42,14 +47,26 @@ const CANVAS_WHEEL_INTERACTIVE_SELECTOR = [
 ].join(",");
 const CANVAS_PAN_BLOCKING_SELECTOR = [
   ".canvas-zoom-controls",
+  ".context-menu",
   ".popover",
-  ".selected-card-editor",
+  ".canvas-card-metadata-note",
   "input",
   "select",
   "textarea",
   "[contenteditable='true']",
 ].join(",");
 const CANVAS_LEFT_PAN_BLOCKING_SELECTOR = [".canvas-card", "button", CANVAS_PAN_BLOCKING_SELECTOR].join(",");
+const CANVAS_CONTEXT_MENU_BLOCKING_SELECTOR = [
+  ".canvas-card",
+  ".canvas-zoom-controls",
+  ".context-menu",
+  ".popover",
+  ".canvas-card-metadata-note",
+  "input",
+  "select",
+  "textarea",
+  "[contenteditable='true']",
+].join(",");
 
 function clampCanvasZoom(value: number) {
   return Math.min(Math.max(value, CANVAS_ZOOM_MIN), CANVAS_ZOOM_MAX);
@@ -68,10 +85,15 @@ function shouldIgnoreCanvasPan(target: EventTarget | null, button: number) {
   return Boolean(target.closest(blockingSelector));
 }
 
+function shouldIgnoreCanvasContextMenu(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest(CANVAS_CONTEXT_MENU_BLOCKING_SELECTOR));
+}
+
 export function CanvasStage({
   documentsById,
   nodes,
   selectedIds,
+  onCreateNote,
   onDeleteDocument,
   onRenameDocument,
   onUpdateDocumentPrompt,
@@ -92,25 +114,39 @@ export function CanvasStage({
   const [zoom, setZoom] = useState(DEFAULT_CANVAS_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{
+    logicalX: number;
+    logicalY: number;
+    screenX: number;
+    screenY: number;
+  } | null>(null);
   const selectedIdSet = new Set(selectedIds);
   const zoomPercentage = Math.round(zoom * 100);
-  const selectedEditorItems = nodes
-    .filter((node) => selectedIdSet.has(node.cardDocumentId))
-    .map((node) => {
-      const document = documentsById[node.cardDocumentId];
-      if (!document) return null;
 
-      return {
-        document,
-        node,
-        style: {
-          "--selected-card-editor-left": `${pan.x + node.frame.x * zoom}px`,
-          "--selected-card-editor-top": `${pan.y + (node.frame.y + getCardHeight(node.frame.width, document)) * zoom + 12}px`,
-          "--selected-card-editor-width": `${Math.min(Math.max(node.frame.width * zoom, 360), 720)}px`,
-        } as CSSProperties,
-      };
-    })
-    .filter((item): item is { document: CardDocument; node: CanvasNode; style: CSSProperties } => item !== null);
+  useEffect(() => {
+    if (!contextMenu) return undefined;
+
+    function closeContextMenu(event: globalThis.MouseEvent) {
+      if (event.target instanceof Element && event.target.closest(".canvas-context-menu")) return;
+      setContextMenu(null);
+    }
+
+    function closeContextMenuWithKeyboard(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    }
+
+    window.document.addEventListener("mousedown", closeContextMenu);
+    window.document.addEventListener("contextmenu", closeContextMenu);
+    window.document.addEventListener("keydown", closeContextMenuWithKeyboard);
+
+    return () => {
+      window.document.removeEventListener("mousedown", closeContextMenu);
+      window.document.removeEventListener("contextmenu", closeContextMenu);
+      window.document.removeEventListener("keydown", closeContextMenuWithKeyboard);
+    };
+  }, [contextMenu]);
 
   function updateNodeFrame(nodeId: string, frame: CanvasNodeFrame) {
     const layer = cardLayerRef.current;
@@ -121,7 +157,7 @@ export function CanvasStage({
     const canvasWidth = layer ? (layer.clientWidth + panOverflowX) / zoom : CARD_DEFAULT_WIDTH + CANVAS_PADDING * 2;
     const canvasHeight = layer
       ? (layer.clientHeight + panOverflowY) / zoom
-      : getCardHeight(CARD_DEFAULT_WIDTH, document) + CANVAS_PADDING * 2;
+      : getCardHeight(CARD_DEFAULT_WIDTH, document, frame) + CANVAS_PADDING * 2;
 
     onUpdateNodeFrame(nodeId, clampCanvasNodeFrame(frame, canvasWidth, canvasHeight, document));
   }
@@ -151,7 +187,34 @@ export function CanvasStage({
     }
   }
 
+  function handleCanvasContextMenu(event: MouseEvent<HTMLDivElement>) {
+    if (shouldIgnoreCanvasContextMenu(event.target)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const localX = event.clientX - bounds.left;
+    const localY = event.clientY - bounds.top;
+    const logicalX = Math.max(0, (localX - pan.x) / zoom);
+    const logicalY = Math.max(0, (localY - pan.y) / zoom);
+    const maxScreenX = Math.max(CANVAS_CONTEXT_MENU_OFFSET, bounds.width - CANVAS_CONTEXT_MENU_WIDTH - CANVAS_CONTEXT_MENU_OFFSET);
+    const maxScreenY = Math.max(CANVAS_CONTEXT_MENU_OFFSET, bounds.height - CANVAS_CONTEXT_MENU_HEIGHT - CANVAS_CONTEXT_MENU_OFFSET);
+
+    setContextMenu({
+      logicalX,
+      logicalY,
+      screenX: Math.min(Math.max(CANVAS_CONTEXT_MENU_OFFSET, localX), maxScreenX),
+      screenY: Math.min(Math.max(CANVAS_CONTEXT_MENU_OFFSET, localY), maxScreenY),
+    });
+  }
+
   function handleCanvasPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (contextMenu && event.button === CANVAS_LEFT_MOUSE_BUTTON && !shouldIgnoreCanvasContextMenu(event.target)) {
+      event.preventDefault();
+      setContextMenu(null);
+      return;
+    }
+
     const canPanWithButton =
       event.button === CANVAS_LEFT_MOUSE_BUTTON || event.button === CANVAS_MIDDLE_MOUSE_BUTTON;
     if (!canPanWithButton || shouldIgnoreCanvasPan(event.target, event.button)) return;
@@ -190,12 +253,16 @@ export function CanvasStage({
     }
   }
 
-  function handleSelectedNameChange(cardDocumentId: string, event: ChangeEvent<HTMLInputElement>) {
-    onRenameDocument(cardDocumentId, event.target.value);
-  }
+  function createNoteFromContextMenu() {
+    if (!contextMenu) return;
 
-  function handleSelectedPromptChange(cardDocumentId: string, event: ChangeEvent<HTMLTextAreaElement>) {
-    onUpdateDocumentPrompt(cardDocumentId, event.target.value);
+    onCreateNote({
+      height: NOTE_DEFAULT_HEIGHT,
+      width: NOTE_DEFAULT_WIDTH,
+      x: contextMenu.logicalX,
+      y: contextMenu.logicalY,
+    });
+    setContextMenu(null);
   }
 
   return (
@@ -210,6 +277,7 @@ export function CanvasStage({
         onPointerDown={handleCanvasPointerDown}
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={stopCanvasPan}
+        onContextMenu={handleCanvasContextMenu}
         onWheel={handleCanvasWheel}
       >
         <div
@@ -252,8 +320,10 @@ export function CanvasStage({
                 isSelected={selectedIdSet.has(node.cardDocumentId)}
                 key={node.id}
                 onDeleteDocument={onDeleteDocument}
+                onRenameDocument={onRenameDocument}
                 onRedoDocument={onRedoDocument}
                 onRegisterPreviewCapture={onRegisterPreviewCapture}
+                onUpdateDocumentPrompt={onUpdateDocumentPrompt}
                 onUpdateFrame={updateNodeFrame}
                 onToggleSelect={onToggleNode}
                 zoom={zoom}
@@ -261,27 +331,28 @@ export function CanvasStage({
             );
           })}
         </div>
-        {selectedEditorItems.map(({ document, node, style }) => (
-          <aside className="selected-card-editor" style={style} aria-label="Selected card details" key={node.id}>
-            <label>
-              <span>Name</span>
-              <input
-                value={getCardEditableTitle(document)}
-                onChange={(event) => handleSelectedNameChange(document.id, event)}
-                aria-label={`${getCardDisplayTitle(document)} name`}
-              />
-            </label>
-            <label>
-              <span>Prompt</span>
-              <textarea
-                value={document.prompt}
-                onChange={(event) => handleSelectedPromptChange(document.id, event)}
-                aria-label={`${getCardDisplayTitle(document)} prompt`}
-                rows={2}
-              />
-            </label>
-          </aside>
-        ))}
+        {contextMenu && (
+          <div
+            className="context-menu canvas-context-menu"
+            data-popover
+            role="menu"
+            aria-label="Canvas actions"
+            style={{
+              left: `${contextMenu.screenX}px`,
+              top: `${contextMenu.screenY}px`,
+            }}
+            onClick={(event) => event.stopPropagation()}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          >
+            <button className="context-menu-item" type="button" role="menuitem" onClick={createNoteFromContextMenu}>
+              <StickyNote size={16} aria-hidden="true" />
+              <span>Crear nota</span>
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );

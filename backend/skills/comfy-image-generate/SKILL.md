@@ -74,16 +74,6 @@ If `comfy-imagegen` or `comfy-models` is not available, use
 `comfy-tools-setup` first. In this repository, prefer `uv run comfy-imagegen`;
 outside the repo, let `comfy-tools-setup` install the CLIs with `uv tool`.
 
-At the start of every image workflow, start or reuse the local Comfy Media
-gallery for the active output directory:
-
-```bash
-uv run comfy-media gallery --out outputs --host 127.0.0.1 --port 8765
-```
-
-Use `comfy-media --help` only if the CLI is missing or behaves unexpectedly; do
-not skip the gallery just because generation can run headless.
-
 If `.comfy-agent-tools.json` is missing or the user wants to configure a new
 checkpoint/fine-tune/default, use `comfy-model-onboarding` first.
 
@@ -118,7 +108,7 @@ Local generation:
 
 ```bash
 uv run comfy-imagegen generate \
-  --prompt "masterpiece, best quality, score_7, safe, 1girl, anime style, cinematic lighting, detailed background" \
+  --prompt "Una chica samurai en un bosque lluvioso con luz cinematica, anime illustration, dramatic shadows" \
   --width 1024 \
   --height 1024 \
   --seed 42 \
@@ -139,26 +129,33 @@ COMFY_ORG_API_KEY=... uv run comfy-imagegen grok-generate \
 
 ## Prompt Guidance
 
-For `modelProfile` values `anima-base` and `anima-preview3-turbo`, adapt the
-user's request into Danbooru-style tags before invoking the Loki action. The
-runtime also normalizes natural-language prompts as a fallback, so do not ask the
-user to rewrite their request just to satisfy the model format.
+Treat the user's request as the source of truth. Prompt improvements are allowed
+only when they are additive and compatible with what the user asked for. Preserve
+the requested subject, count, identity details, style, medium, composition,
+clothing, expression, pose, lighting, camera, background, colors, mood, text, and
+constraints.
 
-Use a comma-separated tag list with lowercase tags and spaces instead of
-underscores except score tags. Recommended positive prefix:
-`masterpiece, best quality, score_7, safe, ...`. Put subject, count,
-composition, clothing, expression, pose, lighting, camera, background, and style
-as compact tags.
+Do not swap the subject, setting, style, camera, mood, language, or constraints.
+Do not drop unusual details because they are hard to tag. Do not translate,
+summarize, or convert the request into a shorter tag list if that loses any
+meaning.
 
-Example: user asks "una chica samurai en un bosque lluvioso con luz
-cinematica"; Anima prompt should be:
+Good improvements: clarify ambiguous lighting, add compatible rendering terms,
+make composition/camera wording more concrete, or add model-friendly descriptors
+that reinforce the user request.
 
-```text
-masterpiece, best quality, score_7, safe, 1girl, samurai, katana, forest, rain, cinematic lighting, dramatic shadows, detailed background, anime style
-```
+Bad improvements: replacing the requested character or object, changing the
+scene, forcing anime/photorealism when the user asked for another style, adding
+unrequested clothing or props, removing text/logo constraints, or reducing a rich
+request to generic tags like `1girl, anime style, detailed background`.
 
-Recommended negative guidance when adapting prompts:
-`worst quality, low quality, score_1, score_2, score_3, artist name`.
+For `modelProfile` values `anima-base` and `anima-preview3-turbo`, Danbooru-style
+tags are optional, not required. Use them only if every requested detail can be
+kept. Otherwise pass an enriched natural-language prompt.
+
+The runtime passes the received prompt to `comfy-imagegen` unchanged. Any prompt
+editing must happen deliberately before invoking the action and must preserve the
+user's intent.
 
 Anima is not a realism model. It is intended for anime, illustration, and art.
 Keep generation around 1MP, such as 1024x1024, 896x1152, or 1152x896.
