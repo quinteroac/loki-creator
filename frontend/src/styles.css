@@ -130,6 +130,10 @@ button {
   border-radius: 9999px;
 }
 
+.project-dot.dirty {
+  background: var(--brand-coral);
+}
+
 .compact {
   justify-self: end;
   padding: 9px 18px;
@@ -146,6 +150,10 @@ button {
 
 .topbar-actions a {
   text-decoration: none;
+}
+
+.new-project-label-short {
+  display: none;
 }
 
 .project-popover button {
@@ -217,6 +225,13 @@ button {
   color: var(--dark-text-soft);
   font-size: 13px;
   line-height: 1.7;
+}
+
+.project-modal p {
+  margin: 0;
+  color: var(--dark-text-soft);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .project-name-input {
@@ -1461,8 +1476,24 @@ textarea::placeholder {
     display: none;
   }
 
+  .brand > span:last-child {
+    display: none;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
   .compact {
     padding: 9px 14px;
+  }
+
+  .new-project-label-full {
+    display: none;
+  }
+
+  .new-project-label-short {
+    display: inline;
   }
 
   .canvas-shell {

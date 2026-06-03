@@ -1,7 +1,9 @@
 import type { ProjectSummary } from "../types";
 
 type TopbarProps = {
+  hasUnsavedChanges: boolean;
   isProjectMenuOpen: boolean;
+  onNewProject: () => void;
   onOpenProject: (projectId: string) => void;
   onSaveProject: () => void;
   onToggleProjectMenu: () => void;
@@ -10,7 +12,9 @@ type TopbarProps = {
 };
 
 export function Topbar({
+  hasUnsavedChanges,
   isProjectMenuOpen,
+  onNewProject,
   onOpenProject,
   onSaveProject,
   onToggleProjectMenu,
@@ -25,11 +29,23 @@ export function Topbar({
         </span>
         <span>Loki Creator</span>
       </a>
-      <div className="project-switcher" aria-label="Current project">
-        <span className="project-dot" aria-hidden="true" />
+      <div
+        className="project-switcher"
+        aria-label={hasUnsavedChanges ? "Current project, unsaved changes" : "Current project"}
+      >
+        <span className={hasUnsavedChanges ? "project-dot dirty" : "project-dot"} aria-hidden="true" />
         <span>{projectName}</span>
       </div>
       <div className="topbar-actions">
+        <button
+          className="button-secondary compact new-project-button"
+          type="button"
+          onClick={onNewProject}
+          aria-label="Nuevo Proyecto"
+        >
+          <span className="new-project-label-full">Nuevo Proyecto</span>
+          <span className="new-project-label-short" aria-hidden="true">Nuevo</span>
+        </button>
         <button
           className="button-secondary compact"
           type="button"
