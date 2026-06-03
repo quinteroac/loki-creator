@@ -76,6 +76,7 @@ export function getCardPreviewAspectRatioValue(document?: CardDocument): number 
     case "auto":
     case "1:1":
     default:
+      if (document?.metadata?.kind === "audio") return 4 / 3;
       return 1;
   }
 }
@@ -95,6 +96,7 @@ export function getCardPreviewAspectRatioCss(document?: CardDocument): string {
       return "auto";
     case "1:1":
     default:
+      if (document?.metadata?.kind === "audio") return "4 / 3";
       return "1 / 1";
   }
 }
@@ -217,7 +219,7 @@ function attachmentCardBody(attachment: AgentAttachment): string {
   }
 
   if (attachment.kind === "audio" && attachment.dataUrl) {
-    return `<main><strong>${title}</strong><audio src="${attachment.dataUrl}" controls preload="metadata"></audio></main>`;
+    return `<main><audio src="${attachment.dataUrl}" controls preload="metadata"></audio><strong>${title}</strong></main>`;
   }
 
   if (attachment.kind === "pdf" && attachment.dataUrl) {
@@ -287,6 +289,7 @@ function attachmentCardKind(attachment: AgentAttachment): CardKind {
 
 function attachmentPreferredAspectRatio(attachment: AgentAttachment): CardAspectRatio {
   if (attachment.kind === "video") return "16:9";
+  if (attachment.kind === "audio") return "4:3";
   if (attachment.kind === "text" || attachment.kind === "json" || attachment.kind === "pdf") return "4:3";
   return "1:1";
 }
@@ -302,6 +305,7 @@ function importedArtifactKind(artifact: ImportedArtifact): CardKind {
 
 function importedArtifactPreferredAspectRatio(artifact: ImportedArtifact): CardAspectRatio {
   if (artifact.mimeType.startsWith("video/")) return "16:9";
+  if (artifact.mimeType.startsWith("audio/")) return "4:3";
   if (artifact.mimeType === "application/pdf" || artifact.mimeType.startsWith("text/")) return "4:3";
 
   return "1:1";
@@ -321,7 +325,7 @@ function importedArtifactBody(artifact: ImportedArtifact): string {
   }
 
   if (artifact.mimeType.startsWith("audio/")) {
-    return `<main><strong>${title}</strong><audio src="${source}" controls preload="metadata"></audio></main>`;
+    return `<main><audio src="${source}" controls preload="metadata"></audio><strong>${title}</strong></main>`;
   }
 
   if (artifact.mimeType === "application/pdf") {
@@ -863,6 +867,7 @@ export async function createSelectedCardSnapshots(
 
 export function normalizeCardDocument(card: CardDocument): CardDocument {
   const playableMedia = card.metadata?.playableMedia ?? hasPlayableMedia(card.html);
+  const kind = card.metadata?.kind ?? "generic";
 
   return {
     ...card,
@@ -870,7 +875,7 @@ export function normalizeCardDocument(card: CardDocument): CardDocument {
       kind: "generic",
       title: card.name,
       description: card.prompt,
-      preferredAspectRatio: "1:1",
+      preferredAspectRatio: kind === "audio" ? "4:3" : "1:1",
       playableMedia,
       ...card.metadata,
     },

@@ -627,18 +627,28 @@ function createLokiSkillPiTool(
   const musicgenDescription = skill.id === "comfy-musicgen"
     ? " For ACE-Step music generation, the prompt parameter must be a comma-separated music caption/tag list, not a natural-language request. Never write phrases like \"generate a song\" or \"make music about\" in prompt. Rewrite the user request into tags such as genre, vocal intent, instruments, mood, production style, BPM, and key; put lyrics only in paramsJson.lyrics."
     : "";
+  const s2vidgenDescription = skill.id === "comfy-s2vidgen"
+    ? " For WAN S2V, the prompt parameter must be the final WAN scene prompt, not a copy of the user's request and not UI/card description text. Follow the skill instructions: write one audio-driven scene starting with \"In the video,\" or \"The video shows\", describing the subject, speech/singing/dialogue/performance, expression, mouth motion, body movement, camera, and environment."
+    : "";
+  const animaImagegenDescription = skill.id === "comfy-image-generate"
+    ? " For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags."
+    : "";
   const loraDescription = skill.id === "comfy-image-generate" || skill.id === "comfy-image-edit"
     ? " If the user asks for a LoRA, include it in paramsJson as extraLora or lora. Use a resolved .safetensors path when known; otherwise pass the requested LoRA name so the runtime can search the active architecture folder such as loras/anima."
     : "";
   const promptDescription = skill.id === "comfy-musicgen"
     ? "ACE-Step music caption only: comma-separated tags such as genre, vocal intent, instruments, mood, production style, BPM, and key. Do not pass natural-language instructions like 'generate a song'."
-    : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
+    : skill.id === "comfy-s2vidgen"
+      ? "Final WAN S2V scene prompt only. Start with 'In the video,' or 'The video shows'. Describe one audio-driven performance scene with subject, speech/singing/dialogue, expression, mouth motion, body movement, camera, and environment. Do not write 'Generate a video from the selected image/audio'."
+      : skill.id === "comfy-image-generate"
+        ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For non-Anima profiles, follow the selected model's prompt guidance."
+      : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
 
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${musicgenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
-    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${musicgenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
+    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
         description: promptDescription,

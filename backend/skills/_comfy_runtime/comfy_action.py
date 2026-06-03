@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import mimetypes
 import os
 import re
@@ -119,6 +120,28 @@ def resolve_artifact_src(src: str) -> Path | None:
     return artifact_path if artifact_path.is_file() else None
 
 
+def append_media_path(media: dict[str, list[Path]], kind: str, path: Path | None) -> bool:
+    if path is None or kind not in media:
+        return False
+    if path in media[kind]:
+        return False
+    media[kind].append(path)
+    return True
+
+
+def append_metadata_artifact(media: dict[str, list[Path]], snapshot: dict[str, Any]) -> bool:
+    metadata = snapshot.get("metadata")
+    if not isinstance(metadata, dict):
+        return False
+
+    kind = first_text(metadata.get("kind"))
+    if kind not in media:
+        return False
+
+    artifact_url = first_text(metadata.get("artifactUrl"))
+    return append_media_path(media, kind, resolve_artifact_src(artifact_url))
+
+
 def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dict[str, list[Path]]:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     media: dict[str, list[Path]] = {"image": [], "audio": [], "video": []}
@@ -138,7 +161,7 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
             except Exception:
                 path = None
             if path is not None:
-                media[kind].append(path)
+                append_media_path(media, kind, path)
 
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
@@ -149,6 +172,8 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
             continue
 
         images_before_snapshot = len(media["image"])
+        append_metadata_artifact(media, snapshot)
+
         assets = snapshot.get("mediaAssets")
         if isinstance(assets, list):
             for asset_index, asset in enumerate(assets, start=1):
@@ -157,17 +182,17 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
                 kind = first_text(asset.get("kind"))
                 if kind not in media:
                     continue
-                data_url = first_text(asset.get("dataUrl"), asset.get("src"))
-                path = resolve_artifact_src(data_url)
+                src = first_text(asset.get("src"))
+                path = resolve_artifact_src(src)
                 if path is None:
+                    data_url = first_text(asset.get("dataUrl"))
                     if not data_url.startswith(f"data:{kind}/"):
                         continue
                     try:
                         path = write_data_url(data_url, inputs_dir / f"{snapshot_index:02d}-{asset_index:02d}-{kind}")
                     except Exception:
                         path = None
-                if path is not None:
-                    media[kind].append(path)
+                append_media_path(media, kind, path)
 
         if len(media["image"]) == images_before_snapshot:
             preview = snapshot.get("preview")
@@ -178,8 +203,7 @@ def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dic
                         path = write_data_url(data_url, inputs_dir / f"{snapshot_index:02d}-preview")
                     except Exception:
                         path = None
-                    if path is not None:
-                        media["image"].append(path)
+                    append_media_path(media, "image", path)
 
     return media
 
@@ -246,6 +270,13 @@ def normalize_video_mode(value: str) -> str:
         "wan-first-last-frame": "wan22-flf2v",
         "wan22-first-last-frame": "wan22-flf2v",
         "wan22-first-last-frame-to-video": "wan22-flf2v",
+        "wan-sound-to-video": "wan22-s2v",
+        "wan2.2-sound-to-video": "wan22-s2v",
+        "wan22-sound-to-video": "wan22-s2v",
+        "wan-s2v": "wan22-s2v",
+        "wan2.2-s2v": "wan22-s2v",
+        "sound-to-video": "wan22-s2v",
+        "s2v": "wan22-s2v",
     }
     return aliases.get(normalized, normalized)
 
@@ -472,13 +503,30 @@ def normalize_video_model_profile(value: str) -> str:
         "wan22": "wan22-i2v",
         "wan-normal": "wan22-i2v",
         "wan22-normal": "wan22-i2v",
+        "wan-s2v": "wan22-s2v",
+        "wan2.2-s2v": "wan22-s2v",
+        "wan22-s2v": "wan22-s2v",
+        "wan-sound-to-video": "wan22-s2v",
+        "wan22-sound-to-video": "wan22-s2v",
         "dasiwa": "wan22-dasiwa-tastysin-i2v",
         "dasiwa-tastysin": "wan22-dasiwa-tastysin-i2v",
         "tastysin": "wan22-dasiwa-tastysin-i2v",
         "dasiwa-boundbite": "wan22-dasiwa-boundbite-i2v",
         "boundbite": "wan22-dasiwa-boundbite-i2v",
+        "dasiwa-s2v": "wan22-dasiwa-littledemon-v2-s2v",
+        "dasiwa-littledemon": "wan22-dasiwa-littledemon-v2-s2v",
+        "dasiwa-littledemon-v2": "wan22-dasiwa-littledemon-v2-s2v",
+        "littledemon": "wan22-dasiwa-littledemon-v2-s2v",
+        "littledemon-v2": "wan22-dasiwa-littledemon-v2-s2v",
     }
     return aliases.get(value, value)
+
+
+def is_wan22_s2v_profile(model_profile: str) -> bool:
+    return model_profile in {
+        "wan22-s2v",
+        "wan22-dasiwa-littledemon-v2-s2v",
+    }
 
 
 def is_wan22_profile(model_profile: str) -> bool:
@@ -486,11 +534,13 @@ def is_wan22_profile(model_profile: str) -> bool:
         "wan22-i2v",
         "wan22-dasiwa-tastysin-i2v",
         "wan22-dasiwa-boundbite-i2v",
-    }
+    } or is_wan22_s2v_profile(model_profile)
 
 
 def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[Path]]) -> str:
     if is_wan22_profile(model_profile):
+        if mode == "wan22-s2v" or is_wan22_s2v_profile(model_profile):
+            return "wan22-s2v"
         if mode == "wan22-flf2v" or mode == "flf2v" or len(media.get("image", [])) >= 2:
             return "wan22-flf2v"
         return "wan22-i2v"
@@ -517,6 +567,43 @@ def video_length_from_duration(mode: str, duration: int, fps: int) -> int:
     if mode.startswith("wan22-"):
         return duration * fps + 1
     return duration * fps
+
+
+def format_seconds(value: float) -> str:
+    rounded = math.ceil(value * 1000) / 1000
+    return f"{rounded:.3f}".rstrip("0").rstrip(".")
+
+
+def audio_duration_seconds(path: str | Path) -> float:
+    if shutil.which("ffprobe") is None:
+        raise RuntimeError("ffprobe is required to measure audio duration for comfy-s2vidgen.")
+
+    process = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        message = process.stderr.strip() or process.stdout.strip() or "Could not read audio duration"
+        raise RuntimeError(message)
+
+    try:
+        duration = float(process.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError) as exc:
+        raise RuntimeError(f"Could not parse audio duration for {path}") from exc
+    if duration <= 0:
+        raise RuntimeError(f"Audio duration must be positive for {path}")
+    return duration
 
 
 def divisible_by_16(value: int) -> int:
@@ -777,6 +864,64 @@ def append_extra_loras(command: list[str], params: dict[str, Any], model_profile
         command.extend(["--extra-lora", resolve_extra_lora(value, architecture)])
 
 
+def build_s2vidgen_command(
+    *,
+    params: dict[str, Any],
+    prompt: str,
+    out_dir: Path,
+    media: dict[str, list[Path]],
+) -> tuple[list[str], Path]:
+    model_profile = normalize_video_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
+    if not is_wan22_s2v_profile(model_profile):
+        raise RuntimeError("comfy-s2vidgen requires an S2V modelProfile such as wan22-s2v.")
+
+    if not first_text(params.get("aspectRatio")):
+        raise RuntimeError("comfy-s2vidgen requires params.aspectRatio. The agent must ask the user which frame to use.")
+    if not first_text(params.get("resolution")):
+        raise RuntimeError("comfy-s2vidgen requires params.resolution. The agent must ask the user which resolution to use.")
+
+    image_input = first_text(params.get("inputPath")) or str(selected_input(media, "image") or "")
+    if not image_input:
+        raise RuntimeError("comfy-s2vidgen requires one input image from params.inputPath or a selected card snapshot.")
+    audio_input = first_text(params.get("audioPath")) or str(selected_input(media, "audio") or "")
+    if not audio_input:
+        raise RuntimeError("comfy-s2vidgen requires one input audio clip from params.audioPath or a selected card snapshot.")
+
+    width, height = video_dimensions(params)
+    if not width or not height:
+        raise RuntimeError("comfy-s2vidgen could not resolve video dimensions from aspectRatio and resolution.")
+
+    fps = 16
+    audio_duration = audio_duration_seconds(audio_input)
+    length = max(1, math.ceil(audio_duration * fps))
+    command = [
+        "comfy-videogen",
+        "wan22-s2v",
+        "--models-dir",
+        str(models_dir()),
+        "--input",
+        image_input,
+        "--audio",
+        audio_input,
+        "--prompt",
+        prompt,
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--length",
+        str(length),
+        "--fps",
+        str(fps),
+        "--audio-duration",
+        format_seconds(audio_duration),
+        "--out",
+        str(out_dir),
+    ]
+    cwd = write_run_comfy_config(out_dir.parent, capability="videogen.wan22-s2v", model_profile=model_profile)
+    return command, cwd
+
+
 def build_imagegen_command(
     *,
     mode: str,
@@ -880,14 +1025,22 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             skill_label="comfy-image-upscale",
         )
 
+    if skill_id == "comfy-s2vidgen":
+        return build_s2vidgen_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
+
     if skill_id in {"comfy-videogen", "comfy-motion-track-control"}:
-        default_mode = "i2v" if selected_input(media, "image") else "t2v"
+        has_image = selected_input(media, "image") is not None
+        has_audio = selected_input(media, "audio") is not None
+        default_mode = "ia2av" if has_image and has_audio else "i2v" if has_image else "t2v"
         if skill_id == "comfy-motion-track-control":
             default_mode = "motion-track"
         model_profile = normalize_video_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
         if not model_profile and skill_id == "comfy-videogen":
             raise RuntimeError("comfy-videogen requires params.modelProfile. The agent must ask the user which video model to use.")
-        mode = normalize_video_mode(command_from_params(params, default_mode))
+        requested_mode = normalize_video_mode(command_from_params(params, default_mode))
+        if skill_id == "comfy-videogen" and (requested_mode == "wan22-s2v" or is_wan22_s2v_profile(model_profile)):
+            raise RuntimeError("WAN S2V generation has moved to comfy-s2vidgen.")
+        mode = requested_mode
         mode = video_mode_for_profile(mode, model_profile, media)
         cwd = write_run_comfy_config(
             out_dir.parent,
@@ -900,7 +1053,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         command.extend(["--prompt", prompt])
         image_input = first_text(params.get("inputPath")) or str(selected_input(media, "image") or "")
         image_input = maybe_half_scale_ltx_image_input(image_input, out_dir, mode)
-        if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v", "wan22-i2v"} and image_input:
+        if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v", "wan22-i2v", "wan22-s2v"} and image_input:
             command.extend(["--input", image_input])
         if mode in {"flf2v", "seedance2-flf2v", "wan22-flf2v"}:
             image_inputs = media.get("image", [])
@@ -919,7 +1072,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             if last:
                 command.extend(["--last", last])
         audio_input = first_text(params.get("audioPath")) or str(selected_input(media, "audio") or "")
-        if mode == "ia2av" and audio_input:
+        if mode in {"ia2av", "wan22-s2v"} and audio_input:
             command.extend(["--audio", audio_input])
         control_video = first_text(params.get("controlVideoPath")) or str(selected_input(media, "video") or "")
         if mode == "motion-track" and control_video:
@@ -945,7 +1098,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
                 continue
             if value is not None:
                 command.extend([f"--{key}", str(value)])
-        if mode.startswith("wan22-"):
+        if mode in {"wan22-i2v", "wan22-flf2v"}:
             for key, cli_key in (
                 ("highNoiseSteps", "high-steps"),
                 ("highSteps", "high-steps"),
@@ -1001,13 +1154,6 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             resolved = first_text(extra_lora)
             if resolved:
                 command.extend(["--extra-lora", resolved])
-        return command, repo_root()
-
-    if skill_id == "comfy-media":
-        mode = command_from_params(params, "index")
-        command = ["comfy-media", mode, "--out", first_text(params.get("out"), str(out_dir))]
-        if mode == "gallery":
-            command.append("--dry-run")
         return command, repo_root()
 
     if skill_id in {"comfy-tools-setup", "comfy-model-onboarding", "comfy-model-downloader", "comfy-lora-onboarding"}:

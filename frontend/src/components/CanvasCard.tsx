@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, ClipboardEvent, FormEvent, MouseEvent, PointerEvent } from "react";
-import { Download, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import { layout, prepare } from "@chenglou/pretext";
+import { Download, Info, RotateCcw, Trash2 } from "lucide-react";
 import {
   downloadCardDocument,
+  extractSelectedCardMediaAssets,
   getCardEditableTitle,
   getCardDisplayTitle,
   getCardHeight,
@@ -37,6 +39,19 @@ const CONTEXT_MENU_WIDTH = 176;
 const CONTEXT_MENU_ESTIMATED_HEIGHT = 152;
 const CONTEXT_MENU_OFFSET = 8;
 const NOTE_TITLE_HEIGHT = 52;
+const CARD_TEXT_FONT_FAMILY = '"DM Sans", Inter, "Helvetica Neue", Helvetica, Arial, sans-serif';
+const NOTE_TEXT_FONT_SIZE = 18;
+const NOTE_TEXT_LINE_HEIGHT = NOTE_TEXT_FONT_SIZE * 1.45;
+const NOTE_TEXT_HORIZONTAL_PADDING = 44;
+const NOTE_TEXT_VERTICAL_PADDING = 28;
+const METADATA_HORIZONTAL_PADDING = 44;
+const PRETEXT_CACHE_LIMIT = 200;
+const pretextPreparedCache = new Map<string, ReturnType<typeof prepare>>();
+
+type TextFit = {
+  fontSize: number;
+  lineHeight: number;
+};
 
 function resizeCanvas(canvas: HTMLCanvasElement) {
   const pixelRatio = window.devicePixelRatio || 1;
@@ -77,7 +92,18 @@ function drawHtmlInCanvas(canvas: HTMLCanvasElement, htmlElement: HTMLDivElement
   return "drawn";
 }
 
-function createIframeSrcDoc(cardHtml: string): string {
+function normalizeAudioPreviewHtml(cardHtml: string, document: CardDocument): string {
+  if (document.metadata?.kind !== "audio") return cardHtml;
+
+  return cardHtml.replace(
+    /(<strong\b[^>]*>[\s\S]*?<\/strong>)(\s*<audio\b[\s\S]*?<\/audio>)/i,
+    "$2$1",
+  );
+}
+
+function createIframeSrcDoc(document: CardDocument): string {
+  const cardHtml = normalizeAudioPreviewHtml(document.html, document);
+
   return `<!doctype html>
 <html>
   <head>
@@ -104,6 +130,94 @@ function createIframeSrcDoc(cardHtml: string): string {
 
 function shouldUsePlayableMediaFallback(document: CardDocument): boolean {
   return document.metadata?.playableMedia ?? hasPlayableMedia(document.html);
+}
+
+function getAudioPreviewSource(document: CardDocument): string | null {
+  if (document.metadata?.kind !== "audio") return null;
+  if (document.metadata.artifactUrl) return document.metadata.artifactUrl;
+
+  const audioAsset = extractSelectedCardMediaAssets(document.html).find((asset) => asset.kind === "audio");
+  return audioAsset?.dataUrl ?? audioAsset?.src ?? null;
+}
+
+function getPreparedText(text: string, fontSize: number, fontWeight: number) {
+  const cacheKey = `${fontWeight}|${fontSize}|${text}`;
+  const cached = pretextPreparedCache.get(cacheKey);
+  if (cached) return cached;
+
+  const prepared = prepare(text, `${fontWeight} ${fontSize}px ${CARD_TEXT_FONT_FAMILY}`, { whiteSpace: "pre-wrap" });
+  pretextPreparedCache.set(cacheKey, prepared);
+  if (pretextPreparedCache.size > PRETEXT_CACHE_LIMIT) {
+    const oldestKey = pretextPreparedCache.keys().next().value;
+    if (oldestKey) pretextPreparedCache.delete(oldestKey);
+  }
+  return prepared;
+}
+
+function pretextHeight(text: string, width: number, fontSize: number, lineHeight: number, fontWeight: number) {
+  const normalizedWidth = Math.max(1, width);
+
+  try {
+    const prepared = getPreparedText(text, fontSize, fontWeight);
+    const result = layout(prepared, normalizedWidth, lineHeight);
+    return Math.max(lineHeight, result.height);
+  } catch {
+    return lineHeight;
+  }
+}
+
+function fitTextBlock(
+  text: string,
+  width: number,
+  maxHeight: number,
+  {
+    maxFontSize,
+    minFontSize,
+    weight,
+  }: {
+    maxFontSize: number;
+    minFontSize: number;
+    weight: number;
+  },
+): TextFit {
+  const content = text.trim() || "Prompt";
+  const availableWidth = Math.max(1, width);
+  const availableHeight = Math.max(1, maxHeight);
+
+  for (let fontSize = maxFontSize; fontSize >= minFontSize; fontSize -= 1) {
+    const lineHeight = fontSize * 1.45;
+    if (pretextHeight(content, availableWidth, fontSize, lineHeight, weight) <= availableHeight) {
+      return { fontSize, lineHeight };
+    }
+  }
+
+  return { fontSize: minFontSize, lineHeight: minFontSize * 1.45 };
+}
+
+function fitSingleLineText(
+  text: string,
+  width: number,
+  {
+    maxFontSize,
+    minFontSize,
+    weight,
+  }: {
+    maxFontSize: number;
+    minFontSize: number;
+    weight: number;
+  },
+): TextFit {
+  const content = text.trim() || "Titulo";
+  const availableWidth = Math.max(1, width);
+
+  for (let fontSize = maxFontSize; fontSize >= minFontSize; fontSize -= 1) {
+    const lineHeight = fontSize * 1.3;
+    if (pretextHeight(content, availableWidth, fontSize, lineHeight, weight) <= lineHeight + 0.5) {
+      return { fontSize, lineHeight };
+    }
+  }
+
+  return { fontSize: minFontSize, lineHeight: minFontSize * 1.3 };
 }
 
 function createOmittedPreview(
@@ -154,13 +268,49 @@ export function CanvasCard({
   const [useIframeFallback, setUseIframeFallback] = useState(() => shouldUsePlayableMediaFallback(document));
   const [isDragging, setIsDragging] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isMetadataVisible, setIsMetadataVisible] = useState(false);
   const [contextMenuPosition, setContextMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const accessibleTitle = getCardDisplayTitle(document);
   const editableTitle = getCardEditableTitle(document);
   const isNote = document.metadata?.kind === "note";
+  const isAudio = document.metadata?.kind === "audio";
+  const audioPreviewSource = useMemo(() => getAudioPreviewSource(document), [document]);
+  const usesNativeAudioPreview = Boolean(audioPreviewSource);
   const frame = node.frame;
   const frameHeight = getCardHeight(frame.width, document, frame);
-  const metadataPanelHeight = Math.min(Math.max(frameHeight * 0.22, 132), 204);
+  const metadataPanelHeight = isAudio
+    ? Math.min(Math.max(frameHeight * 0.3, 84), Math.max(72, frameHeight * 0.38))
+    : Math.min(Math.max(frameHeight * 0.22, 132), 204);
+  const metadataTextMetrics = useMemo(() => {
+    const contentWidth = Math.max(1, frame.width - METADATA_HORIZONTAL_PADDING);
+    const titleRowHeight = isAudio ? 42 : 48;
+    const promptVerticalPadding = isAudio ? 12 : 20;
+    const promptHeight = metadataPanelHeight - titleRowHeight - promptVerticalPadding;
+
+    return {
+      prompt: fitTextBlock(document.prompt, contentWidth, promptHeight, {
+        maxFontSize: isAudio ? 15 : 16,
+        minFontSize: 11,
+        weight: 500,
+      }),
+      title: fitSingleLineText(editableTitle, contentWidth, {
+        maxFontSize: isAudio ? 16 : 18,
+        minFontSize: 12,
+        weight: 700,
+      }),
+    };
+  }, [document.prompt, editableTitle, frame.width, isAudio, metadataPanelHeight]);
+  const metadataPanelStyle = useMemo(
+    () =>
+      ({
+        "--metadata-prompt-font-size": `${metadataTextMetrics.prompt.fontSize}px`,
+        "--metadata-prompt-line-height": `${metadataTextMetrics.prompt.lineHeight}px`,
+        "--metadata-title-font-size": `${metadataTextMetrics.title.fontSize}px`,
+        "--metadata-title-line-height": `${metadataTextMetrics.title.lineHeight}px`,
+        height: `${metadataPanelHeight}px`,
+      }) as CSSProperties,
+    [metadataPanelHeight, metadataTextMetrics],
+  );
 
   useEffect(() => {
     if (isNote && isSelected && !document.prompt.trim()) {
@@ -168,6 +318,10 @@ export function CanvasCard({
       noteTitleRef.current?.select();
     }
   }, [document.id, document.prompt, isNote, isSelected]);
+
+  useEffect(() => {
+    setIsMetadataVisible(false);
+  }, [document.id]);
 
   useEffect(() => {
     const textElement = noteTextRef.current;
@@ -178,10 +332,13 @@ export function CanvasCard({
   }, [document.prompt, isNote]);
 
   useEffect(() => {
-    const textElement = noteTextRef.current;
-    if (!isNote || !textElement) return;
+    if (!isNote) return;
 
-    const neededHeight = Math.ceil(NOTE_TITLE_HEIGHT + textElement.scrollHeight);
+    const noteTextWidth = Math.max(1, frame.width - NOTE_TEXT_HORIZONTAL_PADDING);
+    const textHeight = document.prompt.trim()
+      ? pretextHeight(document.prompt, noteTextWidth, NOTE_TEXT_FONT_SIZE, NOTE_TEXT_LINE_HEIGHT, 500)
+      : 0;
+    const neededHeight = Math.ceil(NOTE_TITLE_HEIGHT + NOTE_TEXT_VERTICAL_PADDING + textHeight);
     if (neededHeight <= frameHeight + 1) {
       lastRequestedNoteHeightRef.current = null;
       return;
@@ -399,6 +556,13 @@ export function CanvasCard({
     onToggleSelect(node.id);
   }
 
+  function handlePreviewKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+
+    event.preventDefault();
+    onToggleSelect(node.id);
+  }
+
   function handleNoteFocus() {
     if (!isSelected) {
       onToggleSelect(node.id);
@@ -415,6 +579,12 @@ export function CanvasCard({
 
   function handleCardPromptChange(event: ChangeEvent<HTMLTextAreaElement>) {
     onUpdateDocumentPrompt(document.id, event.target.value);
+  }
+
+  function handleMetadataToggle(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsMetadataVisible((currentValue) => !currentValue);
   }
 
   function handleNoteTextPaste(event: ClipboardEvent<HTMLDivElement>) {
@@ -520,6 +690,28 @@ export function CanvasCard({
             suppressContentEditableWarning
           />
         </div>
+      ) : usesNativeAudioPreview ? (
+        <div
+          className="canvas-card-preview has-playable-media canvas-card-audio-preview"
+          role="button"
+          aria-label={`Select ${accessibleTitle}`}
+          aria-pressed={isSelected}
+          tabIndex={0}
+          onKeyDown={handlePreviewKeyDown}
+          style={{ aspectRatio: getCardPreviewAspectRatioCss(document) }}
+        >
+          <div className="canvas-card-audio-preview-content">
+            <audio
+              src={audioPreviewSource ?? undefined}
+              controls
+              preload="metadata"
+              onClick={stopCardInteraction}
+              onContextMenu={stopCardInteraction}
+              onPointerDown={stopCardInteraction}
+            />
+            <strong>{accessibleTitle}</strong>
+          </div>
+        </div>
       ) : (
         <button
           className={`canvas-card-preview ${shouldUsePlayableMediaFallback(document) ? "has-playable-media" : ""}`}
@@ -531,7 +723,7 @@ export function CanvasCard({
           {useIframeFallback && (
             <iframe
               title={accessibleTitle}
-              srcDoc={createIframeSrcDoc(document.html)}
+              srcDoc={createIframeSrcDoc(document)}
               sandbox="allow-same-origin"
               loading="lazy"
             />
@@ -548,11 +740,25 @@ export function CanvasCard({
           )}
         </button>
       )}
-      {isSelected && !isNote && (
+      {!isNote && (
+        <button
+          className={`canvas-card-info-toggle ${isMetadataVisible ? "active" : ""}`}
+          type="button"
+          aria-label={`${isMetadataVisible ? "Hide" : "Show"} ${accessibleTitle} title and prompt`}
+          aria-pressed={isMetadataVisible}
+          title={`${isMetadataVisible ? "Hide" : "Show"} title and prompt`}
+          onClick={handleMetadataToggle}
+          onContextMenu={stopCardInteraction}
+          onPointerDown={stopCardInteraction}
+        >
+          <Info size={15} aria-hidden="true" />
+        </button>
+      )}
+      {isMetadataVisible && !isNote && (
         <aside
-          className="canvas-card-metadata-note"
+          className={`canvas-card-metadata-note ${isAudio ? "audio-card-metadata-note" : ""}`}
           aria-label={`${accessibleTitle} details`}
-          style={{ height: `${metadataPanelHeight}px` }}
+          style={metadataPanelStyle}
           onClick={stopCardInteraction}
           onContextMenu={stopCardInteraction}
           onPointerDown={stopCardInteraction}

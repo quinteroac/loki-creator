@@ -1,6 +1,6 @@
 ---
 name: comfy-videogen
-description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros, local WAN 2.2 image/first-last-frame workflows, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, WAN 2.2 image-guided video, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
+description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros, local WAN 2.2 image/first-last-frame workflows, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, WAN 2.2 image-guided video, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for WAN audio-driven clips. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
 metadata:
   loki:
     visibility: user
@@ -202,6 +202,14 @@ Video mode choices:
   ask the user to run concurrent local generations. Loki publishes each segment
   to the canvas as it completes.
 
+Selected-card inputs are handled by Loki. When the user has selected image,
+audio, or video cards, do not ask the user for filesystem paths and do not try to
+invent local paths from `/api/artifacts/...` URLs. Invoke this skill with the
+chosen `modelProfile`, `videoMode`, duration, resolution, and aspect ratio; the
+runtime resolves selected card `metadata.artifactUrl`, `mediaAssets`, and
+`dataUrl` values into local files for `--input`, `--audio`, `--first`, `--last`,
+or `--control-video`.
+
 Duration and WAN step choices:
 
 - `3`, `5`, `7`, `10`, or `15` seconds. Local LTX converts duration to `length` frames
@@ -367,11 +375,11 @@ texture. Keep prompts concrete and short enough for a single shot. For `i2v`,
 `ia2av`, and `flf2v`, name what should remain anchored to the input image or
 guide frames.
 
-For `ia2av`, the prompt should describe how the image should move in relation to
-the audio: tempo-synced lighting pulses, breathing portrait motion, subtle camera
-drift, dance movement, performance gestures, or environmental reaction. The
-video duration is controlled by `--length / --fps`; long songs are trimmed to
-that window unless `--audio-start-time` or `--audio-duration` is passed.
+For `ia2av`, the prompt should describe how the image should move in relation
+to the audio: tempo-synced lighting pulses, breathing portrait motion, subtle
+camera drift, dance movement, performance gestures, or environmental reaction.
+The video duration is controlled by `--length / --fps`; long songs are trimmed
+to that window unless `--audio-start-time` or `--audio-duration` is passed.
 
 Use the collected `resolution` and `aspectRatio` arguments instead of inventing
 raw dimensions. Loki translates `480p`/`720p` plus the selected frame into
@@ -405,7 +413,8 @@ directly to Seedance 2.0.
   15 seconds.
 - Standard default steps: `highNoiseSteps=10`, `lowNoiseSteps=10`
 - Dasiwa default steps: `highNoiseSteps=2`, `lowNoiseSteps=2`
-- Required local files include WAN 2.2 high/low-noise diffusion models, text encoder, and VAE as reported by `comfy-models validate-profile <profile>`.
+- Required local files include WAN 2.2 high/low-noise diffusion models, text
+  encoder, and VAE as reported by `comfy-models validate-profile <profile>`.
 
 Extra LoRAs are optional and ad hoc. Use repeatable
 `--extra-lora PATH[:MODEL_STRENGTH[:CLIP_STRENGTH]]` after resolving the file
@@ -430,13 +439,6 @@ a safe insertion point.
 
 The CLI prints JSON to stdout. On success, read `artifacts` for the saved MP4 path.
 On failure, read `error` and `error_type`; do not parse logs for control flow.
-
-After every successful video command, immediately index the same output directory
-so the new artifact appears in Comfy Media:
-
-```bash
-uv run comfy-media index --out outputs
-```
 
 Audio is required in v1. If MP4 audio muxing fails, the command fails instead of
 silently saving a no-audio video.

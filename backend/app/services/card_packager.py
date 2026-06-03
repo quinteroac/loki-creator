@@ -92,6 +92,8 @@ class CardPackagerService:
             metadata["thumbnailUrl"] = artifact_url
         if preferred_aspect_ratio:
             metadata["preferredAspectRatio"] = preferred_aspect_ratio
+        elif kind == "audio":
+            metadata["preferredAspectRatio"] = "4:3"
         if kind in {"video", "audio", "html"}:
             metadata["playableMedia"] = True
 
@@ -229,7 +231,7 @@ class CardPackagerService:
         elif kind == "video":
             body = f'<video src="{escaped_url}" controls playsinline preload="metadata"></video>'
         elif kind == "audio":
-            body = f'<main class="audio"><strong>{escaped_title}</strong><audio src="{escaped_url}" controls preload="metadata"></audio></main>'
+            body = f'<main class="audio"><audio src="{escaped_url}" controls preload="metadata"></audio><strong>{escaped_title}</strong></main>'
         elif kind == "html":
             body = f'<iframe src="{escaped_url}" title="{escaped_title}"></iframe>'
         else:

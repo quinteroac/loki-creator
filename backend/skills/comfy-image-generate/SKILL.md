@@ -108,7 +108,7 @@ Local generation:
 
 ```bash
 uv run comfy-imagegen generate \
-  --prompt "Una chica samurai en un bosque lluvioso con luz cinematica, anime illustration, dramatic shadows" \
+  --prompt "masterpiece, best quality, anime illustration, 1girl, solo, samurai, katana, forest, rain, cinematic lighting, dramatic shadows" \
   --width 1024 \
   --height 1024 \
   --seed 42 \
@@ -149,9 +149,41 @@ scene, forcing anime/photorealism when the user asked for another style, adding
 unrequested clothing or props, removing text/logo constraints, or reducing a rich
 request to generic tags like `1girl, anime style, detailed background`.
 
-For `modelProfile` values `anima-base` and `anima-preview3-turbo`, Danbooru-style
-tags are optional, not required. Use them only if every requested detail can be
-kept. Otherwise pass an enriched natural-language prompt.
+For `modelProfile` values `anima-base` and `anima-preview3-turbo`, the action
+`prompt` must use anime booru/Danbooru-style tag nomenclature. Do not pass prose
+such as `Generate a full-body anime-style illustration...`. Rewrite the user's
+request into a comma-separated tag prompt before invoking the action.
+
+Anima tag prompt rules:
+
+- Use comma-separated tags and short tag phrases, not sentences.
+- Prefer lowercase visual tags such as `1girl`, `solo`, `full body`, `standing`,
+  `singing`, `microphone`, `long hair`, `orange eyes`, `school uniform`,
+  `simple background`, `clean lineart`, `anime coloring`.
+- Include quality/style tags up front when useful: `masterpiece`, `best quality`,
+  `anime illustration`, `clean lineart`, `vibrant colors`.
+- Preserve every important requested subject, count, pose, clothing, prop,
+  composition, expression, background, color, and constraint as tags.
+- Do not include imperative words like `generate`, `create`, `make`, `draw`, or
+  `from the selected image`.
+- Do not add contradictory tags, extra characters, extra panels, frames, logos,
+  or text unless the user requested them.
+
+Bad Anima prompt:
+
+```text
+Generate a full-body anime-style illustration of a girl singing on stage holding
+a microphone. She has long flowing hair, expressive eyes, and a cute performance
+outfit.
+```
+
+Better Anima prompt:
+
+```text
+masterpiece, best quality, anime illustration, 1girl, solo, full body, singing,
+open mouth, holding microphone, long flowing hair, expressive eyes, performance
+outfit, standing, stage, vibrant colors, clean lineart, simple background
+```
 
 The runtime passes the received prompt to `comfy-imagegen` unchanged. Any prompt
 editing must happen deliberately before invoking the action and must preserve the
@@ -191,3 +223,25 @@ not allowed without a separate license.
 
 The Anima turbo LoRA expects `cfg=1.0`; increasing CFG can degrade or break the
 expected turbo behavior.
+
+## Preflight Checklist
+
+Before invoking the Loki action, verify:
+
+- The required user choices are present: `modelProfile` and `aspectRatio`.
+- The action `prompt` is the final model prompt, not a copy of the user request,
+  UI text, or card description boilerplate.
+- If `modelProfile` is `anima-base` or `anima-preview3-turbo`, the prompt is a
+  comma-separated booru/Danbooru-style tag list.
+- For Anima prompts, there are no imperative prose phrases such as `Generate`,
+  `Create`, `Make`, `Draw`, or `from the selected image`.
+- For Anima prompts, important requested details are represented as tags:
+  subject count, identity, framing, pose, expression, clothing, props,
+  background, colors, style, and constraints.
+- For Anima prompts, quality/style tags appear near the front when useful, such
+  as `masterpiece`, `best quality`, `anime illustration`, `clean lineart`, and
+  `vibrant colors`.
+- For non-Anima profiles, the prompt follows that profile's guidance: natural
+  language for FLUX.2 Klein SNOFS, Qwen Image Edit generation, and Grok Imagine.
+- `paramsJson` contains the chosen `modelProfile` and `aspectRatio`, plus only
+  intentional generation options such as seed or LoRA.

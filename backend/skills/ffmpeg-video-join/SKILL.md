@@ -1,6 +1,6 @@
 ---
 name: ffmpeg-video-join
-description: Join two or more selected Loki canvas video cards into one MP4 using ffmpeg. Use when the user wants to concatenate, stitch, merge, combine, or transition between existing selected videos. Do not use for generating new video, image-only work, audio-only work, ComfyUI workflows, or gallery/index operations.
+description: Join two or more selected Loki canvas video cards into one MP4 using ffmpeg. Use when the user wants to concatenate, stitch, merge, combine, or transition between existing selected videos. Do not use for generating new video, image-only work, audio-only work, or ComfyUI workflows.
 metadata:
   loki:
     visibility: user
@@ -79,5 +79,4 @@ The action normalizes all inputs before joining:
 - Silent audio inserted for clips without audio.
 
 On success, the action returns one MP4 artifact for Loki to package as a video
-card. On failure, read the action error; do not start a Comfy Media gallery or
-run any ComfyUI workflow.
+card. On failure, read the action error; do not run any ComfyUI workflow.
