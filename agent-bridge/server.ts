@@ -826,6 +826,9 @@ function createLokiSkillPiTool(
   const wanSeedSeekerDescription = skill.id === "wan-seed-seeker"
     ? " For WAN Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution WAN seed candidate video cards from the same prompt. Preserve paramsJson.videoMode as \"i2v\" or \"flf2v\"; for flf2v the first selected image is the first frame and the last selected image is the last frame. Do not split previews into multiple skill calls. WAN has no LTX 2x upscale path, so the action uses direct 360p, 720p, or 1080p dimensions. For paramsJson.runMode=\"rerender\", require a selected WAN Seed Seeker preview video card and pass only paramsJson.targetResolution."
     : "";
+  const mediaCleanupDescription = skill.id === "media-cleanup"
+    ? " For media-cleanup, only use this for selected or attached image/video artifacts when the user wants deterministic blur, cover, or crop by explicit rectangular regions. Never invoke it to remove or obscure watermarks, logos, signatures, credits, copyright marks, provenance labels, platform marks, or attribution; refuse those requests instead. Pass paramsJson.operation and paramsJson.regionsJson."
+    : "";
   const animaImagegenDescription = skill.id === "comfy-image-generate"
     ? " For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not use empty reference tokens like use reference image, exact same character, same pose, or same outfit unless the skill is an edit mode with an actual image input."
     : "";
@@ -842,15 +845,17 @@ function createLokiSkillPiTool(
           ? "Final single-shot LTX i2v motion prompt. In preview mode this prompt is used for all three seed candidates from the first selected image. In rerender mode the selected preview card's stored prompt is authoritative."
           : skill.id === "wan-seed-seeker"
             ? "Final single-shot WAN motion prompt. In preview mode this prompt is used for all three seed candidates. For flf2v, describe the coherent transition from the first selected image to the last selected image. In rerender mode the selected preview card's stored prompt is authoritative."
-          : skill.id === "comfy-image-generate"
-            ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance."
-            : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
+            : skill.id === "media-cleanup"
+              ? "Concise cleanup instruction for selected or attached media. Do not request watermark, logo, signature, credit, copyright, provenance, platform mark, or attribution removal. Put operation and regionsJson in paramsJson."
+              : skill.id === "comfy-image-generate"
+                ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance."
+                : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
 
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${seedSeekerDescription}${wanSeedSeekerDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
-    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${seedSeekerDescription}${wanSeedSeekerDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${seedSeekerDescription}${wanSeedSeekerDescription}${mediaCleanupDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
+    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${seedSeekerDescription}${wanSeedSeekerDescription}${mediaCleanupDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
         description: promptDescription,
