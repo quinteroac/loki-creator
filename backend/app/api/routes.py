@@ -16,8 +16,22 @@ from app.models import (
     SkillDefinition,
     SkillRun,
     SkillRunRequest,
+    VideoEditArtifact,
+    VideoFrameRequest,
+    VideoTimelineRequest,
+    VideoTimelineResponse,
+    VideoTrimRequest,
 )
-from app.services import ArtifactArchiveService, InstructionService, ProjectNotFoundError, ProjectService, SkillRegistry, SkillRunService
+from app.services import (
+    ArtifactArchiveService,
+    InstructionService,
+    ProjectNotFoundError,
+    ProjectService,
+    SkillRegistry,
+    SkillRunService,
+    VideoEditorError,
+    VideoEditorService,
+)
 
 router = APIRouter(prefix="/api")
 skill_registry = SkillRegistry()
@@ -45,6 +59,10 @@ def get_project_service() -> ProjectService:
 
 def get_artifact_archive_service() -> ArtifactArchiveService:
     return ArtifactArchiveService(artifacts_root)
+
+
+def get_video_editor_service() -> VideoEditorService:
+    return VideoEditorService(artifacts_root)
 
 
 @router.get("/health")
@@ -140,6 +158,39 @@ def import_artifact(
     service: ArtifactArchiveService = Depends(get_artifact_archive_service),
 ) -> ImportedArtifact:
     return service.import_upload(file)
+
+
+@router.post("/artifacts/video/timeline", response_model=VideoTimelineResponse)
+def create_video_timeline(
+    payload: VideoTimelineRequest,
+    service: VideoEditorService = Depends(get_video_editor_service),
+) -> VideoTimelineResponse:
+    try:
+        return service.timeline(payload.artifact_url, payload.max_thumbnails)
+    except VideoEditorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/video/frame", response_model=VideoEditArtifact)
+def export_video_frame(
+    payload: VideoFrameRequest,
+    service: VideoEditorService = Depends(get_video_editor_service),
+) -> VideoEditArtifact:
+    try:
+        return service.export_frame(payload.artifact_url, payload.time_seconds)
+    except VideoEditorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/video/trim", response_model=VideoEditArtifact)
+def trim_video_artifact(
+    payload: VideoTrimRequest,
+    service: VideoEditorService = Depends(get_video_editor_service),
+) -> VideoEditArtifact:
+    try:
+        return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds)
+    except VideoEditorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/artifacts/{artifact_path:path}")

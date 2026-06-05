@@ -3,6 +3,7 @@ export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | 
 export type CardAspectRatio = "1:1" | "4:3" | "16:9" | "9:16" | "auto";
 
 export type CardMetadata = {
+  [key: string]: unknown;
   kind?: CardKind;
   title?: string;
   description?: string;
@@ -29,6 +30,37 @@ export type CardDocument = {
 };
 
 export type GeneratedCard = CardDocument;
+
+export type VideoTimelineThumbnail = {
+  artifactUrl: string;
+  timeSeconds: number;
+  width: number;
+  height: number;
+};
+
+export type VideoTimelineResponse = {
+  artifactUrl: string;
+  durationSeconds: number;
+  width: number;
+  height: number;
+  fps: number;
+  thumbnails: VideoTimelineThumbnail[];
+};
+
+export type VideoEditArtifact = {
+  artifactUrl: string;
+  sourceArtifactUrl: string;
+  name: string;
+  kind: "image" | "video";
+  mimeType: string;
+  size: number;
+  width: number;
+  height: number;
+  durationSeconds?: number | null;
+  timeSeconds?: number | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
+};
 
 export type SelectedCardPreview =
   | {
@@ -158,6 +190,7 @@ export type SkillArgumentDefinition = {
   type: "choice" | "text";
   required: boolean;
   askWhen: "always" | "missing";
+  dependsOn?: Record<string, string>;
   options: SkillArgumentOption[];
   order: number;
 };

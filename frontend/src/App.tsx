@@ -13,11 +13,13 @@ import { initialCanvasNodes, initialCardDocuments } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
 import {
   assignUniqueDisplayTitles,
+  createCardDocumentForEditedArtifact,
   createCardDocumentForImportedArtifact,
   createCanvasNodeForDocument,
   createNoteCardDocument,
   createSelectedCardSnapshots,
   getCardDisplayTitle,
+  getCardHeight,
   getFileDimensions,
   normalizeCardDocument,
   updateNoteCardDocumentText,
@@ -44,6 +46,7 @@ import type {
   ProjectSummary,
   SelectedCardPreview,
   SkillRun,
+  VideoEditArtifact,
 } from "./types";
 
 const fallbackModels: AgentModel[] = [
@@ -728,6 +731,40 @@ export function App() {
     );
   }
 
+  function createCardFromVideoEditArtifact(artifact: VideoEditArtifact, sourceNodeId: string) {
+    const editedDocument = createCardDocumentForEditedArtifact(artifact);
+    const sourceNode = canvasNodes.find((candidate) => candidate.id === sourceNodeId);
+    const sourceDocument = sourceNode ? documentsById[sourceNode.cardDocumentId] : undefined;
+    const defaultNode = createCanvasNodeForDocument(editedDocument, canvasNodes.length, window.innerWidth);
+    const sourceHeight = sourceNode && sourceDocument
+      ? getCardHeight(sourceNode.frame.width, sourceDocument, sourceNode.frame)
+      : 0;
+    const editedNode: CanvasNode = {
+      id: `node_${editedDocument.id}`,
+      cardDocumentId: editedDocument.id,
+      frame: sourceNode
+        ? {
+          ...defaultNode.frame,
+          width: sourceNode.frame.width,
+          x: sourceNode.frame.x + 32,
+          y: sourceNode.frame.y + sourceHeight + 32,
+        }
+        : defaultNode.frame,
+    };
+
+    setCardDocuments((currentDocuments) => {
+      const [document] = assignUniqueDisplayTitles([editedDocument], currentDocuments);
+
+      return [...currentDocuments, document];
+    });
+    setCanvasNodes((currentNodes) => {
+      if (currentNodes.some((node) => node.cardDocumentId === editedDocument.id)) return currentNodes;
+
+      return [...currentNodes, editedNode];
+    });
+    setSelectedCards([editedDocument.id]);
+  }
+
   function createNote(frame: CanvasNodeFrame) {
     const noteDocument = createNoteCardDocument();
     const noteNode = {
@@ -1118,10 +1155,12 @@ export function App() {
         documentsById={documentsById}
         nodes={canvasNodes}
         onCreateNote={createNote}
+        onCreateVideoEditArtifact={createCardFromVideoEditArtifact}
         onDeleteDocument={deleteDocument}
         onRenameDocument={renameDocument}
         onRedoDocument={redoDocument}
         onRegisterPreviewCapture={registerPreviewCapture}
+        onStatus={setStatus}
         onToggleNode={toggleCanvasNode}
         onUpdateDocumentPrompt={updateDocumentPrompt}
         onUpdateNodeFrame={updateCanvasNodeFrame}

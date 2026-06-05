@@ -8,6 +8,7 @@ import type {
   SelectedCardMediaAsset,
   SelectedCardPreview,
   SelectedCardSnapshot,
+  VideoEditArtifact,
 } from "../types";
 import type { ImportedArtifact } from "../api/artifacts";
 
@@ -433,6 +434,53 @@ export function createCardDocumentForImportedArtifact(
       preferredAspectRatio: importedArtifactPreferredAspectRatio(artifact),
       playableMedia: ["video", "audio", "interactive"].includes(kind),
       ...(dimensions ?? {}),
+    },
+  };
+}
+
+function formatMediaSeconds(value?: number | null): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0:00";
+  const minutes = Math.floor(value / 60);
+  const seconds = value - minutes * 60;
+  const paddedSeconds = seconds < 10 ? `0${seconds.toFixed(2)}` : seconds.toFixed(2);
+
+  return `${minutes}:${paddedSeconds}`;
+}
+
+export function createCardDocumentForEditedArtifact(artifact: VideoEditArtifact): CardDocument {
+  const isFrame = artifact.kind === "image";
+  const title = isFrame
+    ? `Frame ${formatMediaSeconds(artifact.timeSeconds)}`
+    : `Clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`;
+  const description = isFrame
+    ? `Frame exported from video at ${formatMediaSeconds(artifact.timeSeconds)}.`
+    : `Video trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`;
+
+  return {
+    id: `card_video_edit_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`,
+    name: title,
+    prompt: description,
+    html: importedArtifactHtml(artifact),
+    sourceSkillId: "video-editor",
+    sourceActionId: isFrame ? "frame-export" : "video-trim",
+    metadata: {
+      kind: artifact.kind,
+      title,
+      description,
+      artifactUrl: artifact.artifactUrl,
+      thumbnailUrl: isFrame ? artifact.artifactUrl : undefined,
+      createdAt: new Date().toISOString(),
+      tags: ["video-editor", isFrame ? "frame" : "trim"],
+      capabilities: ["video-edit"],
+      preferredAspectRatio: "auto",
+      playableMedia: !isFrame,
+      width: artifact.width,
+      height: artifact.height,
+      sourceArtifactUrl: artifact.sourceArtifactUrl,
+      durationSeconds: artifact.durationSeconds,
+      timeSeconds: artifact.timeSeconds,
+      startSeconds: artifact.startSeconds,
+      endSeconds: artifact.endSeconds,
     },
   };
 }

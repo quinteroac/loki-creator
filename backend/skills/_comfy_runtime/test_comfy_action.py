@@ -243,6 +243,24 @@ class ComfyActionTest(unittest.TestCase):
                     media={"image": [Path(tmpdir) / "input.png"], "audio": [Path(tmpdir) / "song.wav"], "video": []},
                 )
 
+    def test_video_dimensions_supports_seed_seeker_resolutions(self) -> None:
+        self.assertEqual(
+            comfy_action.video_dimensions({"aspectRatio": "16:9", "resolution": "360p"}),
+            (640, 360),
+        )
+        self.assertEqual(
+            comfy_action.video_dimensions({"aspectRatio": "9:16", "resolution": "360p"}),
+            (360, 640),
+        )
+        self.assertEqual(
+            comfy_action.video_dimensions({"aspectRatio": "4:3", "resolution": "1080p"}),
+            (1440, 1080),
+        )
+        self.assertEqual(
+            comfy_action.video_dimensions({"aspectRatio": "9:16", "resolution": "1080p"}),
+            (1080, 1920),
+        )
+
     def test_materialize_selected_media_resolves_metadata_artifact_url(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.artifacts_root", return_value=Path(tmpdir)):
             root = Path(tmpdir)

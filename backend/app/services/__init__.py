@@ -6,6 +6,7 @@ from app.services.projects import ProjectNotFoundError, ProjectService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
 from app.services.skill_runs import SkillRunService
+from app.services.video_editor import VideoEditorError, VideoEditorService
 
 __all__ = [
     "BUILTIN_AGENTS",
@@ -18,4 +19,6 @@ __all__ = [
     "SkillActionInvoker",
     "SkillRegistry",
     "SkillRunService",
+    "VideoEditorError",
+    "VideoEditorService",
 ]

@@ -10,18 +10,20 @@ import {
   getCardHeight,
 } from "../lib/cardDocuments";
 import { CanvasCard } from "./CanvasCard";
-import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview } from "../types";
+import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview, VideoEditArtifact } from "../types";
 
 type CanvasStageProps = {
   documentsById: Record<string, CardDocument>;
   nodes: CanvasNode[];
   selectedIds: string[];
   onCreateNote: (frame: CanvasNodeFrame) => void;
+  onCreateVideoEditArtifact: (artifact: VideoEditArtifact, sourceNodeId: string) => void;
   onDeleteDocument: (cardDocumentId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
   onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
+  onStatus: (message: string) => void;
   onToggleNode: (nodeId: string) => void;
   onUpdateNodeFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
 };
@@ -39,6 +41,7 @@ const CANVAS_WHEEL_INTERACTIVE_SELECTOR = [
   ".canvas-zoom-controls",
   ".context-menu",
   ".popover",
+  ".video-timeline-editor",
   ".canvas-card-metadata-note",
   "input",
   "select",
@@ -49,6 +52,7 @@ const CANVAS_PAN_BLOCKING_SELECTOR = [
   ".canvas-zoom-controls",
   ".context-menu",
   ".popover",
+  ".video-timeline-editor",
   ".canvas-card-metadata-note",
   "input",
   "select",
@@ -61,6 +65,7 @@ const CANVAS_CONTEXT_MENU_BLOCKING_SELECTOR = [
   ".canvas-zoom-controls",
   ".context-menu",
   ".popover",
+  ".video-timeline-editor",
   ".canvas-card-metadata-note",
   "input",
   "select",
@@ -104,11 +109,13 @@ export function CanvasStage({
   nodes,
   selectedIds,
   onCreateNote,
+  onCreateVideoEditArtifact,
   onDeleteDocument,
   onRenameDocument,
   onUpdateDocumentPrompt,
   onRedoDocument,
   onRegisterPreviewCapture,
+  onStatus,
   onToggleNode,
   onUpdateNodeFrame,
 }: CanvasStageProps) {
@@ -132,6 +139,7 @@ export function CanvasStage({
     screenX: number;
     screenY: number;
   } | null>(null);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const selectedIdSet = new Set(selectedIds);
   const { pan, zoom } = viewport;
   const zoomPercentage = Math.round(zoom * 100);
@@ -160,6 +168,11 @@ export function CanvasStage({
       window.document.removeEventListener("keydown", closeContextMenuWithKeyboard);
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!editingNodeId || nodes.some((node) => node.id === editingNodeId)) return;
+    setEditingNodeId(null);
+  }, [editingNodeId, nodes]);
 
   function updateNodeFrame(nodeId: string, frame: CanvasNodeFrame) {
     const layer = cardLayerRef.current;
@@ -354,11 +367,16 @@ export function CanvasStage({
                 document={document}
                 node={node}
                 isSelected={selectedIdSet.has(node.cardDocumentId)}
+                isVideoEditorOpen={editingNodeId === node.id}
                 key={node.id}
+                onCloseVideoEditor={() => setEditingNodeId(null)}
+                onCreateVideoEditArtifact={onCreateVideoEditArtifact}
                 onDeleteDocument={onDeleteDocument}
+                onOpenVideoEditor={(nodeId) => setEditingNodeId(nodeId)}
                 onRenameDocument={onRenameDocument}
                 onRedoDocument={onRedoDocument}
                 onRegisterPreviewCapture={onRegisterPreviewCapture}
+                onStatus={onStatus}
                 onUpdateDocumentPrompt={onUpdateDocumentPrompt}
                 onUpdateFrame={updateNodeFrame}
                 onToggleSelect={onToggleNode}

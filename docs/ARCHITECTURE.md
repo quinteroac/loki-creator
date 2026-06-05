@@ -115,6 +115,9 @@ The first real skill is `backend/skills/imagegen/`. It vendors the standard Code
 Comfy skills from `quinteroac/comfy-agent-tools` are copied under `backend/skills/comfy-*` with minimal Loki metadata. Image workflows are split by visible intent into `comfy-image-generate`, `comfy-image-edit`, and `comfy-image-upscale`, while the private implementation still calls the upstream `comfy-imagegen` CLI. Their functional skill instructions remain standard; a shared private wrapper at `backend/skills/_comfy_runtime/` calls installed `comfy-*` CLIs and returns raw artifacts or diagnostics. Local model configuration uses `.comfy-agent-tools.json`; the default Loki models path is `.loki/models/comfyui`.
 
 Skill arguments are Loki-specific metadata. The bridge asks them one at a time before launching the agent, stores answers in an in-memory conversation, and passes the collected values to skill actions through `params`.
+Arguments may include `dependsOn` to ask a field only when previously collected
+argument values match, for example a second-mode resolution field that only
+appears after choosing that mode.
 
 ## Cards
 
@@ -131,6 +134,8 @@ Cards remain Loki's visual contract.
 - `metadata`
 
 The frontend stores card content separately from canvas layout. `CardDocument` owns artifact data; `CanvasNode` owns position and size. This keeps visual placement independent from skill output.
+Card metadata preserves skill-specific extra fields so later runs can use a
+selected card as a reproducible artifact input.
 
 ## Projects
 

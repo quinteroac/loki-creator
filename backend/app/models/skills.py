@@ -49,6 +49,7 @@ class SkillArgumentDefinition(BaseModel):
     type: SkillArgumentType = "text"
     required: bool = False
     ask_when: SkillArgumentAskWhen = Field(default="missing", alias="askWhen")
+    depends_on: dict[str, str] = Field(default_factory=dict, alias="dependsOn")
     options: list[SkillArgumentOption] = Field(default_factory=list)
     order: int = 0
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { layout, prepare } from "@chenglou/pretext";
-import { Download, Info, RotateCcw, Trash2 } from "lucide-react";
+import { Download, Info, RotateCcw, Scissors, Trash2 } from "lucide-react";
 import {
   downloadCardDocument,
   extractSelectedCardMediaAssets,
@@ -13,7 +13,8 @@ import {
   isDataUrlWithinLimit,
   SELECTED_CARD_PREVIEW_MAX_BYTES,
 } from "../lib/cardDocuments";
-import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview } from "../types";
+import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview, VideoEditArtifact } from "../types";
+import { VideoTimelineEditor } from "./VideoTimelineEditor";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
   drawElementImage?: (element: Element, x: number, y: number, width: number, height: number) => void;
@@ -26,17 +27,22 @@ type CanvasCardProps = {
   node: CanvasNode;
   isSelected: boolean;
   onDeleteDocument: (cardDocumentId: string) => void;
+  onCreateVideoEditArtifact: (artifact: VideoEditArtifact, sourceNodeId: string) => void;
+  onCloseVideoEditor: () => void;
+  onOpenVideoEditor: (nodeId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
+  onStatus: (message: string) => void;
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
+  isVideoEditorOpen: boolean;
   zoom: number;
 };
 
 const CONTEXT_MENU_WIDTH = 176;
-const CONTEXT_MENU_ESTIMATED_HEIGHT = 152;
+const CONTEXT_MENU_ESTIMATED_HEIGHT = 200;
 const CONTEXT_MENU_OFFSET = 8;
 const NOTE_TITLE_HEIGHT = 52;
 const CARD_TEXT_FONT_FAMILY = '"DM Sans", Inter, "Helvetica Neue", Helvetica, Arial, sans-serif';
@@ -238,12 +244,17 @@ export function CanvasCard({
   node,
   isSelected,
   onDeleteDocument,
+  onCreateVideoEditArtifact,
+  onCloseVideoEditor,
+  onOpenVideoEditor,
   onRenameDocument,
   onRedoDocument,
   onRegisterPreviewCapture,
+  onStatus,
   onUpdateDocumentPrompt,
   onToggleSelect,
   onUpdateFrame,
+  isVideoEditorOpen,
   zoom,
 }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -274,6 +285,10 @@ export function CanvasCard({
   const editableTitle = getCardEditableTitle(document);
   const isNote = document.metadata?.kind === "note";
   const isAudio = document.metadata?.kind === "audio";
+  const videoArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "video"
+    ? document.metadata.artifactUrl
+    : "";
+  const canEditVideo = Boolean(videoArtifactUrl);
   const audioPreviewSource = useMemo(() => getAudioPreviewSource(document), [document]);
   const usesNativeAudioPreview = Boolean(audioPreviewSource);
   const frame = node.frame;
@@ -634,6 +649,11 @@ export function CanvasCard({
     setContextMenuPosition(null);
   }
 
+  function handleEditVideo() {
+    onOpenVideoEditor(node.id);
+    setContextMenuPosition(null);
+  }
+
   function handleDelete() {
     onDeleteDocument(document.id);
     setContextMenuPosition(null);
@@ -641,7 +661,7 @@ export function CanvasCard({
 
   return (
     <article
-      className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""}`}
+      className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""} ${isVideoEditorOpen ? "video-editor-open" : ""}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onPointerCancel={handlePointerCancel}
@@ -793,6 +813,15 @@ export function CanvasCard({
         aria-label={`Resize ${accessibleTitle}`}
         onPointerDown={handleResizePointerDown}
       />
+      {isVideoEditorOpen && canEditVideo && (
+        <VideoTimelineEditor
+          artifactUrl={videoArtifactUrl}
+          title={accessibleTitle}
+          onClose={onCloseVideoEditor}
+          onCreateArtifact={(artifact) => onCreateVideoEditArtifact(artifact, node.id)}
+          onStatus={onStatus}
+        />
+      )}
       {contextMenuPosition && (
         <div
           className="context-menu canvas-card-context-menu"
@@ -811,6 +840,12 @@ export function CanvasCard({
           }}
           onPointerDown={stopCardInteraction}
         >
+          {canEditVideo && (
+            <button className="context-menu-item" type="button" role="menuitem" onClick={handleEditVideo}>
+              <Scissors size={16} aria-hidden="true" />
+              <span>Editar</span>
+            </button>
+          )}
           <button className="context-menu-item" type="button" role="menuitem" onClick={handleRedo}>
             <RotateCcw size={16} aria-hidden="true" />
             <span>Rehacer</span>

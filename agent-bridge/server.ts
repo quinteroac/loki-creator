@@ -60,6 +60,7 @@ type LokiSkillArgument = {
   type: "choice" | "text";
   required: boolean;
   askWhen: "always" | "missing";
+  dependsOn?: Record<string, string>;
   options: LokiSkillArgumentOption[];
   order: number;
 };
@@ -819,6 +820,12 @@ function createLokiSkillPiTool(
   const s2vidgenDescription = skill.id === "comfy-s2vidgen"
     ? " For WAN S2V, the prompt parameter must be the final WAN scene prompt, not a copy of the user's request and not UI/card description text. Follow the skill instructions: write one audio-driven scene starting with \"In the video,\" or \"The video shows\", describing the subject, speech/singing/dialogue/performance, expression, mouth motion, body movement, camera, and environment."
     : "";
+  const seedSeekerDescription = skill.id === "ltx-seed-seeker"
+    ? " For LTX Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution LTX i2v seed candidate video cards from the same prompt and first selected image input. Do not pass or request first/last-frame mode. For paramsJson.runMode=\"rerender\", require a selected LTX Seed Seeker preview video card and pass only the user's final render intent; the action reuses the selected card's prompt, seed, model, aspect ratio, and duration, changing only paramsJson.targetResolution."
+    : "";
+  const wanSeedSeekerDescription = skill.id === "wan-seed-seeker"
+    ? " For WAN Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution WAN seed candidate video cards from the same prompt. Preserve paramsJson.videoMode as \"i2v\" or \"flf2v\"; for flf2v the first selected image is the first frame and the last selected image is the last frame. Do not split previews into multiple skill calls. WAN has no LTX 2x upscale path, so the action uses direct 360p, 720p, or 1080p dimensions. For paramsJson.runMode=\"rerender\", require a selected WAN Seed Seeker preview video card and pass only paramsJson.targetResolution."
+    : "";
   const animaImagegenDescription = skill.id === "comfy-image-generate"
     ? " For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not use empty reference tokens like use reference image, exact same character, same pose, or same outfit unless the skill is an edit mode with an actual image input."
     : "";
@@ -831,15 +838,19 @@ function createLokiSkillPiTool(
       ? "Final WAN S2V scene prompt only. Start with 'In the video,' or 'The video shows'. Describe one audio-driven performance scene with subject, speech/singing/dialogue, expression, mouth motion, body movement, camera, and environment. Do not write 'Generate a video from the selected image/audio'."
       : skill.id === "imagegen"
         ? "Complete imagegen request. Preserve exact counts, storyboard beats, numbered lists, variants, options, and asset-pack requirements so the action can return separate image cards. If the count is explicit, also include paramsJson.imageCount."
-        : skill.id === "comfy-image-generate"
-          ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance."
-        : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
+        : skill.id === "ltx-seed-seeker"
+          ? "Final single-shot LTX i2v motion prompt. In preview mode this prompt is used for all three seed candidates from the first selected image. In rerender mode the selected preview card's stored prompt is authoritative."
+          : skill.id === "wan-seed-seeker"
+            ? "Final single-shot WAN motion prompt. In preview mode this prompt is used for all three seed candidates. For flf2v, describe the coherent transition from the first selected image to the last selected image. In rerender mode the selected preview card's stored prompt is authoritative."
+          : skill.id === "comfy-image-generate"
+            ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance."
+            : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
 
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
-    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${seedSeekerDescription}${wanSeedSeekerDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
+    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${seedSeekerDescription}${wanSeedSeekerDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
         description: promptDescription,
@@ -1290,10 +1301,17 @@ function createArgumentQuestion(skill: LokiSkill, argument: LokiSkillArgument): 
   };
 }
 
+function argumentDependsOnMatches(argument: LokiSkillArgument, collectedArgs: Record<string, string>) {
+  const dependencies = argument.dependsOn ?? {};
+  return Object.entries(dependencies).every(([argumentId, expectedValue]) => (
+    normalizeAnswerValue(collectedArgs[argumentId]) === String(expectedValue)
+  ));
+}
+
 function findNextSkillQuestion(selectedSkills: LokiSkill[], collectedArgs: Record<string, string>) {
   const candidates = selectedSkills
     .flatMap((skill) => (skill.arguments ?? []).map((argument) => ({ skill, argument })))
-    .filter(({ argument }) => argument.required || argument.askWhen === "always")
+    .filter(({ argument }) => (argument.required || argument.askWhen === "always") && argumentDependsOnMatches(argument, collectedArgs))
     .sort((left, right) => {
       const orderDelta = (left.argument.order ?? 0) - (right.argument.order ?? 0);
       if (orderDelta !== 0) return orderDelta;

@@ -13,7 +13,10 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from PIL import Image
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    Image = None
 
 
 IMAGE_MIME_TYPES = {"image/png": ".png", "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/webp": ".webp"}
@@ -32,6 +35,12 @@ VIDEO_BASE_DIMENSIONS = {
     "9:16": (288, 512),
 }
 VIDEO_RESOLUTION_DIMENSIONS = {
+    "360p": {
+        "1:1": (360, 360),
+        "4:3": (480, 360),
+        "16:9": (640, 360),
+        "9:16": (360, 640),
+    },
     "480p": {
         "1:1": (480, 480),
         "4:3": (640, 480),
@@ -43,6 +52,12 @@ VIDEO_RESOLUTION_DIMENSIONS = {
         "4:3": (960, 720),
         "16:9": (1280, 720),
         "9:16": (720, 1280),
+    },
+    "1080p": {
+        "1:1": (1080, 1080),
+        "4:3": (1440, 1080),
+        "16:9": (1920, 1080),
+        "9:16": (1080, 1920),
     },
 }
 MUSIC_QUALITY_DEFAULTS = {
@@ -501,6 +516,10 @@ def normalize_video_model_profile(value: str) -> str:
         "ltx-2.3": "ltx23-10eros",
         "ltx-2.3-10eros": "ltx23-10eros",
         "ltx23-local": "ltx23-10eros",
+        "ltx23-dasiwa": "ltx23-dasiwa-golden-lace-v3",
+        "ltx23-dasiwa-golden-lace": "ltx23-dasiwa-golden-lace-v3",
+        "dasiwa-golden-lace": "ltx23-dasiwa-golden-lace-v3",
+        "golden-lace": "ltx23-dasiwa-golden-lace-v3",
         "seedance": "seedance2-api",
         "seedance2": "seedance2-api",
         "seedance-2": "seedance2-api",
@@ -621,7 +640,7 @@ def divisible_by_16(value: int) -> int:
 
 
 def image_dimensions(path: Path | None) -> tuple[int | None, int | None]:
-    if path is None:
+    if path is None or Image is None:
         return None, None
     try:
         with Image.open(path) as image:
@@ -631,6 +650,8 @@ def image_dimensions(path: Path | None) -> tuple[int | None, int | None]:
 
 
 def half_scale_image_input(path: Path, inputs_dir: Path, label: str) -> Path:
+    if Image is None:
+        raise RuntimeError("Pillow is required to resize LTX image inputs.")
     with Image.open(path) as image:
         width, height = image.size
         target_width = max(16, width // 2)

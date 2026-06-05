@@ -19,7 +19,7 @@ CardAspectRatio = Literal["1:1", "4:3", "16:9", "9:16", "auto"]
 
 
 class CardMetadata(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     kind: CardKind | None = None
     title: str | None = None
