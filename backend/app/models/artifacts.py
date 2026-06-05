@@ -69,6 +69,31 @@ class VideoTrimRequest(VideoArtifactRequest):
     end_seconds: float = Field(alias="endSeconds")
 
 
+class AudioArtifactRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    artifact_url: str = Field(alias="artifactUrl")
+
+
+class AudioTimelineRequest(AudioArtifactRequest):
+    max_peaks: int | None = Field(default=None, alias="maxPeaks")
+
+
+class AudioTimelineResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    artifact_url: str = Field(alias="artifactUrl")
+    duration_seconds: float = Field(alias="durationSeconds")
+    sample_rate: int = Field(alias="sampleRate")
+    channels: int
+    peaks: list[float] = Field(default_factory=list)
+
+
+class AudioTrimRequest(AudioArtifactRequest):
+    start_seconds: float = Field(alias="startSeconds")
+    end_seconds: float = Field(alias="endSeconds")
+
+
 class VideoEditArtifact(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -78,9 +103,11 @@ class VideoEditArtifact(BaseModel):
     kind: str
     mime_type: str = Field(alias="mimeType")
     size: int
-    width: int
-    height: int
+    width: int | None = None
+    height: int | None = None
     duration_seconds: float | None = Field(default=None, alias="durationSeconds")
     time_seconds: float | None = Field(default=None, alias="timeSeconds")
     start_seconds: float | None = Field(default=None, alias="startSeconds")
     end_seconds: float | None = Field(default=None, alias="endSeconds")
+    sample_rate: int | None = Field(default=None, alias="sampleRate")
+    channels: int | None = None

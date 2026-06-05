@@ -10,14 +10,14 @@ import {
   getCardHeight,
 } from "../lib/cardDocuments";
 import { CanvasCard } from "./CanvasCard";
-import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview, VideoEditArtifact } from "../types";
+import type { CardDocument, CanvasNode, CanvasNodeFrame, EditedMediaArtifact, SelectedCardPreview } from "../types";
 
 type CanvasStageProps = {
   documentsById: Record<string, CardDocument>;
   nodes: CanvasNode[];
   selectedIds: string[];
   onCreateNote: (frame: CanvasNodeFrame) => void;
-  onCreateVideoEditArtifact: (artifact: VideoEditArtifact, sourceNodeId: string) => void;
+  onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string) => void;
   onDeleteDocument: (cardDocumentId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
@@ -41,6 +41,7 @@ const CANVAS_WHEEL_INTERACTIVE_SELECTOR = [
   ".canvas-zoom-controls",
   ".context-menu",
   ".popover",
+  ".audio-timeline-editor",
   ".video-timeline-editor",
   ".canvas-card-metadata-note",
   "input",
@@ -52,6 +53,7 @@ const CANVAS_PAN_BLOCKING_SELECTOR = [
   ".canvas-zoom-controls",
   ".context-menu",
   ".popover",
+  ".audio-timeline-editor",
   ".video-timeline-editor",
   ".canvas-card-metadata-note",
   "input",
@@ -65,6 +67,7 @@ const CANVAS_CONTEXT_MENU_BLOCKING_SELECTOR = [
   ".canvas-zoom-controls",
   ".context-menu",
   ".popover",
+  ".audio-timeline-editor",
   ".video-timeline-editor",
   ".canvas-card-metadata-note",
   "input",
@@ -109,7 +112,7 @@ export function CanvasStage({
   nodes,
   selectedIds,
   onCreateNote,
-  onCreateVideoEditArtifact,
+  onCreateEditedMediaArtifact,
   onDeleteDocument,
   onRenameDocument,
   onUpdateDocumentPrompt,
@@ -367,12 +370,12 @@ export function CanvasStage({
                 document={document}
                 node={node}
                 isSelected={selectedIdSet.has(node.cardDocumentId)}
-                isVideoEditorOpen={editingNodeId === node.id}
+                isMediaEditorOpen={editingNodeId === node.id}
                 key={node.id}
-                onCloseVideoEditor={() => setEditingNodeId(null)}
-                onCreateVideoEditArtifact={onCreateVideoEditArtifact}
+                onCloseMediaEditor={() => setEditingNodeId(null)}
+                onCreateEditedMediaArtifact={onCreateEditedMediaArtifact}
                 onDeleteDocument={onDeleteDocument}
-                onOpenVideoEditor={(nodeId) => setEditingNodeId(nodeId)}
+                onOpenMediaEditor={(nodeId) => setEditingNodeId(nodeId)}
                 onRenameDocument={onRenameDocument}
                 onRedoDocument={onRedoDocument}
                 onRegisterPreviewCapture={onRegisterPreviewCapture}

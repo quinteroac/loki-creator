@@ -1,5 +1,9 @@
 from app.models.agents import AgentDefinition, AgentSkillDefinition, AgentSkillStep
 from app.models.artifacts import (
+    AudioArtifactRequest,
+    AudioTimelineRequest,
+    AudioTimelineResponse,
+    AudioTrimRequest,
     ArchiveArtifactsRequest,
     ArchiveArtifactsResponse,
     ArchivedArtifact,
@@ -33,6 +37,10 @@ __all__ = [
     "AgentDefinition",
     "AgentSkillDefinition",
     "AgentSkillStep",
+    "AudioArtifactRequest",
+    "AudioTimelineRequest",
+    "AudioTimelineResponse",
+    "AudioTrimRequest",
     "ArchiveArtifactsRequest",
     "ArchiveArtifactsResponse",
     "ArchivedArtifact",

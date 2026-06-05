@@ -43,10 +43,10 @@ import type {
   CanvasNode,
   CanvasNodeFrame,
   CardDocument,
+  EditedMediaArtifact,
   ProjectSummary,
   SelectedCardPreview,
   SkillRun,
-  VideoEditArtifact,
 } from "./types";
 
 const fallbackModels: AgentModel[] = [
@@ -731,7 +731,7 @@ export function App() {
     );
   }
 
-  function createCardFromVideoEditArtifact(artifact: VideoEditArtifact, sourceNodeId: string) {
+  function createCardFromEditedMediaArtifact(artifact: EditedMediaArtifact, sourceNodeId: string) {
     const editedDocument = createCardDocumentForEditedArtifact(artifact);
     const sourceNode = canvasNodes.find((candidate) => candidate.id === sourceNodeId);
     const sourceDocument = sourceNode ? documentsById[sourceNode.cardDocumentId] : undefined;
@@ -1155,7 +1155,7 @@ export function App() {
         documentsById={documentsById}
         nodes={canvasNodes}
         onCreateNote={createNote}
-        onCreateVideoEditArtifact={createCardFromVideoEditArtifact}
+        onCreateEditedMediaArtifact={createCardFromEditedMediaArtifact}
         onDeleteDocument={deleteDocument}
         onRenameDocument={renameDocument}
         onRedoDocument={redoDocument}

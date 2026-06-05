@@ -368,7 +368,7 @@ button {
   box-shadow: none;
 }
 
-.canvas-card.video-editor-open {
+.canvas-card.media-editor-open {
   z-index: 6;
 }
 
@@ -457,7 +457,8 @@ button {
   color: var(--brand-coral);
 }
 
-.video-timeline-editor {
+.video-timeline-editor,
+.audio-timeline-editor {
   position: absolute;
   z-index: 8;
   top: calc(100% + 10px);
@@ -476,6 +477,10 @@ button {
   pointer-events: auto;
   touch-action: none;
   user-select: none;
+}
+
+.audio-timeline-editor {
+  width: max(100%, 460px);
 }
 
 .video-editor-header {
@@ -595,6 +600,46 @@ button {
   border-radius: 7px;
   opacity: 0.82;
   pointer-events: none;
+}
+
+.audio-editor-player {
+  display: block;
+  width: 100%;
+  height: 38px;
+}
+
+.audio-editor-waveform {
+  position: relative;
+  display: grid;
+  height: 104px;
+  padding: 8px;
+  overflow: hidden;
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 12px;
+  cursor: crosshair;
+}
+
+.audio-editor-waveform:focus-visible {
+  outline: 2px solid var(--brand-blue-deep);
+  outline-offset: 2px;
+}
+
+.audio-editor-peaks {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.audio-editor-peak {
+  flex: 1 1 0;
+  min-width: 1px;
+  background: var(--stone);
+  border-radius: 9999px;
+  opacity: 0.86;
 }
 
 .video-editor-trim-range {

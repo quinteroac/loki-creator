@@ -47,20 +47,32 @@ export type VideoTimelineResponse = {
   thumbnails: VideoTimelineThumbnail[];
 };
 
-export type VideoEditArtifact = {
+export type AudioTimelineResponse = {
+  artifactUrl: string;
+  durationSeconds: number;
+  sampleRate: number;
+  channels: number;
+  peaks: number[];
+};
+
+export type EditedMediaArtifact = {
   artifactUrl: string;
   sourceArtifactUrl: string;
   name: string;
-  kind: "image" | "video";
+  kind: "image" | "video" | "audio";
   mimeType: string;
   size: number;
-  width: number;
-  height: number;
+  width?: number | null;
+  height?: number | null;
   durationSeconds?: number | null;
   timeSeconds?: number | null;
   startSeconds?: number | null;
   endSeconds?: number | null;
+  sampleRate?: number | null;
+  channels?: number | null;
 };
+
+export type VideoEditArtifact = EditedMediaArtifact;
 
 export type SelectedCardPreview =
   | {

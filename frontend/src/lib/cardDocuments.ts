@@ -5,10 +5,10 @@ import type {
   CardKind,
   CanvasNode,
   CanvasNodeFrame,
+  EditedMediaArtifact,
   SelectedCardMediaAsset,
   SelectedCardPreview,
   SelectedCardSnapshot,
-  VideoEditArtifact,
 } from "../types";
 import type { ImportedArtifact } from "../api/artifacts";
 
@@ -447,22 +447,29 @@ function formatMediaSeconds(value?: number | null): string {
   return `${minutes}:${paddedSeconds}`;
 }
 
-export function createCardDocumentForEditedArtifact(artifact: VideoEditArtifact): CardDocument {
+export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifact): CardDocument {
   const isFrame = artifact.kind === "image";
+  const isAudio = artifact.kind === "audio";
   const title = isFrame
     ? `Frame ${formatMediaSeconds(artifact.timeSeconds)}`
+    : isAudio
+      ? `Audio clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`
     : `Clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`;
   const description = isFrame
     ? `Frame exported from video at ${formatMediaSeconds(artifact.timeSeconds)}.`
+    : isAudio
+      ? `Audio trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`
     : `Video trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`;
+  const editorId = isAudio ? "audio-editor" : "video-editor";
+  const actionId = isFrame ? "frame-export" : isAudio ? "audio-trim" : "video-trim";
 
   return {
-    id: `card_video_edit_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`,
+    id: `card_media_edit_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`,
     name: title,
     prompt: description,
     html: importedArtifactHtml(artifact),
-    sourceSkillId: "video-editor",
-    sourceActionId: isFrame ? "frame-export" : "video-trim",
+    sourceSkillId: editorId,
+    sourceActionId: actionId,
     metadata: {
       kind: artifact.kind,
       title,
@@ -470,17 +477,19 @@ export function createCardDocumentForEditedArtifact(artifact: VideoEditArtifact)
       artifactUrl: artifact.artifactUrl,
       thumbnailUrl: isFrame ? artifact.artifactUrl : undefined,
       createdAt: new Date().toISOString(),
-      tags: ["video-editor", isFrame ? "frame" : "trim"],
-      capabilities: ["video-edit"],
-      preferredAspectRatio: "auto",
+      tags: [editorId, isFrame ? "frame" : "trim"],
+      capabilities: [isAudio ? "audio-edit" : "video-edit"],
+      preferredAspectRatio: isAudio ? "4:3" : "auto",
       playableMedia: !isFrame,
-      width: artifact.width,
-      height: artifact.height,
+      width: artifact.width ?? undefined,
+      height: artifact.height ?? undefined,
       sourceArtifactUrl: artifact.sourceArtifactUrl,
       durationSeconds: artifact.durationSeconds,
       timeSeconds: artifact.timeSeconds,
       startSeconds: artifact.startSeconds,
       endSeconds: artifact.endSeconds,
+      sampleRate: artifact.sampleRate,
+      channels: artifact.channels,
     },
   };
 }

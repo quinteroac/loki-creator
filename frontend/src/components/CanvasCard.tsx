@@ -13,7 +13,8 @@ import {
   isDataUrlWithinLimit,
   SELECTED_CARD_PREVIEW_MAX_BYTES,
 } from "../lib/cardDocuments";
-import type { CardDocument, CanvasNode, CanvasNodeFrame, SelectedCardPreview, VideoEditArtifact } from "../types";
+import type { CardDocument, CanvasNode, CanvasNodeFrame, EditedMediaArtifact, SelectedCardPreview } from "../types";
+import { AudioTimelineEditor } from "./AudioTimelineEditor";
 import { VideoTimelineEditor } from "./VideoTimelineEditor";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
@@ -27,9 +28,9 @@ type CanvasCardProps = {
   node: CanvasNode;
   isSelected: boolean;
   onDeleteDocument: (cardDocumentId: string) => void;
-  onCreateVideoEditArtifact: (artifact: VideoEditArtifact, sourceNodeId: string) => void;
-  onCloseVideoEditor: () => void;
-  onOpenVideoEditor: (nodeId: string) => void;
+  onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string) => void;
+  onCloseMediaEditor: () => void;
+  onOpenMediaEditor: (nodeId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
@@ -37,7 +38,7 @@ type CanvasCardProps = {
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
-  isVideoEditorOpen: boolean;
+  isMediaEditorOpen: boolean;
   zoom: number;
 };
 
@@ -244,9 +245,9 @@ export function CanvasCard({
   node,
   isSelected,
   onDeleteDocument,
-  onCreateVideoEditArtifact,
-  onCloseVideoEditor,
-  onOpenVideoEditor,
+  onCreateEditedMediaArtifact,
+  onCloseMediaEditor,
+  onOpenMediaEditor,
   onRenameDocument,
   onRedoDocument,
   onRegisterPreviewCapture,
@@ -254,7 +255,7 @@ export function CanvasCard({
   onUpdateDocumentPrompt,
   onToggleSelect,
   onUpdateFrame,
-  isVideoEditorOpen,
+  isMediaEditorOpen,
   zoom,
 }: CanvasCardProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -288,7 +289,12 @@ export function CanvasCard({
   const videoArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "video"
     ? document.metadata.artifactUrl
     : "";
+  const editableAudioArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "audio"
+    ? document.metadata.artifactUrl
+    : "";
   const canEditVideo = Boolean(videoArtifactUrl);
+  const canEditAudio = Boolean(editableAudioArtifactUrl);
+  const canEditMedia = canEditVideo || canEditAudio;
   const audioPreviewSource = useMemo(() => getAudioPreviewSource(document), [document]);
   const usesNativeAudioPreview = Boolean(audioPreviewSource);
   const frame = node.frame;
@@ -649,8 +655,8 @@ export function CanvasCard({
     setContextMenuPosition(null);
   }
 
-  function handleEditVideo() {
-    onOpenVideoEditor(node.id);
+  function handleEditMedia() {
+    onOpenMediaEditor(node.id);
     setContextMenuPosition(null);
   }
 
@@ -661,7 +667,7 @@ export function CanvasCard({
 
   return (
     <article
-      className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""} ${isVideoEditorOpen ? "video-editor-open" : ""}`}
+      className={`canvas-card ${isSelected ? "selected" : ""} ${isDragging ? "dragging" : ""} ${isMediaEditorOpen ? "media-editor-open" : ""}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
       onPointerCancel={handlePointerCancel}
@@ -813,12 +819,21 @@ export function CanvasCard({
         aria-label={`Resize ${accessibleTitle}`}
         onPointerDown={handleResizePointerDown}
       />
-      {isVideoEditorOpen && canEditVideo && (
+      {isMediaEditorOpen && canEditVideo && (
         <VideoTimelineEditor
           artifactUrl={videoArtifactUrl}
           title={accessibleTitle}
-          onClose={onCloseVideoEditor}
-          onCreateArtifact={(artifact) => onCreateVideoEditArtifact(artifact, node.id)}
+          onClose={onCloseMediaEditor}
+          onCreateArtifact={(artifact) => onCreateEditedMediaArtifact(artifact, node.id)}
+          onStatus={onStatus}
+        />
+      )}
+      {isMediaEditorOpen && canEditAudio && (
+        <AudioTimelineEditor
+          artifactUrl={editableAudioArtifactUrl}
+          title={accessibleTitle}
+          onClose={onCloseMediaEditor}
+          onCreateArtifact={(artifact) => onCreateEditedMediaArtifact(artifact, node.id)}
           onStatus={onStatus}
         />
       )}
@@ -840,8 +855,8 @@ export function CanvasCard({
           }}
           onPointerDown={stopCardInteraction}
         >
-          {canEditVideo && (
-            <button className="context-menu-item" type="button" role="menuitem" onClick={handleEditVideo}>
+          {canEditMedia && (
+            <button className="context-menu-item" type="button" role="menuitem" onClick={handleEditMedia}>
               <Scissors size={16} aria-hidden="true" />
               <span>Editar</span>
             </button>

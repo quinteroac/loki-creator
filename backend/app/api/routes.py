@@ -5,6 +5,9 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from fastapi.responses import FileResponse
 
 from app.models import (
+    AudioTimelineRequest,
+    AudioTimelineResponse,
+    AudioTrimRequest,
     ArchiveArtifactsRequest,
     ArchiveArtifactsResponse,
     ImportedArtifact,
@@ -23,6 +26,8 @@ from app.models import (
     VideoTrimRequest,
 )
 from app.services import (
+    AudioEditorError,
+    AudioEditorService,
     ArtifactArchiveService,
     InstructionService,
     ProjectNotFoundError,
@@ -63,6 +68,10 @@ def get_artifact_archive_service() -> ArtifactArchiveService:
 
 def get_video_editor_service() -> VideoEditorService:
     return VideoEditorService(artifacts_root)
+
+
+def get_audio_editor_service() -> AudioEditorService:
+    return AudioEditorService(artifacts_root)
 
 
 @router.get("/health")
@@ -190,6 +199,28 @@ def trim_video_artifact(
     try:
         return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds)
     except VideoEditorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/audio/timeline", response_model=AudioTimelineResponse)
+def create_audio_timeline(
+    payload: AudioTimelineRequest,
+    service: AudioEditorService = Depends(get_audio_editor_service),
+) -> AudioTimelineResponse:
+    try:
+        return service.timeline(payload.artifact_url, payload.max_peaks)
+    except AudioEditorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/audio/trim", response_model=VideoEditArtifact)
+def trim_audio_artifact(
+    payload: AudioTrimRequest,
+    service: AudioEditorService = Depends(get_audio_editor_service),
+) -> VideoEditArtifact:
+    try:
+        return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds)
+    except AudioEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
