@@ -132,6 +132,14 @@ Execution strategy:
 - In the built-in default path, produce many assets or variants by issuing one `image_gen` call per requested asset or variant.
 - In the CLI fallback path, use the CLI `generate-batch` subcommand only when the user explicitly chose CLI mode and needs many prompts/assets.
 - For many distinct assets, do not use `n` as a substitute for separate prompts. `n` is for variants of one prompt; distinct assets need distinct built-in calls or distinct CLI `generate-batch` jobs.
+- In Loki action mode, multiple requested assets, options, storyboard frames,
+  sequence steps, character sheets, or variants must be returned as multiple
+  artifacts in one skill invocation so Loki can package them as separate cards.
+  Do not combine them into one collage/contact sheet/grid/comic page unless the
+  user explicitly asks for a single combined image.
+- If the user asks for multiple images without an exact count, create 4 separate
+  images/cards. If the user gives an exact count, preserve that count and let the
+  Loki runtime attempt the full request within the job timeout.
 
 Assume the user wants a new image unless they clearly ask to change an existing one.
 
@@ -140,6 +148,8 @@ Assume the user wants a new image unless they clearly ask to change an existing 
 2. Decide the intent: `generate` or `edit`.
 3. Decide whether the output is preview-only or meant to be consumed by the current project.
 4. Decide the execution strategy: single asset vs repeated built-in calls vs CLI `generate-batch`.
+   In Loki action mode, a multi-image execution strategy still means one skill
+   action call that returns multiple image artifacts.
 5. Collect inputs up front: prompt(s), exact text (verbatim), constraints/avoid list, and any input images.
 6. For every input image, label its role explicitly:
    - reference image

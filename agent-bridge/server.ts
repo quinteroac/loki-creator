@@ -810,6 +810,9 @@ function createLokiSkillPiTool(
     : "";
   const skillActionDescription =
     " The action can return normal artifacts such as images, videos, audio, HTML, text, or diagnostics; Loki will package those outputs into canvas cards.";
+  const imagegenDescription = skill.id === "imagegen"
+    ? " For imagegen, preserve requested counts, ordered lists, storyboard frames, variants, options, and asset packs in one skill invocation. If the user asks for multiple images, do not collapse them into one collage or contact sheet unless explicitly requested; pass the complete multi-image requirement in prompt. If the user gives an explicit count, include paramsJson.imageCount."
+    : "";
   const musicgenDescription = skill.id === "comfy-musicgen"
     ? " For ACE-Step music generation, the prompt parameter must be a comma-separated music caption/tag list, not a natural-language request. Never write phrases like \"generate a song\" or \"make music about\" in prompt. Rewrite the user request into tags such as genre, vocal intent, instruments, mood, production style, BPM, and key; put lyrics only in paramsJson.lyrics."
     : "";
@@ -826,15 +829,17 @@ function createLokiSkillPiTool(
     ? "ACE-Step music caption only: comma-separated tags such as genre, vocal intent, instruments, mood, production style, BPM, and key. Do not pass natural-language instructions like 'generate a song'."
     : skill.id === "comfy-s2vidgen"
       ? "Final WAN S2V scene prompt only. Start with 'In the video,' or 'The video shows'. Describe one audio-driven performance scene with subject, speech/singing/dialogue, expression, mouth motion, body movement, camera, and environment. Do not write 'Generate a video from the selected image/audio'."
-      : skill.id === "comfy-image-generate"
-        ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance."
-      : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
+      : skill.id === "imagegen"
+        ? "Complete imagegen request. Preserve exact counts, storyboard beats, numbered lists, variants, options, and asset-pack requirements so the action can return separate image cards. If the count is explicit, also include paramsJson.imageCount."
+        : skill.id === "comfy-image-generate"
+          ? "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance."
+        : "Operational instruction for the Loki skill action. This is not user-visible card copy.";
 
   return defineTool({
     name: toPiSkillToolName(skill),
     label: skill.name,
-    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
-    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
+    description: `${skill.description} This is a Loki skill action. Use it to create or transform artifacts for Loki canvas cards. Skills contain instructions; Loki packages returned artifacts into cards.${skillActionDescription}${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${selectedCardDescription}${attachmentDescription}`,
+    promptSnippet: `${skill.name}: ${skill.description}. Use prompt for operational instructions, not visible card chrome. Use paramsJson for optional structured params.${imagegenDescription}${musicgenDescription}${s2vidgenDescription}${animaImagegenDescription}${loraDescription}${skillActionDescription}${selectedCardDescription}${attachmentDescription}`,
     parameters: Type.Object({
       prompt: Type.String({
         description: promptDescription,

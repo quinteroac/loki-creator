@@ -168,19 +168,44 @@ def materialize_selected_images(payload: dict, inputs_dir: Path) -> list[Path]:
 
 def write_output_schema(run_dir: Path) -> Path:
     schema_path = run_dir / "codex-output-schema.json"
+    image_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["title", "prompt", "imagePath", "mimeType", "width", "height"],
+        "properties": {
+            "title": {"type": "string"},
+            "prompt": {"type": "string"},
+            "imagePath": {"type": "string"},
+            "mimeType": {"type": "string"},
+            "width": {"type": "integer"},
+            "height": {"type": "integer"},
+        },
+    }
     schema_path.write_text(
         json.dumps(
             {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["title", "prompt", "imagePath", "mimeType", "width", "height"],
+                "required": ["images", "diagnostics"],
                 "properties": {
-                    "title": {"type": "string"},
-                    "prompt": {"type": "string"},
-                    "imagePath": {"type": "string"},
-                    "mimeType": {"type": "string"},
-                    "width": {"type": "integer"},
-                    "height": {"type": "integer"},
+                    "images": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": image_schema,
+                    },
+                    "diagnostics": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["level", "title", "message"],
+                            "properties": {
+                                "level": {"type": "string", "enum": ["info", "warning", "error"]},
+                                "title": {"type": "string"},
+                                "message": {"type": "string"},
+                            },
+                        },
+                    },
                 },
             },
             indent=2,
@@ -188,6 +213,75 @@ def write_output_schema(run_dir: Path) -> Path:
         encoding="utf-8",
     )
     return schema_path
+
+
+NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "uno": 1,
+    "dos": 2,
+    "tres": 3,
+    "cuatro": 4,
+    "cinco": 5,
+    "seis": 6,
+    "siete": 7,
+    "ocho": 8,
+    "nueve": 9,
+    "diez": 10,
+}
+MULTI_IMAGE_HINT_RE = re.compile(
+    r"\b("
+    r"multiple|several|options|variants?|storyboards?|sequence|frames?|shots?|steps?|panels?|scenes?|"
+    r"varias?|varios|opciones|variantes|secuencia|fotogramas?|cuadros?|pasos?|paneles?|escenas?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def infer_requested_image_count(prompt: str, params: dict) -> int:
+    explicit_count = positive_int(params.get("imageCount"))
+    if explicit_count:
+        return explicit_count
+
+    count_pattern = re.compile(
+        r"\b(\d{1,2})\s*(?:images?|cards?|options?|variants?|frames?|shots?|steps?|panels?|"
+        r"imagenes?|imágenes?|cards?|opciones|variantes|fotogramas?|cuadros?|pasos?|paneles?)\b",
+        re.IGNORECASE,
+    )
+    match = count_pattern.search(prompt)
+    if match:
+        return int(match.group(1))
+
+    for word, count in NUMBER_WORDS.items():
+        if re.search(
+            rf"\b{re.escape(word)}\s+(?:images?|cards?|options?|variants?|frames?|shots?|steps?|panels?|"
+            r"imagenes?|imágenes?|cards?|opciones|variantes|fotogramas?|cuadros?|pasos?|paneles?)\b",
+            prompt,
+            re.IGNORECASE,
+        ):
+            return count
+
+    return 4 if MULTI_IMAGE_HINT_RE.search(prompt) else 1
 
 
 def extract_json_object(text: str) -> dict:
@@ -232,6 +326,12 @@ def build_codex_prompt(payload: dict, run_dir: Path, output_dir: Path, selected_
     )
 
     selected_image_lines = "\n".join(f"- {path}" for path in selected_images) or "- none"
+    requested_image_count = infer_requested_image_count(prompt, params)
+    count_requirement = (
+        f"Create exactly {requested_image_count} separate final image files for this request."
+        if requested_image_count > 1
+        else "Create exactly 1 final image file for this request unless the user's request explicitly requires multiple separate images."
+    )
 
     return f"""Use the Codex imagegen skill to create the requested raster image artifact for Loki Creator.
 
@@ -256,14 +356,18 @@ Selected image inputs available as --image attachments:
 Output requirements:
 - Use the imagegen skill's default built-in image generation/editing path unless the request explicitly requires a fallback.
 - If image attachments are present, treat them as visual input from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
+- {count_requirement}
+- For storyboards, sequences, numbered lists, asset packs, frames, variants, or options, save each item as its own separate image file. Do not combine separate requested items into a collage, contact sheet, grid, comic page, or single composite unless the user explicitly asks for one combined image.
 - {resolution_requirement}
 - {retry_requirement}
 - Do not crop, pad, stretch, upscale, downscale, or post-process the output just to fake a requested resolution.
-- Save exactly one final image file inside this directory: {output_dir}
+- Save every final image file inside this directory: {output_dir}
+- Use distinct descriptive filenames for each output image.
 - Do not save the final image only under CODEX_HOME or another temporary location; copy or move the chosen image into the output directory above.
 - Do not modify repository source files.
+- Always include diagnostics. Use an empty array when there are no issues. Each diagnostic must include level, title, and message; use an empty title string if there is no concise title.
 - Return only JSON matching this schema:
-  {{"title":"short card title","prompt":"final generation/edit prompt","imagePath":"absolute path to final image","mimeType":"image/png or image/jpeg or image/webp","width":1024,"height":1024}}
+  {{"images":[{{"title":"short card title","prompt":"final generation/edit prompt","imagePath":"absolute path to final image","mimeType":"image/png or image/jpeg or image/webp","width":1024,"height":1024}}],"diagnostics":[]}}
 
 Loki run directory:
 {run_dir}
@@ -386,6 +490,40 @@ def validate_output_image(result: dict, run_dir: Path) -> tuple[Path, str]:
     return image_path, mime_type
 
 
+def normalize_codex_images(result: dict) -> list[dict]:
+    images = result.get("images")
+    if isinstance(images, list):
+        return [image for image in images if isinstance(image, dict)]
+    if first_text(result.get("imagePath")):
+        return [result]
+    return []
+
+
+def normalize_codex_diagnostics(result: dict) -> list[dict | str]:
+    diagnostics = result.get("diagnostics")
+    if not isinstance(diagnostics, list):
+        return []
+
+    normalized: list[dict | str] = []
+    for diagnostic in diagnostics:
+        if isinstance(diagnostic, str) and diagnostic.strip():
+            normalized.append(diagnostic.strip())
+        elif isinstance(diagnostic, dict):
+            message = first_text(diagnostic.get("message"))
+            if message:
+                level = first_text(diagnostic.get("level")) or "warning"
+                if level not in {"info", "warning", "error"}:
+                    level = "warning"
+                normalized.append(
+                    {
+                        "level": level,
+                        "title": first_text(diagnostic.get("title")) or None,
+                        "message": message,
+                    }
+                )
+    return normalized
+
+
 def main() -> None:
     payload = read_payload()
     run_id = first_text(payload.get("runId"), f"skill_run_{uuid4().hex}")
@@ -395,33 +533,65 @@ def main() -> None:
 
     selected_images = materialize_selected_images(payload, run_dir / "inputs")
     result = run_codex(payload, run_dir, selected_images)
-    image_path, mime_type = validate_output_image(result, run_dir)
+    codex_images = normalize_codex_images(result)
+    if not codex_images:
+        raise RuntimeError("Codex response did not include images")
+
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
     resolution = normalize_resolution(params.get("resolution"))
-    width, height = read_image_dimensions(image_path)
-    title = first_text(result.get("title"), "Generated image")
-    final_prompt = first_text(result.get("prompt"), payload.get("prompt"))
+    artifacts: list[dict] = []
+    diagnostics = normalize_codex_diagnostics(result)
+    image_count = len(codex_images)
 
-    metadata = {
-        "resolution": resolution,
-        "requestedResolution": resolution,
-        "tags": ["imagegen"],
-        "capabilities": ["image-generation", "image-editing"],
-    }
-    if width:
-        metadata["width"] = width
-    if height:
-        metadata["height"] = height
+    for image_index, codex_image in enumerate(codex_images, start=1):
+        try:
+            image_path, mime_type = validate_output_image(codex_image, run_dir)
+        except Exception as error:
+            diagnostics.append(
+                {
+                    "level": "warning",
+                    "title": f"Image {image_index} skipped",
+                    "message": str(error),
+                    "metadata": {"imageIndex": image_index, "imageCount": image_count},
+                }
+            )
+            continue
 
-    artifact = {
-        "path": str(image_path),
-        "kind": "image",
-        "mimeType": mime_type,
-        "title": title,
-        "prompt": final_prompt,
-        "metadata": metadata,
-    }
-    print(json.dumps({"artifacts": [artifact]}))
+        width, height = read_image_dimensions(image_path)
+        title = first_text(codex_image.get("title"), result.get("title"), f"Generated image {image_index}")
+        final_prompt = first_text(codex_image.get("prompt"), result.get("prompt"), payload.get("prompt"))
+
+        metadata = {
+            "resolution": resolution,
+            "requestedResolution": resolution,
+            "imageIndex": image_index,
+            "imageCount": image_count,
+            "tags": ["imagegen"],
+            "capabilities": ["image-generation", "image-editing"],
+        }
+        if width:
+            metadata["width"] = width
+        if height:
+            metadata["height"] = height
+
+        artifacts.append(
+            {
+                "path": str(image_path),
+                "kind": "image",
+                "mimeType": mime_type,
+                "title": title,
+                "prompt": final_prompt,
+                "metadata": metadata,
+            }
+        )
+
+    if not artifacts:
+        details = "; ".join(
+            diagnostic["message"] for diagnostic in diagnostics if isinstance(diagnostic, dict) and diagnostic.get("message")
+        )
+        raise RuntimeError(f"Codex did not produce any valid image artifacts{': ' + details if details else ''}")
+
+    print(json.dumps({"artifacts": artifacts, "diagnostics": diagnostics}))
 
 
 if __name__ == "__main__":
