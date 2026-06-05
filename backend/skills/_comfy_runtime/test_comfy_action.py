@@ -169,6 +169,8 @@ class ComfyActionTest(unittest.TestCase):
                         "modelProfile": "wan22-dasiwa-littledemon-v2-s2v",
                         "aspectRatio": "9:16",
                         "resolution": "720p",
+                        "width": 480,
+                        "height": 848,
                     },
                 },
                 out_dir,

@@ -67,7 +67,8 @@ class SkillActionInvoker:
                     stdout_lines.append(line)
 
             stderr_text = process.stderr.read() if process.stderr is not None else ""
-            process.wait(timeout=action.timeout_seconds)
+            timeout_seconds = action.timeout_seconds if action.timeout_seconds > 0 else None
+            process.wait(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
             process.kill()
             raise SkillInvocationError(f"Skill action timed out after {action.timeout_seconds}s") from exc

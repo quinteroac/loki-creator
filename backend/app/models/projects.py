@@ -6,6 +6,7 @@ from app.models.instructions import GeneratedCard
 
 
 class ProjectCanvasNodeFrame(BaseModel):
+    height: int | float | None = None
     width: int | float
     x: int | float
     y: int | float

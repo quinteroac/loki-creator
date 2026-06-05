@@ -29,7 +29,7 @@ type CanvasStageProps = {
 const DEFAULT_CANVAS_ZOOM = 1.3;
 const CANVAS_ZOOM_STEP = 0.1;
 const CANVAS_ZOOM_MIN = 0.3;
-const CANVAS_ZOOM_MAX = 2;
+const CANVAS_ZOOM_MAX = 4;
 const CANVAS_CONTEXT_MENU_WIDTH = 184;
 const CANVAS_CONTEXT_MENU_HEIGHT = 56;
 const CANVAS_CONTEXT_MENU_OFFSET = 8;
@@ -89,6 +89,16 @@ function shouldIgnoreCanvasContextMenu(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest(CANVAS_CONTEXT_MENU_BLOCKING_SELECTOR));
 }
 
+type CanvasFocalPoint = {
+  x: number;
+  y: number;
+};
+
+type CanvasViewport = {
+  zoom: number;
+  pan: CanvasFocalPoint;
+};
+
 export function CanvasStage({
   documentsById,
   nodes,
@@ -111,8 +121,10 @@ export function CanvasStage({
     startX: number;
     startY: number;
   } | null>(null);
-  const [zoom, setZoom] = useState(DEFAULT_CANVAS_ZOOM);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [viewport, setViewport] = useState<CanvasViewport>({
+    zoom: DEFAULT_CANVAS_ZOOM,
+    pan: { x: 0, y: 0 },
+  });
   const [isPanning, setIsPanning] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     logicalX: number;
@@ -121,6 +133,7 @@ export function CanvasStage({
     screenY: number;
   } | null>(null);
   const selectedIdSet = new Set(selectedIds);
+  const { pan, zoom } = viewport;
   const zoomPercentage = Math.round(zoom * 100);
 
   useEffect(() => {
@@ -162,8 +175,24 @@ export function CanvasStage({
     onUpdateNodeFrame(nodeId, clampCanvasNodeFrame(frame, canvasWidth, canvasHeight, document));
   }
 
-  function changeZoom(delta: number) {
-    setZoom((currentZoom) => clampCanvasZoom(Number((currentZoom + delta).toFixed(2))));
+  function changeZoom(delta: number, focalPoint?: CanvasFocalPoint) {
+    setViewport((currentViewport) => {
+      const nextZoom = clampCanvasZoom(Number((currentViewport.zoom + delta).toFixed(2)));
+      if (!focalPoint || nextZoom === currentViewport.zoom) {
+        return { ...currentViewport, zoom: nextZoom };
+      }
+
+      const logicalX = (focalPoint.x - currentViewport.pan.x) / currentViewport.zoom;
+      const logicalY = (focalPoint.y - currentViewport.pan.y) / currentViewport.zoom;
+
+      return {
+        zoom: nextZoom,
+        pan: {
+          x: focalPoint.x - logicalX * nextZoom,
+          y: focalPoint.y - logicalY * nextZoom,
+        },
+      };
+    });
   }
 
   function zoomIn() {
@@ -178,7 +207,11 @@ export function CanvasStage({
     if (event.deltaY === 0 || shouldIgnoreCanvasWheel(event.target)) return;
 
     event.preventDefault();
-    changeZoom(event.deltaY < 0 ? CANVAS_ZOOM_STEP : -CANVAS_ZOOM_STEP);
+    const bounds = event.currentTarget.getBoundingClientRect();
+    changeZoom(event.deltaY < 0 ? CANVAS_ZOOM_STEP : -CANVAS_ZOOM_STEP, {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    });
   }
 
   function handleCanvasAuxClick(event: MouseEvent<HTMLDivElement>) {
@@ -235,10 +268,13 @@ export function CanvasStage({
     const panState = panStateRef.current;
     if (!panState || panState.pointerId !== event.pointerId) return;
 
-    setPan({
-      x: panState.startX + event.clientX - panState.startClientX,
-      y: panState.startY + event.clientY - panState.startClientY,
-    });
+    setViewport((currentViewport) => ({
+      ...currentViewport,
+      pan: {
+        x: panState.startX + event.clientX - panState.startClientX,
+        y: panState.startY + event.clientY - panState.startClientY,
+      },
+    }));
   }
 
   function stopCanvasPan(event: PointerEvent<HTMLDivElement>) {

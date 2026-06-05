@@ -1,6 +1,6 @@
 ---
 name: comfy-videogen
-description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros, local WAN 2.2 image/first-last-frame workflows, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, WAN 2.2 image-guided video, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for WAN audio-driven clips. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
+description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros or Dasiwa Golden Lace, local WAN 2.2 image/first-last-frame workflows, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, WAN 2.2 image-guided video, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for WAN audio-driven clips. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
 metadata:
   loki:
     visibility: user
@@ -19,6 +19,9 @@ metadata:
           - value: ltx23-10eros
             label: LTX 2.3 Local
             description: Local GPU-backed LTX 2.3 10Eros workflows.
+          - value: ltx23-dasiwa-golden-lace-v3
+            label: LTX 2.3 Dasiwa Golden Lace
+            description: Local GPU-backed Dasiwa Golden Lace v3 profile for LTX 2.3 workflows.
           - value: wan22-i2v
             label: WAN 2.2 FP8
             description: Local GPU-backed WAN 2.2 image-to-video and first/last-frame workflows. Default 10 high-noise steps and 10 low-noise steps.
@@ -158,6 +161,10 @@ Available model profiles:
 - `ltx23-10eros`: local GPU-backed LTX 2.3 10Eros workflows. Use this for local
   text-to-video, image-to-video, image+audio-to-video, first/last-frame, and
   motion-track workflows.
+- `ltx23-dasiwa-golden-lace-v3`: local GPU-backed Dasiwa Golden Lace v3 profile
+  for LTX 2.3 workflows. Use this when the user asks for Dasiwa/Golden Lace with
+  local LTX text-to-video, image-to-video, image+audio-to-video, or
+  first/last-frame generation.
 - `wan22-i2v`: local GPU-backed WAN 2.2 workflows. Use this for image-to-video
   and first/last-frame video when the user explicitly asks for WAN/Wan 2.2 or
   wants the standard WAN local model. Defaults: `highNoiseSteps=10`,
@@ -391,7 +398,9 @@ directly to Seedance 2.0.
 ### LTX 2.3 Local
 
 - Models directory: `.loki/models/comfyui`
-- Checkpoint: `checkpoints/10Eros_v1-fp8mixed_learned.safetensors`
+- Profiles: `ltx23-10eros`, `ltx23-dasiwa-golden-lace-v3`
+- 10Eros checkpoint: `checkpoints/10Eros_v1-fp8mixed_learned.safetensors`
+- Dasiwa Golden Lace v3 checkpoint: `checkpoints/DasiwaLTX23_goldenLaceV3.safetensors`
 - Text encoder: `text_encoders/gemma_3_12B_it_fp4_mixed.safetensors`
 - Distilled LoRA: `loras/ltx23/ltx-2.3-22b-distilled-lora-384.safetensors`
 - Text-encoder LoRA: `loras/ltx23/gemma-3-12b-it-abliterated_lora_rank64_bf16.safetensors`

@@ -15,10 +15,8 @@ export async function listSkillRuns(options: { status?: SkillRun["status"] } = {
   return response.json();
 }
 
-export async function waitForSkillRun(runId: string, timeoutMs = 900000): Promise<SkillRun> {
-  const startedAt = Date.now();
-
-  while (Date.now() - startedAt < timeoutMs) {
+export async function waitForSkillRun(runId: string): Promise<SkillRun> {
+  while (true) {
     const response = await fetch(`${API_URL}/api/skill-runs/${runId}`);
 
     if (!response.ok) {
@@ -30,6 +28,4 @@ export async function waitForSkillRun(runId: string, timeoutMs = 900000): Promis
 
     await new Promise((resolve) => window.setTimeout(resolve, 500));
   }
-
-  throw new Error(`Timed out waiting for skill run ${runId}`);
 }

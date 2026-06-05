@@ -59,7 +59,7 @@ metadata:
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
-      timeoutSeconds: 900
+      timeoutSeconds: 0
     output:
       packager: auto
       kind: video
@@ -186,5 +186,5 @@ Before invoking the Loki action, verify:
 - Important visual details from the selected image are preserved as scene
   content.
 - `paramsJson` contains the chosen `modelProfile`, `aspectRatio`, and
-  `resolution`, and does not include `duration`, `highNoiseSteps`, or
-  `lowNoiseSteps`.
+  `resolution`, and does not include `width`, `height`, `duration`,
+  `highNoiseSteps`, or `lowNoiseSteps`.

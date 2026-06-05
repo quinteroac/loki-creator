@@ -304,6 +304,14 @@ def video_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
     return width, height
 
 
+def video_dimensions_for_resolution(params: dict[str, Any]) -> tuple[int | None, int | None]:
+    aspect_ratio = first_text(params.get("aspectRatio"))
+    resolution = first_text(params.get("resolution"))
+    if resolution in VIDEO_RESOLUTION_DIMENSIONS and aspect_ratio in VIDEO_RESOLUTION_DIMENSIONS[resolution]:
+        return VIDEO_RESOLUTION_DIMENSIONS[resolution][aspect_ratio]
+    return None, None
+
+
 def parse_music_duration_seconds(text: str) -> str:
     match = re.search(r"(?:~|about|around|approx\.?\s*)?(\d{1,2}):(\d{2})\s*(?:duration|long|minutes?|mins?)?", text, re.IGNORECASE)
     if match:
@@ -887,7 +895,7 @@ def build_s2vidgen_command(
     if not audio_input:
         raise RuntimeError("comfy-s2vidgen requires one input audio clip from params.audioPath or a selected card snapshot.")
 
-    width, height = video_dimensions(params)
+    width, height = video_dimensions_for_resolution(params)
     if not width or not height:
         raise RuntimeError("comfy-s2vidgen could not resolve video dimensions from aspectRatio and resolution.")
 
@@ -1182,13 +1190,14 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
 def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    timeout_seconds = int(os.environ.get("LOKI_COMFY_TIMEOUT_SECONDS", "0"))
     process = subprocess.run(
         command,
         cwd=cwd,
         env=env,
         text=True,
         capture_output=True,
-        timeout=int(os.environ.get("LOKI_COMFY_TIMEOUT_SECONDS", "900")),
+        timeout=timeout_seconds if timeout_seconds > 0 else None,
         check=False,
     )
     if process.returncode != 0:

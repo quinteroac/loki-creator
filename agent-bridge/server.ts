@@ -224,7 +224,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
 const backendApiUrl = process.env.LOKI_BACKEND_URL ?? "http://127.0.0.1:8001";
 const port = Number(process.env.LOKI_AGENT_BRIDGE_PORT ?? 8787);
-const skillRunWaitTimeoutMs = Number(process.env.LOKI_SKILL_RUN_WAIT_TIMEOUT_MS ?? 900000);
 const allowedOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|192\.168\.\d+\.\d+):\d+$/;
 const preferredAgentModelId = "gpt-5.4-mini";
 const agentVisionImageLimit = Number(process.env.LOKI_AGENT_VISION_IMAGE_LIMIT ?? 4);
@@ -734,8 +733,7 @@ function extractOperationalPromptFromAgentText(agentText: string, fallbackPrompt
 }
 
 async function waitForSkillRun(runId: string): Promise<LokiSkillRun> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < skillRunWaitTimeoutMs) {
+  while (true) {
     const run = await requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs/${runId}`);
     if (run.status === "succeeded" || run.status === "failed") {
       return run;
@@ -743,8 +741,6 @@ async function waitForSkillRun(runId: string): Promise<LokiSkillRun> {
 
     await Bun.sleep(500);
   }
-
-  throw new Error(`Timed out waiting for skill run ${runId} after ${skillRunWaitTimeoutMs}ms`);
 }
 
 async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, request: AgentRunRequest) {
@@ -767,8 +763,8 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
       selectedCardSnapshots: request.selectedCardSnapshots ?? [],
       attachments: request.attachments ?? [],
       params: {
-        ...(request.collectedArgs ?? {}),
         ...structuredParams,
+        ...(request.collectedArgs ?? {}),
         skillPrompt: skillParams.prompt,
         outputText: skillParams.outputText,
         title: skillParams.title,
