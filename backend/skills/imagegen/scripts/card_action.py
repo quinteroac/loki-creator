@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from uuid import uuid4
 
@@ -425,6 +426,14 @@ def resolve_codex_bin() -> str:
     )
 
 
+def stream_process_pipe(pipe: object, log_path: Path, collected_lines: list[str]) -> None:
+    with log_path.open("w", encoding="utf-8") as log_file:
+        for line in iter(pipe.readline, ""):
+            collected_lines.append(line)
+            log_file.write(line)
+            log_file.flush()
+
+
 def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict:
     codex_bin = resolve_codex_bin()
 
@@ -437,6 +446,7 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
     command = [
         codex_bin,
         "exec",
+        "--json",
         "--cd",
         str(run_dir),
         "--dangerously-bypass-approvals-and-sandbox",
@@ -450,19 +460,58 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
     command.append("-")
 
     timeout_seconds = int(os.environ.get("LOKI_IMAGEGEN_CODEX_TIMEOUT_SECONDS", "900"))
-    process = subprocess.run(
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+    events_path = run_dir / "codex-events.jsonl"
+    stderr_path = run_dir / "codex-stderr.log"
+    stdout_path = run_dir / "codex-stdout.log"
+    process = subprocess.Popen(
         command,
-        input=prompt,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        capture_output=True,
-        timeout=timeout_seconds,
-        check=False,
     )
-    (run_dir / "codex-stdout.log").write_text(process.stdout, encoding="utf-8")
-    (run_dir / "codex-stderr.log").write_text(process.stderr, encoding="utf-8")
+    if process.stdin is None or process.stdout is None or process.stderr is None:
+        process.kill()
+        raise RuntimeError("Codex process pipes were not available")
 
-    if process.returncode != 0:
-        message = process.stderr.strip() or process.stdout.strip() or "Codex image generation failed"
+    stdout_thread = threading.Thread(
+        target=stream_process_pipe,
+        args=(process.stdout, events_path, stdout_lines),
+        daemon=True,
+    )
+    stderr_thread = threading.Thread(
+        target=stream_process_pipe,
+        args=(process.stderr, stderr_path, stderr_lines),
+        daemon=True,
+    )
+    stdout_thread.start()
+    stderr_thread.start()
+
+    try:
+        try:
+            process.stdin.write(prompt)
+            process.stdin.close()
+        except BrokenPipeError as exc:
+            raise RuntimeError("Codex closed stdin before receiving the image generation prompt") from exc
+        returncode = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as exc:
+        process.kill()
+        returncode = process.wait(timeout=10)
+        raise RuntimeError(f"Codex image generation timed out after {timeout_seconds} seconds") from exc
+    finally:
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+        stdout_snapshot = "".join(stdout_lines)
+        events_path.write_text(stdout_snapshot, encoding="utf-8")
+        stdout_path.write_text(stdout_snapshot, encoding="utf-8")
+
+    stdout = "".join(stdout_lines)
+    stderr = "".join(stderr_lines)
+
+    if returncode != 0:
+        message = stderr.strip() or stdout.strip() or "Codex image generation failed"
         raise RuntimeError(message)
     if not response_path.is_file():
         raise RuntimeError("Codex did not write an output response file")

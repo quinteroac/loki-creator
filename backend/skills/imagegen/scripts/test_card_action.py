@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import sys
 import tempfile
@@ -36,27 +37,53 @@ class ImagegenCardActionTest(unittest.TestCase):
     def test_run_codex_sends_prompt_through_stdin(self) -> None:
         calls: list[dict] = []
 
-        def fake_run(command: list[str], **kwargs: object) -> object:
+        class CapturingStdin:
+            def __init__(self) -> None:
+                self.value = ""
+
+            def write(self, value: str) -> int:
+                self.value += value
+                return len(value)
+
+            def close(self) -> None:
+                return None
+
+        class FakeProcess:
+            def __init__(self, command: list[str], **kwargs: object) -> None:
+                self.command = command
+                self.kwargs = kwargs
+                self.stdin = CapturingStdin()
+                self.stdout = io.StringIO('{"type":"turn.started"}\n{"type":"turn.completed"}\n')
+                self.stderr = io.StringIO("")
+
+            def wait(self, timeout: int | None = None) -> int:
+                calls.append({"command": self.command, "input": self.stdin.value, **self.kwargs})
+                response_path = Path(self.command[self.command.index("--output-last-message") + 1])
+                response_path.write_text(
+                    json.dumps(
+                        {
+                            "title": "Generated image",
+                            "prompt": "make a test image",
+                            "imagePath": str(response_path.parent / "outputs" / "image.png"),
+                            "mimeType": "image/png",
+                            "width": 1024,
+                            "height": 1024,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return 0
+
+            def kill(self) -> None:
+                return None
+
+        def fake_popen(command: list[str], **kwargs: object) -> FakeProcess:
             calls.append({"command": command, **kwargs})
-            response_path = Path(command[command.index("--output-last-message") + 1])
-            response_path.write_text(
-                json.dumps(
-                    {
-                        "title": "Generated image",
-                        "prompt": "make a test image",
-                        "imagePath": str(response_path.parent / "outputs" / "image.png"),
-                        "mimeType": "image/png",
-                        "width": 1024,
-                        "height": 1024,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            return type("CompletedProcess", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+            return FakeProcess(command, **kwargs)
 
         with tempfile.TemporaryDirectory() as tmpdir, patch("card_action.resolve_codex_bin", return_value="codex"), patch(
-            "card_action.subprocess.run",
-            side_effect=fake_run,
+            "card_action.subprocess.Popen",
+            side_effect=fake_popen,
         ):
             run_dir = Path(tmpdir)
             (run_dir / "outputs").mkdir()
@@ -65,12 +92,15 @@ class ImagegenCardActionTest(unittest.TestCase):
                 run_dir,
                 [],
             )
+            event_lines = (run_dir / "codex-events.jsonl").read_text(encoding="utf-8").splitlines()
 
         self.assertEqual(result["title"], "Generated image")
         self.assertEqual(calls[0]["command"][-1], "-")
-        self.assertIn("make a test image", calls[0]["input"])
-        self.assertIn('"images"', calls[0]["input"])
-        self.assertIn("accept the generated image and report its real dimensions", calls[0]["input"])
+        self.assertIn("--json", calls[0]["command"])
+        self.assertIn("make a test image", calls[1]["input"])
+        self.assertIn('"images"', calls[1]["input"])
+        self.assertIn("accept the generated image and report its real dimensions", calls[1]["input"])
+        self.assertEqual(event_lines[0], '{"type":"turn.started"}')
 
     def test_build_codex_prompt_defaults_ambiguous_multi_image_request_to_four(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

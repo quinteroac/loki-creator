@@ -4,6 +4,7 @@ import type { AgentChatMessage, AgentRunResponse, AgentRunStreamEvent } from "..
 
 type AgentResponsePanelProps = {
   clockTick: number;
+  activityTitle: string;
   isOpen: boolean;
   lastActivityAt: number | null;
   messages: AgentChatMessage[];
@@ -30,6 +31,7 @@ function formatDuration(milliseconds: number) {
 
 export function AgentResponsePanel({
   clockTick: _clockTick,
+  activityTitle,
   isOpen,
   lastActivityAt,
   messages,
@@ -61,7 +63,7 @@ export function AgentResponsePanel({
         <section className="agent-response-panel" data-popover role="dialog" aria-label="Agent conversation">
           <div className="agent-response-header">
             <div>
-              <span>Base Agent</span>
+              <span>{activityTitle}</span>
               <small>{isRunning ? "Working" : response?.status ?? status ?? "Idle"}</small>
               {elapsedLabel && (
                 <small>

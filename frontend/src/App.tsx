@@ -130,6 +130,7 @@ export function App() {
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [agentChatMessages, setAgentChatMessages] = useState<AgentChatMessage[]>([]);
+  const [agentActivityTitle, setAgentActivityTitle] = useState("Base Agent");
   const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStreamEvent["status"] | null>(null);
   const [isDirectGenerating, setIsDirectGenerating] = useState(false);
   const [agentRunStartedAt, setAgentRunStartedAt] = useState<number | null>(null);
@@ -501,6 +502,7 @@ export function App() {
     const now = Date.now();
     setAgentRunStartedAt(now);
     setAgentLastActivityAt(now);
+    setAgentActivityTitle("Base Agent");
     agentRunStatusRef.current = "running";
     setAgentRunStatus("running");
     setAgentChatMessages([]);
@@ -535,6 +537,64 @@ export function App() {
         });
       }
     };
+  }
+
+  function getDirectGenerationActivity() {
+    if (composerMode === "seedance") {
+      return {
+        title: "Seedance Video",
+        runningStatus: "Generating Seedance video...",
+        successStatus: "Seedance video generated.",
+      };
+    }
+    if (composerMode === "codex") {
+      return {
+        title: "Codex Image",
+        runningStatus: "Generating Codex image...",
+        successStatus: "Codex image generated.",
+      };
+    }
+    if (composerMode === "gemini") {
+      return {
+        title: "Gemini Image",
+        runningStatus: "Generating Gemini image...",
+        successStatus: "Gemini image generated.",
+      };
+    }
+    return {
+      title: grokTool === "image" ? "Grok Image" : "Grok Video",
+      runningStatus: `Generating Grok ${grokTool}...`,
+      successStatus: `Grok ${grokTool} generated.`,
+    };
+  }
+
+  function startDirectGenerationActivity(prompt: string, title: string) {
+    agentEventSourceRef.current?.close();
+    agentEventSourceRef.current = null;
+    activeAgentRunIdRef.current = null;
+    const now = Date.now();
+    const toolCallId = createClientId("direct_tool");
+    setLatestAgentResponse(null);
+    setAgentRunStartedAt(now);
+    setAgentLastActivityAt(now);
+    setAgentActivityTitle(title);
+    agentRunStatusRef.current = "running";
+    setAgentRunStatus("running");
+    setAgentChatMessages([]);
+    setIsAgentResponseOpen(true);
+    appendAgentStreamEvent({
+      type: "user",
+      status: "running",
+      message: prompt,
+    });
+    appendAgentStreamEvent({
+      type: "tool_start",
+      status: "running",
+      toolCallId,
+      toolName: title,
+      message: `${title} started.`,
+    });
+    return toolCallId;
   }
 
   async function handleAgentRunResponse(agentRun: AgentRunResponse, baseRequest: AgentRunRequest) {
@@ -727,22 +787,31 @@ export function App() {
     }
 
     if (composerMode === "seedance" || composerMode === "grok" || composerMode === "codex" || composerMode === "gemini") {
+      const activity = getDirectGenerationActivity();
+      let toolCallId: string | null = null;
       try {
         setIsDirectGenerating(true);
-        setStatus(
-          composerMode === "seedance"
-            ? "Generating Seedance video..."
-            : composerMode === "grok"
-              ? `Generating Grok ${grokTool}...`
-              : composerMode === "codex"
-                ? "Generating Codex image..."
-                : "Generating Gemini image...",
-        );
+        setStatus(activity.runningStatus);
+        toolCallId = startDirectGenerationActivity(text, activity.title);
+        appendAgentStreamEvent({
+          type: "tool_update",
+          status: "running",
+          toolCallId,
+          toolName: activity.title,
+          message: "Resolving selected card artifacts.",
+        });
         const selectedCardSnapshots = await createSelectedCardSnapshots(
           cardDocuments,
           selectedCards,
           previewCapturesRef.current,
         );
+        appendAgentStreamEvent({
+          type: "tool_update",
+          status: "running",
+          toolCallId,
+          toolName: activity.title,
+          message: "Calling direct generation endpoint.",
+        });
         const result = composerMode === "seedance"
           ? await generateSeedanceVideo({
             prompt: text,
@@ -768,12 +837,12 @@ export function App() {
               })
               : grokTool === "image"
                 ? await generateGrokImage({
-                prompt: text,
-                aspectRatio: grokImageAspectRatio,
-                resolution: grokImageResolution,
-                selectedCardSnapshots,
-                attachments,
-              })
+                  prompt: text,
+                  aspectRatio: grokImageAspectRatio,
+                  resolution: grokImageResolution,
+                  selectedCardSnapshots,
+                  attachments,
+                })
                 : await generateGrokVideo({
                   prompt: text,
                   aspectRatio: grokVideoAspectRatio,
@@ -785,17 +854,36 @@ export function App() {
         addGeneratedCards(result.cards);
         setInstruction("");
         setAttachments([]);
-        setStatus(
-          composerMode === "seedance"
-            ? "Seedance video generated."
-            : composerMode === "grok"
-              ? `Grok ${grokTool} generated.`
-              : composerMode === "codex"
-                ? "Codex image generated."
-                : "Gemini image generated.",
-        );
+        appendAgentStreamEvent({
+          type: "tool_end",
+          status: "succeeded",
+          toolCallId,
+          toolName: activity.title,
+          message: `${activity.title} returned ${result.cards.length} card${result.cards.length === 1 ? "" : "s"}.`,
+        });
+        appendAgentStreamEvent({
+          type: "done",
+          status: "succeeded",
+          message: `${activity.title} completed.`,
+        });
+        setStatus(activity.successStatus);
       } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Could not generate.");
+        const message = error instanceof Error ? error.message : "Could not generate.";
+        if (toolCallId) {
+          appendAgentStreamEvent({
+            type: "tool_end",
+            status: "failed",
+            toolCallId,
+            toolName: activity.title,
+            message,
+          });
+        }
+        appendAgentStreamEvent({
+          type: "error",
+          status: "failed",
+          message,
+        });
+        setStatus(message);
       } finally {
         setIsDirectGenerating(false);
       }
@@ -1326,6 +1414,7 @@ export function App() {
         </div>
       )}
       <AgentResponsePanel
+        activityTitle={agentActivityTitle}
         clockTick={agentClockTick}
         lastActivityAt={agentLastActivityAt}
         messages={agentChatMessages}
