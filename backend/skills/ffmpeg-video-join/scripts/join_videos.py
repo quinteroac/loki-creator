@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import shutil
@@ -25,6 +26,10 @@ TRANSITION_MAP = {
     "dissolve": "dissolve",
 }
 JOIN_MODES = {"direct", "trim-last-frame", *TRANSITION_MAP.keys()}
+COLOR_MATCH_GAIN_MIN = 0.6
+COLOR_MATCH_GAIN_MAX = 1.65
+COLOR_MATCH_SAMPLE_SIZE = 32
+RGB_CHANNELS = ("red", "green", "blue")
 
 
 def read_payload() -> dict:
@@ -184,6 +189,16 @@ def run_command(command: list[str]) -> None:
         raise RuntimeError(f"{command[0]} failed: {message[-2000:]}")
 
 
+def run_binary_command(command: list[str]) -> bytes:
+    process = subprocess.run(command, capture_output=True, check=False)
+    if process.returncode != 0:
+        stderr = process.stderr.decode("utf-8", errors="replace").strip()
+        stdout = process.stdout.decode("utf-8", errors="replace").strip()
+        message = stderr or stdout or "command failed"
+        raise RuntimeError(f"{command[0]} failed: {message[-2000:]}")
+    return process.stdout
+
+
 def ffprobe(path: Path) -> dict:
     command = [
         "ffprobe",
@@ -268,6 +283,137 @@ def even_dimension(value: int) -> int:
 
 def format_seconds(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".") or "0"
+
+
+def clamp_float(value: float, minimum: float, maximum: float) -> float:
+    if not math.isfinite(value):
+        raise RuntimeError("Color matching produced a non-finite value.")
+    return min(max(value, minimum), maximum)
+
+
+def rounded_rgb(values: dict[str, float]) -> dict[str, float]:
+    return {channel: round(values[channel], 4) for channel in RGB_CHANNELS}
+
+
+def last_decodable_time(info: dict) -> float:
+    duration = float(info["duration"])
+    fps = float(info["fps"])
+    frame_duration = 1.0 / fps if fps > 0 else 0.001
+    return max(0.0, duration - frame_duration)
+
+
+def frame_mean_rgb(path: Path, time_seconds: float, sample_size: int = COLOR_MATCH_SAMPLE_SIZE) -> dict[str, float]:
+    if sample_size <= 0:
+        raise RuntimeError("Color match sample size must be greater than 0.")
+    raw_frame = run_binary_command(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-ss",
+            format_seconds(max(0.0, time_seconds)),
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-vf",
+            f"scale={sample_size}:{sample_size},format=rgb24",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ]
+    )
+    expected_size = sample_size * sample_size * 3
+    if len(raw_frame) != expected_size:
+        raise RuntimeError(f"Could not sample video frame for color matching: {path}")
+
+    pixel_count = sample_size * sample_size
+    totals = {channel: 0 for channel in RGB_CHANNELS}
+    for offset in range(0, len(raw_frame), 3):
+        totals["red"] += raw_frame[offset]
+        totals["green"] += raw_frame[offset + 1]
+        totals["blue"] += raw_frame[offset + 2]
+
+    return {channel: totals[channel] / pixel_count for channel in RGB_CHANNELS}
+
+
+def color_match_gains(source_rgb: dict[str, float], target_rgb: dict[str, float]) -> dict[str, float]:
+    gains: dict[str, float] = {}
+    for channel in RGB_CHANNELS:
+        source_value = source_rgb[channel]
+        target_value = target_rgb[channel]
+        if not math.isfinite(source_value) or not math.isfinite(target_value):
+            raise RuntimeError("Color matching sampled a non-finite RGB value.")
+        gain = target_value / max(source_value, 1.0)
+        gains[channel] = clamp_float(gain, COLOR_MATCH_GAIN_MIN, COLOR_MATCH_GAIN_MAX)
+    return gains
+
+
+def colorchannelmixer_filter(gains: dict[str, float]) -> str:
+    return (
+        f"colorchannelmixer=rr={gains['red']:.6f}:"
+        f"gg={gains['green']:.6f}:bb={gains['blue']:.6f},format=yuv420p"
+    )
+
+
+def apply_color_match(source: Path, destination: Path, gains: dict[str, float]) -> None:
+    run_command(
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0",
+            "-filter:v",
+            colorchannelmixer_filter(gains),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "copy",
+            "-movflags",
+            "+faststart",
+            str(destination),
+        ]
+    )
+
+
+def color_match_cut_to_cut(clips: list[Path], destination_dir: Path) -> tuple[list[Path], list[dict[str, object]]]:
+    if len(clips) < 2:
+        return clips, []
+
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    matched_clips = [clips[0]]
+    boundaries: list[dict[str, object]] = []
+
+    for index, source_clip in enumerate(clips[1:], start=2):
+        target_clip = matched_clips[-1]
+        target_info = video_info(target_clip)
+        target_rgb = frame_mean_rgb(target_clip, last_decodable_time(target_info))
+        source_rgb = frame_mean_rgb(source_clip, 0.0)
+        gains = color_match_gains(source_rgb, target_rgb)
+        matched_clip = destination_dir / f"clip-{index:02d}.mp4"
+        apply_color_match(source_clip, matched_clip, gains)
+        matched_clips.append(matched_clip)
+        boundaries.append(
+            {
+                "sourceClipIndex": index,
+                "targetClipIndex": index - 1,
+                "sourceMeanRgb": rounded_rgb(source_rgb),
+                "targetMeanRgb": rounded_rgb(target_rgb),
+                "gains": rounded_rgb(gains),
+            }
+        )
+
+    return matched_clips, boundaries
 
 
 def normalize_clip(
@@ -498,6 +644,14 @@ def join_selected_videos(payload: dict) -> dict:
         )
         normalized_clips.append(clip)
 
+    color_matched_clips = normalized_clips
+    color_match_boundaries: list[dict[str, object]] = []
+    if trim_last_frame:
+        color_matched_clips, color_match_boundaries = color_match_cut_to_cut(
+            normalized_clips,
+            normalized_dir / "color-matched",
+        )
+
     output_path = run_dir / "joined-video.mp4"
     metadata: dict[str, object] = {
         "joinMode": join_mode,
@@ -509,6 +663,10 @@ def join_selected_videos(payload: dict) -> dict:
         "tags": [SKILL_ID],
         "preferredAspectRatio": "auto",
     }
+    if trim_last_frame:
+        metadata["colorMatchEnabled"] = True
+        metadata["colorMatchMode"] = "cut-to-cut"
+        metadata["colorMatchBoundaries"] = color_match_boundaries
 
     if join_mode in TRANSITION_MAP:
         normalized_infos = [video_info(path) for path in normalized_clips]
@@ -524,7 +682,7 @@ def join_selected_videos(payload: dict) -> dict:
         metadata["requestedFadeDurationSeconds"] = requested_fade
         metadata["fadeDurationSeconds"] = effective_fade
     else:
-        concat_direct(normalized_clips, output_path, run_dir.parent)
+        concat_direct(color_matched_clips, output_path, run_dir.parent)
 
     final_info = video_info(output_path)
     metadata["durationSeconds"] = final_info["duration"]

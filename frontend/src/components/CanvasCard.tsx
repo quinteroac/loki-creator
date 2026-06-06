@@ -28,7 +28,7 @@ type CanvasCardProps = {
   node: CanvasNode;
   isSelected: boolean;
   onDeleteDocument: (cardDocumentId: string) => void;
-  onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string) => void;
+  onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string, placementOffset?: number) => void;
   onCloseMediaEditor: () => void;
   onOpenMediaEditor: (nodeId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
@@ -824,7 +824,7 @@ export function CanvasCard({
           artifactUrl={videoArtifactUrl}
           title={accessibleTitle}
           onClose={onCloseMediaEditor}
-          onCreateArtifact={(artifact) => onCreateEditedMediaArtifact(artifact, node.id)}
+          onCreateArtifact={(artifact, placementOffset) => onCreateEditedMediaArtifact(artifact, node.id, placementOffset)}
           onStatus={onStatus}
         />
       )}

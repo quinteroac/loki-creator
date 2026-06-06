@@ -21,6 +21,7 @@ from app.models import (
     SkillRunRequest,
     VideoEditArtifact,
     VideoFrameRequest,
+    VideoLutOption,
     VideoTimelineRequest,
     VideoTimelineResponse,
     VideoTrimRequest,
@@ -175,9 +176,16 @@ def create_video_timeline(
     service: VideoEditorService = Depends(get_video_editor_service),
 ) -> VideoTimelineResponse:
     try:
-        return service.timeline(payload.artifact_url, payload.max_thumbnails)
+        return service.timeline(payload.artifact_url, payload.max_thumbnails, payload.lut_id)
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/artifacts/video/luts", response_model=list[VideoLutOption])
+def list_video_luts(
+    service: VideoEditorService = Depends(get_video_editor_service),
+) -> list[VideoLutOption]:
+    return service.list_luts()
 
 
 @router.post("/artifacts/video/frame", response_model=VideoEditArtifact)
@@ -186,7 +194,7 @@ def export_video_frame(
     service: VideoEditorService = Depends(get_video_editor_service),
 ) -> VideoEditArtifact:
     try:
-        return service.export_frame(payload.artifact_url, payload.time_seconds)
+        return service.export_frame(payload.artifact_url, payload.time_seconds, payload.lut_id)
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -197,7 +205,7 @@ def trim_video_artifact(
     service: VideoEditorService = Depends(get_video_editor_service),
 ) -> VideoEditArtifact:
     try:
-        return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds)
+        return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds, payload.lut_id)
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

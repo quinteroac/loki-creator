@@ -624,6 +624,239 @@ function parseSkillParamsJson(value?: string) {
   return parsed as Record<string, unknown>;
 }
 
+const LORA_PARAM_KEYS = [
+  "extraLora",
+  "extra_lora",
+  "extraLoras",
+  "extra_loras",
+  "lora",
+  "loras",
+  "extraLoraHigh",
+  "extra_lora_high",
+  "extraLorasHigh",
+  "extra_loras_high",
+  "loraHigh",
+  "lora_high",
+  "extraLoraLow",
+  "extra_lora_low",
+  "extraLorasLow",
+  "extra_loras_low",
+  "loraLow",
+  "lora_low",
+];
+
+function skillSupportsAdHocLora(skill: LokiSkill) {
+  return [
+    "comfy-image-generate",
+    "comfy-image-edit",
+    "comfy-videogen",
+    "comfy-s2vidgen",
+    "comfy-musicgen",
+    "wan-seed-seeker",
+  ].includes(skill.id);
+}
+
+function hasLoraParams(params: Record<string, unknown>) {
+  return LORA_PARAM_KEYS.some((key) => {
+    const value = params[key];
+    if (Array.isArray(value)) return value.length > 0;
+    return typeof value === "string" ? value.trim() : value != null;
+  });
+}
+
+function loraArchitectureForSkill(skill: LokiSkill, params: Record<string, unknown>) {
+  const profile = String(params.modelProfile ?? params.profile ?? "").toLowerCase();
+  if (profile.startsWith("wan22") || skill.id === "wan-seed-seeker" || skill.id === "comfy-s2vidgen") return "wan22";
+  if (profile.startsWith("ltx23")) return "ltx23";
+  if (profile.startsWith("anima")) return "anima";
+  if (profile === "qwen-edit2511") return "qwen-image-edit";
+  if (profile === "flux-klein-9b-snofs") return "flux-klein";
+  if (skill.id === "comfy-musicgen") return "ace-step-1.5";
+  return "";
+}
+
+function normalizeLoraText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\.safetensors\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function classifyWanLoraTarget(value: string): "extraLora" | "extraLoraHigh" | "extraLoraLow" {
+  const normalized = normalizeLoraText(value);
+  if (/\b(high|hi|alto|alta)\b/.test(normalized)) return "extraLoraHigh";
+  if (/\b(low|lo|bajo|baja)\b/.test(normalized)) return "extraLoraLow";
+  return "extraLora";
+}
+
+async function listLoraFiles(architecture: string) {
+  const searchDirs = [
+    architecture ? resolve(repoRoot, ".loki/models/comfyui/loras", architecture) : "",
+    resolve(repoRoot, ".loki/models/comfyui/loras"),
+  ].filter(Boolean);
+  const files: string[] = [];
+
+  for (const dir of searchDirs) {
+    try {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        if (entry.isFile() && entry.name.toLowerCase().endsWith(".safetensors")) {
+          files.push(resolve(dir, entry.name));
+        }
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return files;
+}
+
+function scoreLoraCandidate(sourceText: string, filePath: string) {
+  const name = filePath.split("/").at(-1) ?? filePath;
+  const stem = name.replace(/\.safetensors$/i, "");
+  const normalizedSource = normalizeLoraText(sourceText);
+  const normalizedStem = normalizeLoraText(stem);
+  if (!normalizedSource || !normalizedStem) return 0;
+  if (normalizedSource.includes(normalizedStem)) return 100;
+
+  const tokens = normalizedStem.split(" ").filter((token) => token.length >= 3 && !["wan", "i2v", "s2v"].includes(token));
+  const matches = tokens.filter((token) => normalizedSource.includes(token));
+  if (matches.length < 2 && !(matches.length === 1 && matches[0].length >= 6)) return 0;
+  return matches.length * 10 + Math.min(normalizedStem.length, 20);
+}
+
+function extractExplicitLoraPath(sourceText: string) {
+  const match = sourceText.match(
+    /\b(?:extra\s*)?lora(?:\s+(?:path|archivo|file|llamado|called|named|usa|usar|use))?\s*[:=]?\s*["'`]?([^\s"'`,;]+\.safetensors(?::[0-9.]+(?::[0-9.]+)?)?)/i,
+  );
+  return match?.[1];
+}
+
+function extractJsonObjectCandidates(text: string) {
+  const candidates: Record<string, unknown>[] = [];
+  for (let start = 0; start < text.length; start += 1) {
+    if (text[start] !== "{") continue;
+
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let index = start; index < text.length; index += 1) {
+      const char = text[index];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (char === "\\") {
+        escape = inString;
+        continue;
+      }
+      if (char === "\"") {
+        inString = !inString;
+        continue;
+      }
+      if (inString) continue;
+      if (char === "{") depth += 1;
+      if (char === "}") depth -= 1;
+      if (depth !== 0) continue;
+
+      try {
+        const parsed = JSON.parse(text.slice(start, index + 1));
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          candidates.push(parsed as Record<string, unknown>);
+        }
+      } catch {
+        // Agent text may contain non-JSON braces.
+      }
+      break;
+    }
+  }
+
+  return candidates;
+}
+
+function parseFallbackParamsObject(value: unknown): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === "string") {
+    try {
+      return parseFallbackParamsObject(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value !== "object" || Array.isArray(value)) return null;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["paramsJson", "params", "structuredParams", "skillParams"]) {
+    const nested = parseFallbackParamsObject(record[key]);
+    if (nested) return nested;
+  }
+
+  return record;
+}
+
+function extractFallbackParamsFromAgentText(skill: LokiSkill, agentText: string) {
+  const allowedKeys = new Set([
+    ...skill.arguments.map((argument) => argument.id),
+    ...LORA_PARAM_KEYS,
+    "modelProfile",
+    "videoMode",
+    "aspectRatio",
+    "duration",
+    "targetResolution",
+  ]);
+  const candidates = extractJsonObjectCandidates(agentText)
+    .map(parseFallbackParamsObject)
+    .filter((candidate): candidate is Record<string, unknown> => Boolean(candidate))
+    .map((candidate) => {
+      const params: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(candidate)) {
+        if (allowedKeys.has(key)) params[key] = value;
+      }
+      return params;
+    })
+    .filter((params) => Object.keys(params).length > 0)
+    .sort((left, right) => Object.keys(right).length - Object.keys(left).length);
+
+  return candidates[0] ?? {};
+}
+
+async function inferLoraParamsFromRequest(
+  skill: LokiSkill,
+  request: AgentRunRequest,
+  skillParams: LokiSkillParams,
+  params: Record<string, unknown>,
+) {
+  if (!skillSupportsAdHocLora(skill) || hasLoraParams(params)) return {};
+
+  const sourceText = `${request.prompt}\n${skillParams.prompt}\n${skillParams.paramsJson ?? ""}`;
+  if (/\b(?:sin|no|without)\s+(?:\w+\s+){0,3}lora\b/i.test(sourceText)) return {};
+
+  const explicitPath = extractExplicitLoraPath(sourceText);
+  if (explicitPath) {
+    const key = loraArchitectureForSkill(skill, params) === "wan22" ? classifyWanLoraTarget(explicitPath) : "extraLora";
+    return { [key]: explicitPath };
+  }
+
+  const architecture = loraArchitectureForSkill(skill, params);
+  const candidates = (await listLoraFiles(architecture))
+    .map((filePath) => ({ filePath, score: scoreLoraCandidate(sourceText, filePath) }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.filePath.localeCompare(right.filePath));
+
+  if (candidates.length === 0) return {};
+
+  const bestScore = candidates[0].score;
+  const bestCandidates = candidates.filter((candidate) => candidate.score === bestScore).slice(0, 2);
+  const inferred: Record<string, string> = {};
+  for (const candidate of bestCandidates) {
+    const key = architecture === "wan22" ? classifyWanLoraTarget(candidate.filePath) : "extraLora";
+    if (!inferred[key]) inferred[key] = candidate.filePath;
+  }
+  return inferred;
+}
+
 function summarizeSkillInvocation(skill: LokiSkill, skillParams: LokiSkillParams) {
   let structuredParams: Record<string, unknown> = {};
   try {
@@ -746,6 +979,13 @@ async function waitForSkillRun(runId: string): Promise<LokiSkillRun> {
 
 async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, request: AgentRunRequest) {
   const structuredParams = parseSkillParamsJson(skillParams.paramsJson);
+  const collectedParams = request.collectedArgs ?? {};
+  const inferredParams = await inferLoraParamsFromRequest(
+    skill,
+    request,
+    skillParams,
+    { ...structuredParams, ...collectedParams },
+  );
   const createdRun = await requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -764,8 +1004,9 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
       selectedCardSnapshots: request.selectedCardSnapshots ?? [],
       attachments: request.attachments ?? [],
       params: {
+        ...inferredParams,
         ...structuredParams,
-        ...(request.collectedArgs ?? {}),
+        ...collectedParams,
         skillPrompt: skillParams.prompt,
         outputText: skillParams.outputText,
         title: skillParams.title,
@@ -824,7 +1065,7 @@ function createLokiSkillPiTool(
     ? " For LTX Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution LTX i2v seed candidate video cards from the same prompt and first selected image input. Do not pass or request first/last-frame mode. For paramsJson.runMode=\"rerender\", require a selected LTX Seed Seeker preview video card and pass only the user's final render intent; the action reuses the selected card's prompt, seed, model, aspect ratio, and duration, changing only paramsJson.targetResolution."
     : "";
   const wanSeedSeekerDescription = skill.id === "wan-seed-seeker"
-    ? " For WAN Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution WAN seed candidate video cards from the same prompt. Preserve paramsJson.videoMode as \"i2v\" or \"flf2v\"; for flf2v the first selected image is the first frame and the last selected image is the last frame. Do not split previews into multiple skill calls. WAN has no LTX 2x upscale path, so the action uses direct 360p, 720p, or 1080p dimensions. For paramsJson.runMode=\"rerender\", require a selected WAN Seed Seeker preview video card and pass only paramsJson.targetResolution."
+    ? " For WAN Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution WAN seed candidate video cards from the same prompt. Preserve paramsJson.videoMode as \"i2v\" or \"flf2v\"; for flf2v the first selected image is the first frame and the last selected image is the last frame. Do not split previews into multiple skill calls. WAN has no LTX 2x upscale path, so the action uses direct 360p, 720p, or 1080p dimensions. If the user asks for a WAN LoRA, include it in paramsJson as extraLora, extraLoraHigh, or extraLoraLow. For paramsJson.runMode=\"rerender\", require a selected WAN Seed Seeker preview video card and pass only paramsJson.targetResolution."
     : "";
   const mediaCleanupDescription = skill.id === "media-cleanup"
     ? " For media-cleanup, only use this for selected or attached image/video artifacts when the user wants deterministic blur, cover, or crop by explicit rectangular regions. Never invoke it to remove or obscure watermarks, logos, signatures, credits, copyright marks, provenance labels, platform marks, or attribution; refuse those requests instead. Pass paramsJson.operation and paramsJson.regionsJson."
@@ -832,8 +1073,8 @@ function createLokiSkillPiTool(
   const animaImagegenDescription = skill.id === "comfy-image-generate"
     ? " For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not use empty reference tokens like use reference image, exact same character, same pose, or same outfit unless the skill is an edit mode with an actual image input."
     : "";
-  const loraDescription = skill.id === "comfy-image-generate" || skill.id === "comfy-image-edit"
-    ? " If the user asks for a LoRA, include it in paramsJson as extraLora or lora. Use a resolved .safetensors path when known; otherwise pass the requested LoRA name so the runtime can search the active architecture folder such as loras/anima."
+  const loraDescription = skillSupportsAdHocLora(skill)
+    ? " If the user asks for a LoRA, include it in paramsJson. Use extraLora or lora for normal LoRAs; for WAN high/low-noise-specific LoRAs use extraLoraHigh and extraLoraLow. Use a resolved .safetensors path when known; otherwise pass the requested LoRA name so the runtime can search the active architecture folder such as loras/anima or loras/wan22."
     : "";
   const promptDescription = skill.id === "comfy-musicgen"
     ? "ACE-Step music caption only: comma-separated tags such as genre, vocal intent, instruments, mood, production style, BPM, and key. Do not pass natural-language instructions like 'generate a song'."
@@ -964,14 +1205,20 @@ async function runSelectedSkillFromAgentReasoning(
 
   const skill = selectedSkills[0];
   const operationalPrompt = extractOperationalPromptFromAgentText(agentText, effectiveRequest.prompt);
+  const fallbackParams = extractFallbackParamsFromAgentText(skill, agentText);
   const skillParams: LokiSkillParams = {
     prompt: operationalPrompt,
-    paramsJson: JSON.stringify(effectiveRequest.collectedArgs ?? {}),
+    paramsJson: JSON.stringify({
+      ...fallbackParams,
+      ...(effectiveRequest.collectedArgs ?? {}),
+    }),
   };
 
   appendRunDiagnostic(
     runState,
-    `${reason} fallback invoking ${skill.id} with extractedPrompt=${JSON.stringify(operationalPrompt.slice(0, 220))}`,
+    `${reason} fallback invoking ${skill.id} with extractedPrompt=${JSON.stringify(operationalPrompt.slice(0, 220))} extractedParamKeys=${
+      Object.keys(fallbackParams).join(",") || "none"
+    }`,
   );
   runState.emit({
     type: "skill",
@@ -1396,6 +1643,10 @@ ${entries.map(([key, value]) => `- ${key}: ${value}`).join("\n")}`;
 function formatExplicitSkillSelection(request: AgentRunRequest, exposedSkills: LokiSkill[], runtimeMode: AgentRuntimeMode) {
   if (!hasExplicitSkillSelection(request.skills) || exposedSkills.length === 0) return "";
 
+  const loraInstruction = exposedSkills.some(skillSupportsAdHocLora)
+    ? "\n- If the user asks for a LoRA, preserve it as structured params. For WAN use extraLora, extraLoraHigh, or extraLoraLow."
+    : "";
+
   if (runtimeMode === "grok-build-stdio") {
     return `
 Explicit user-selected project skills:
@@ -1406,7 +1657,7 @@ The user selected these skills explicitly. This is not a suggestion or a list of
 - Read and follow the selected skill's instructions before deciding the final operational prompt.
 - If a required user choice is still missing, ask one concise question and stop.
 - Otherwise produce the artifact intent for the selected skill. Do not mention Loki internal tools or loki_skill_* names.
-- If your runtime cannot call the skill directly, finish with a concise final operational prompt for that selected skill; the Loki bridge will execute it.`;
+- If your runtime cannot call the skill directly, finish with a concise final operational prompt and a JSON object of structured params for that selected skill; the Loki bridge will execute it.${loraInstruction}`;
   }
 
   return `
@@ -1418,7 +1669,7 @@ The user selected these skills explicitly. This is not a suggestion or a list of
 - If a required user choice is still missing, call ask_user and stop.
 - Otherwise invoke exactly one selected Loki skill tool during this turn.
 - Pass a complete operational prompt to the skill tool. Do not pass a terse copy of the user's request if the skill needs a refined prompt.
-- Do not finish with plain text only. The bridge will reject this run unless a selected Loki skill tool is invoked.`;
+- Do not finish with plain text only. The bridge will reject this run unless a selected Loki skill tool is invoked.${loraInstruction}`;
 }
 
 function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[], runtimeMode: AgentRuntimeMode) {
@@ -1462,6 +1713,10 @@ ${completionInstruction}`;
 }
 
 function buildExplicitSkillRetryPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[]) {
+  const loraRetryInstruction = exposedSkills.some(skillSupportsAdHocLora)
+    ? "\n- If the original user request asked for a LoRA, include it in paramsJson. For WAN LoRAs use extraLora, extraLoraHigh, or extraLoraLow as appropriate."
+    : "";
+
   return `The previous assistant turn did not invoke a selected Loki skill.
 
 This request has an explicit user-selected Loki skill:
@@ -1474,6 +1729,7 @@ ${formatCollectedArgs(request.collectedArgs)}
 You must now do exactly one of these:
 - If a required user choice is still missing, call ask_user and stop.
 - Otherwise invoke exactly one selected Loki skill tool with a complete operational prompt.
+- Include collected skill arguments and optional structured user requests in paramsJson.${loraRetryInstruction}
 
 Do not answer in plain text only.`;
 }

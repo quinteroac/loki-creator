@@ -64,6 +64,16 @@ def create_clip(path: Path, *, audio: bool = True, color: str = "red", duration:
 
 
 class JoinVideosSelectionTest(unittest.TestCase):
+    def test_color_match_gains_clamps_rgb_channels(self) -> None:
+        gains = join_videos.color_match_gains(
+            {"red": 10.0, "green": 200.0, "blue": 1.0},
+            {"red": 100.0, "green": 20.0, "blue": 100.0},
+        )
+
+        self.assertEqual(gains["red"], join_videos.COLOR_MATCH_GAIN_MAX)
+        self.assertEqual(gains["green"], join_videos.COLOR_MATCH_GAIN_MIN)
+        self.assertEqual(gains["blue"], join_videos.COLOR_MATCH_GAIN_MAX)
+
     def test_materialize_selected_videos_preserves_order_fallback_and_dedupes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -159,7 +169,33 @@ class JoinVideosFfmpegTest(unittest.TestCase):
 
             direct_duration = join_videos.video_info(Path(direct["artifacts"][0]["path"]))["duration"]
             trimmed_duration = join_videos.video_info(Path(trimmed["artifacts"][0]["path"]))["duration"]
+            metadata = trimmed["artifacts"][0]["metadata"]
             self.assertLess(trimmed_duration, direct_duration - 0.04)
+            self.assertTrue(metadata["colorMatchEnabled"])
+            self.assertEqual(metadata["colorMatchMode"], "cut-to-cut")
+            self.assertEqual(len(metadata["colorMatchBoundaries"]), 1)
+
+    def test_trim_last_frame_color_matches_incoming_clip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}):
+            root = Path(tmpdir)
+            clip_a = root / "imports" / "a.mp4"
+            clip_b = root / "imports" / "b.mp4"
+            clip_a.parent.mkdir(parents=True)
+            create_clip(clip_a, color="red", duration=1.0)
+            create_clip(clip_b, color="blue", duration=1.0)
+
+            result = join_videos.join_selected_videos(
+                self.payload_for(root, "skill_run_color_match", "trim-last-frame", [clip_a, clip_b])
+            )
+            output = Path(result["artifacts"][0]["path"])
+            metadata = result["artifacts"][0]["metadata"]
+            matched_clip = root / "skills" / "ffmpeg-video-join" / "skill_run_color_match" / "normalized" / "color-matched" / "clip-02.mp4"
+
+            self.assertTrue(output.is_file())
+            self.assertTrue(matched_clip.is_file())
+            self.assertTrue(join_videos.video_info(output)["has_audio"])
+            self.assertEqual(metadata["colorMatchBoundaries"][0]["sourceClipIndex"], 2)
+            self.assertIn("gains", metadata["colorMatchBoundaries"][0])
 
     def test_crossfade_produces_valid_video_with_audio(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}):

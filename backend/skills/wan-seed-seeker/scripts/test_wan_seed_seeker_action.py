@@ -102,6 +102,36 @@ class WanSeedSeekerActionTest(unittest.TestCase):
         self.assertEqual(first_metadata["seedSeeker"]["skillId"], "wan-seed-seeker")
         self.assertEqual(first_metadata["seedSeeker"]["previewCount"], 3)
 
+    def test_preview_i2v_resolves_wan_lora_and_stores_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            lora_path = root / "models" / "loras" / "wan22" / "blue-motion.safetensors"
+            lora_path.parent.mkdir(parents=True)
+            lora_path.write_bytes(b"")
+            commands: list[list[str]] = []
+            payload = self.payload(
+                root,
+                params={
+                    "runMode": "preview",
+                    "modelProfile": "wan22-i2v",
+                    "videoMode": "i2v",
+                    "aspectRatio": "16:9",
+                    "duration": "5",
+                    "seed": "100",
+                    "extraLora": {"name": "blue motion", "strength": 0.6},
+                },
+            )
+            patches = self.run_with_patches(root, commands)
+            with patches[0], patches[1], patches[2]:
+                result = wan_seed_seeker_action.run_preview(payload, emit_partials=False)
+
+        self.assertTrue(all("--extra-lora" in command for command in commands))
+        self.assertEqual(commands[0][commands[0].index("--extra-lora") + 1], f"{lora_path}:0.6")
+        metadata = result["artifacts"][0]["metadata"]
+        self.assertEqual(metadata["extraLoras"], [f"{lora_path}:0.6"])
+        self.assertEqual(metadata["seedSeeker"]["extraLoras"], [f"{lora_path}:0.6"])
+        self.assertIn("lora", metadata["tags"])
+
     def test_preview_flf2v_uses_first_and_last_image_directly_with_dasiwa_steps(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -200,6 +230,9 @@ class WanSeedSeekerActionTest(unittest.TestCase):
             source_1.parent.mkdir(parents=True)
             source_1.write_bytes(b"first")
             source_2.write_bytes(b"last")
+            lora = root / "models" / "loras" / "wan22" / "seed-style.safetensors"
+            lora.parent.mkdir(parents=True)
+            lora.write_bytes(b"")
             commands: list[list[str]] = []
             payload = {
                 "skillId": "wan-seed-seeker",
@@ -220,6 +253,7 @@ class WanSeedSeekerActionTest(unittest.TestCase):
                             "duration": 7,
                             "highNoiseSteps": 2,
                             "lowNoiseSteps": 2,
+                            "extraLoras": [f"{lora}:0.5"],
                             "sourceImageArtifactUrls": [
                                 "/api/artifacts/inputs/first.png",
                                 "/api/artifacts/inputs/last.png",
@@ -240,11 +274,13 @@ class WanSeedSeekerActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--width") + 1], "1440")
         self.assertEqual(command[command.index("--height") + 1], "1080")
         self.assertEqual(command[command.index("--length") + 1], "113")
+        self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora}:0.5")
         self.assertTrue(command[command.index("--first") + 1].endswith("first.png"))
         self.assertTrue(command[command.index("--last") + 1].endswith("last.png"))
         self.assertEqual(result["artifacts"][0]["metadata"]["resolution"], "1080p")
         self.assertEqual(result["artifacts"][0]["metadata"]["width"], 1440)
         self.assertEqual(result["artifacts"][0]["metadata"]["height"], 1080)
+        self.assertEqual(result["artifacts"][0]["metadata"]["extraLoras"], [f"{lora}:0.5"])
         self.assertIn("Seed: 4242", result["artifacts"][0]["prompt"])
 
     def test_rerender_requires_selected_wan_preview(self) -> None:

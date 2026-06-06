@@ -731,7 +731,11 @@ export function App() {
     );
   }
 
-  function createCardFromEditedMediaArtifact(artifact: EditedMediaArtifact, sourceNodeId: string) {
+  function createCardFromEditedMediaArtifact(
+    artifact: EditedMediaArtifact,
+    sourceNodeId: string,
+    placementOffset = 0,
+  ) {
     const editedDocument = createCardDocumentForEditedArtifact(artifact);
     const sourceNode = canvasNodes.find((candidate) => candidate.id === sourceNodeId);
     const sourceDocument = sourceNode ? documentsById[sourceNode.cardDocumentId] : undefined;
@@ -739,6 +743,7 @@ export function App() {
     const sourceHeight = sourceNode && sourceDocument
       ? getCardHeight(sourceNode.frame.width, sourceDocument, sourceNode.frame)
       : 0;
+    const visibleOffset = Math.max(0, placementOffset) * 28;
     const editedNode: CanvasNode = {
       id: `node_${editedDocument.id}`,
       cardDocumentId: editedDocument.id,
@@ -746,8 +751,8 @@ export function App() {
         ? {
           ...defaultNode.frame,
           width: sourceNode.frame.width,
-          x: sourceNode.frame.x + 32,
-          y: sourceNode.frame.y + sourceHeight + 32,
+          x: sourceNode.frame.x + 32 + visibleOffset,
+          y: sourceNode.frame.y + sourceHeight + 32 + visibleOffset,
         }
         : defaultNode.frame,
     };

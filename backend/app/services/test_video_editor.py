@@ -68,6 +68,37 @@ class VideoEditorValidationTest(unittest.TestCase):
             with self.assertRaisesRegex(VideoEditorError, "local artifact URLs"):
                 service.timeline("file:///tmp/video.mp4")
 
+    def test_lut_catalog_returns_original_and_prepackaged_luts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = VideoEditorService(Path(tmpdir))
+
+            catalog = service.list_luts()
+
+            self.assertEqual(catalog[0].id, "original")
+            self.assertIn("cinematic", {lut.id for lut in catalog})
+            self.assertIn("film-warm", {lut.id for lut in catalog})
+            self.assertIn("teal-orange", {lut.id for lut in catalog})
+            self.assertIn("blue-boost", {lut.id for lut in catalog})
+            self.assertIn("soft-fade", {lut.id for lut in catalog})
+            self.assertIn("clean-contrast", {lut.id for lut in catalog})
+            self.assertIn("mono", {lut.id for lut in catalog})
+
+    def test_lut_catalog_includes_installed_local_luts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir) / ".loki"
+            installed = root / "video-luts" / "imported" / "test-pack" / "Cool Look.cube"
+            installed.parent.mkdir(parents=True)
+            shutil.copyfile(
+                Path(__file__).resolve().parents[1] / "assets" / "video_luts" / "mono.cube",
+                installed,
+            )
+            service = VideoEditorService(root)
+
+            catalog = service.list_luts()
+            installed_lut = next(lut for lut in catalog if lut.label == "test-pack - Cool Look")
+
+            self.assertTrue(installed_lut.id.startswith("imported-test-pack-cool-look-"))
+
 
 @unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required")
 class VideoEditorFfmpegTest(unittest.TestCase):
@@ -105,6 +136,21 @@ class VideoEditorFfmpegTest(unittest.TestCase):
             for thumbnail in result.thumbnails:
                 self.assertTrue((root / thumbnail.artifact_url.removeprefix("/api/artifacts/")).is_file())
 
+    def test_timeline_with_lut_uses_separate_thumbnail_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.mp4"
+            create_clip(source)
+            service = VideoEditorService(root)
+
+            original = service.timeline("/api/artifacts/imports/source.mp4", max_thumbnails=3)
+            graded = service.timeline("/api/artifacts/imports/source.mp4", max_thumbnails=3, lut_id="film-warm")
+
+            self.assertEqual(len(original.thumbnails), 3)
+            self.assertEqual(len(graded.thumbnails), 3)
+            self.assertNotEqual(original.thumbnails[0].artifact_url, graded.thumbnails[0].artifact_url)
+            self.assertTrue((root / graded.thumbnails[0].artifact_url.removeprefix("/api/artifacts/")).is_file())
+
     def test_export_frame_creates_png_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -121,6 +167,59 @@ class VideoEditorFfmpegTest(unittest.TestCase):
             self.assertEqual(artifact.width, 64)
             self.assertEqual(artifact.height, 48)
             self.assertEqual(artifact.source_artifact_url, "/api/artifacts/imports/source.mp4")
+
+    def test_export_frame_at_duration_uses_last_decodable_frame(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.mp4"
+            create_clip(source)
+            service = VideoEditorService(root)
+            duration = float(service.video_info(source)["duration"])
+
+            artifact = service.export_frame("/api/artifacts/imports/source.mp4", duration)
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "image")
+            self.assertLess(artifact.time_seconds or 99, duration)
+
+    def test_export_frame_with_lut_creates_png_artifact_with_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.mp4"
+            create_clip(source)
+            service = VideoEditorService(root)
+
+            artifact = service.export_frame("/api/artifacts/imports/source.mp4", 0.4, lut_id="mono")
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "image")
+            self.assertEqual(artifact.mime_type, "image/png")
+            self.assertEqual(artifact.lut_id, "mono")
+            self.assertEqual(artifact.lut_label, "Mono")
+
+    def test_export_frame_with_installed_lut_creates_png_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.mp4"
+            installed = root / "video-luts" / "imported" / "test-pack" / "Cool Look.cube"
+            installed.parent.mkdir(parents=True)
+            create_clip(source)
+            shutil.copyfile(
+                Path(__file__).resolve().parents[1] / "assets" / "video_luts" / "mono.cube",
+                installed,
+            )
+            service = VideoEditorService(root)
+            installed_lut = next(lut for lut in service.list_luts() if lut.label == "test-pack - Cool Look")
+
+            artifact = service.export_frame("/api/artifacts/imports/source.mp4", 0.4, lut_id=installed_lut.id)
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "image")
+            self.assertEqual(artifact.lut_id, installed_lut.id)
+            self.assertEqual(artifact.lut_label, "test-pack - Cool Look")
 
     def test_trim_creates_shorter_mp4_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -141,6 +240,36 @@ class VideoEditorFfmpegTest(unittest.TestCase):
             self.assertLess(artifact.duration_seconds or 99, 1.1)
             info = VideoEditorService(root).video_info(output)
             self.assertTrue(info["has_audio"])
+
+    def test_trim_with_lut_creates_mp4_and_preserves_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.mp4"
+            create_clip(source, duration=1.6)
+            service = VideoEditorService(root)
+
+            artifact = service.trim("/api/artifacts/imports/source.mp4", 0.2, 0.9, lut_id="teal-orange")
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "video")
+            self.assertEqual(artifact.mime_type, "video/mp4")
+            self.assertEqual(artifact.lut_id, "teal-orange")
+            self.assertEqual(artifact.lut_label, "Teal Orange")
+            info = VideoEditorService(root).video_info(output)
+            self.assertTrue(info["has_audio"])
+
+    def test_rejects_unknown_lut_ids_and_external_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.mp4"
+            create_clip(source)
+            service = VideoEditorService(root)
+
+            with self.assertRaisesRegex(VideoEditorError, "Unknown video LUT"):
+                service.timeline("/api/artifacts/imports/source.mp4", max_thumbnails=1, lut_id="missing")
+            with self.assertRaisesRegex(VideoEditorError, "Unknown video LUT"):
+                service.export_frame("/api/artifacts/imports/source.mp4", 0.2, lut_id="/tmp/look.cube")
 
     def test_trim_rejects_invalid_ranges(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

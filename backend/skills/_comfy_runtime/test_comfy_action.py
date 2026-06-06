@@ -111,6 +111,92 @@ class ComfyActionTest(unittest.TestCase):
 
         self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora_path}:0.6")
 
+    def test_wan_i2v_resolves_extra_lora_name_from_wan22_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            lora_path = Path(tmpdir) / "loras" / "wan22" / "blue-motion.safetensors"
+            lora_path.parent.mkdir(parents=True)
+            lora_path.write_bytes(b"")
+            image = Path(tmpdir) / "input.png"
+
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videogen",
+                    "prompt": "slow camera drift",
+                    "params": {
+                        "modelProfile": "wan22-i2v",
+                        "videoMode": "i2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "duration": "5",
+                        "lora": {"name": "blue motion", "strength": 0.75},
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-videogen", "wan22-i2v"])
+        self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora_path}:0.75")
+        self.assertIn('"videogen.wan22-i2v": "wan22-i2v"', config)
+
+    def test_wan_flf2v_preserves_explicit_high_and_low_loras(self) -> None:
+        high_lora = "/models/loras/wan22/high.safetensors:0.9"
+        low_lora = "/models/loras/wan22/low.safetensors:0.4"
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            first = Path(tmpdir) / "first.png"
+            last = Path(tmpdir) / "last.png"
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videogen",
+                    "prompt": "smooth transition",
+                    "params": {
+                        "modelProfile": "wan22-dasiwa-tastysin-i2v",
+                        "videoMode": "flf2v",
+                        "aspectRatio": "9:16",
+                        "resolution": "480p",
+                        "duration": "3",
+                        "extraLoraHigh": high_lora,
+                        "extraLoraLow": low_lora,
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [first, last], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[:2], ["comfy-videogen", "wan22-flf2v"])
+        self.assertEqual(command[command.index("--extra-lora-high") + 1], high_lora)
+        self.assertEqual(command[command.index("--extra-lora-low") + 1], low_lora)
+
+    def test_s2vidgen_uses_wan_lora_flag_and_strength(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.models_dir", return_value=Path(tmpdir)),
+            patch("comfy_action.audio_duration_seconds", return_value=3.0),
+        ):
+            lora_path = Path(tmpdir) / "loras" / "wan22" / "singer-style.safetensors"
+            lora_path.parent.mkdir(parents=True)
+            lora_path.write_bytes(b"")
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-s2vidgen",
+                    "prompt": "In the video, a singer performs.",
+                    "params": {
+                        "modelProfile": "wan22-s2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "extraLora": "singer style:0.55",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [Path(tmpdir) / "input.png"], "audio": [Path(tmpdir) / "song.wav"], "video": []},
+            )
+
+        self.assertNotIn("--extra-lora", command)
+        self.assertEqual(command[command.index("--lora") + 1], str(lora_path))
+        self.assertEqual(command[command.index("--lora-strength") + 1], "0.55")
+
     def test_s2vidgen_builds_audio_length_command(self) -> None:
         with (
             tempfile.TemporaryDirectory() as tmpdir,

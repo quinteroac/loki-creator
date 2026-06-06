@@ -47,6 +47,11 @@ export type VideoTimelineResponse = {
   thumbnails: VideoTimelineThumbnail[];
 };
 
+export type VideoLutOption = {
+  id: string;
+  label: string;
+};
+
 export type AudioTimelineResponse = {
   artifactUrl: string;
   durationSeconds: number;
@@ -70,6 +75,8 @@ export type EditedMediaArtifact = {
   endSeconds?: number | null;
   sampleRate?: number | null;
   channels?: number | null;
+  lutId?: string | null;
+  lutLabel?: string | null;
 };
 
 export type VideoEditArtifact = EditedMediaArtifact;

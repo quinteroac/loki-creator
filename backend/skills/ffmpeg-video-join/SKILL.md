@@ -19,7 +19,7 @@ metadata:
             description: Join clips one after another with hard cuts.
           - value: trim-last-frame
             label: Trim last frame
-            description: Remove the final frame from each clip except the last before joining.
+            description: Remove the final frame from each clip except the last and soften color jumps.
           - value: crossfade
             label: Crossfade
             description: Blend video and audio between clips.
@@ -55,7 +55,8 @@ Supported modes:
 
 - `direct`: hard cuts, no transition.
 - `trim-last-frame`: removes one frame from the end of each clip except the
-  last, then uses hard cuts.
+  last, color-matches each incoming clip to the previous cut, then uses hard
+  cuts.
 - `crossfade`: blends clips together with a fade transition.
 - `fade-black`: fades through black between clips.
 - `dissolve`: dissolves between clips.

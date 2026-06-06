@@ -3,13 +3,16 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
 from app.models import (
     VideoEditArtifact,
+    VideoLutOption,
     VideoTimelineResponse,
     VideoTimelineThumbnail,
 )
@@ -19,26 +22,61 @@ class VideoEditorError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class VideoLutPreset:
+    id: str
+    label: str
+    filename: str | None = None
+    path: Path | None = None
+
+
 class VideoEditorService:
     DEFAULT_THUMBNAILS = 16
     MAX_THUMBNAILS = 24
     MIN_TRIM_SECONDS = 0.1
+    ORIGINAL_LUT_ID = "original"
+    LUT_PRESETS = (
+        VideoLutPreset(id=ORIGINAL_LUT_ID, label="Original"),
+        VideoLutPreset(id="cinematic", label="Cinematic", filename="cinematic.cube"),
+        VideoLutPreset(id="film-warm", label="Film Warm", filename="film-warm.cube"),
+        VideoLutPreset(id="teal-orange", label="Teal Orange", filename="teal-orange.cube"),
+        VideoLutPreset(id="blue-boost", label="Blue Boost", filename="blue-boost.cube"),
+        VideoLutPreset(id="soft-fade", label="Soft Fade", filename="soft-fade.cube"),
+        VideoLutPreset(id="clean-contrast", label="Clean Contrast", filename="clean-contrast.cube"),
+        VideoLutPreset(id="mono", label="Mono", filename="mono.cube"),
+    )
 
     def __init__(self, artifacts_root: Path) -> None:
         self.artifacts_root = artifacts_root.resolve()
         self.deleted_root = self.artifacts_root / "deleted"
         self.editor_root = self.artifacts_root / "video-editor"
+        self.luts_root = Path(__file__).resolve().parents[1] / "assets" / "video_luts"
+        self.imported_luts_root = self.artifacts_root / "video-luts" / "imported"
 
-    def timeline(self, artifact_url: str, max_thumbnails: int | None = None) -> VideoTimelineResponse:
+    def list_luts(self) -> list[VideoLutOption]:
+        return [VideoLutOption(id=preset.id, label=preset.label) for preset in self._all_lut_presets()]
+
+    def timeline(
+        self,
+        artifact_url: str,
+        max_thumbnails: int | None = None,
+        lut_id: str | None = None,
+    ) -> VideoTimelineResponse:
         source = self._resolve_artifact_url(artifact_url)
         self._require_tools()
+        lut = self._resolve_lut(lut_id)
         info = self.video_info(source)
         thumbnail_count = self._thumbnail_count(max_thumbnails)
-        timeline_dir = self.editor_root / "timelines" / self._timeline_cache_key(source, thumbnail_count)
+        timeline_dir = self.editor_root / "timelines" / self._timeline_cache_key(source, thumbnail_count, lut)
         timeline_dir.mkdir(parents=True, exist_ok=True)
         times = self._thumbnail_times(float(info["duration"]), thumbnail_count, float(info["fps"]))
         thumbnails = [
-            self._timeline_thumbnail(source=source, destination=timeline_dir / f"thumb-{index:02d}.jpg", time_seconds=time)
+            self._timeline_thumbnail(
+                source=source,
+                destination=timeline_dir / f"thumb-{index:02d}.jpg",
+                time_seconds=time,
+                lut=lut,
+            )
             for index, time in enumerate(times, start=1)
         ]
 
@@ -51,22 +89,28 @@ class VideoEditorService:
             thumbnails=thumbnails,
         )
 
-    def export_frame(self, artifact_url: str, time_seconds: float) -> VideoEditArtifact:
+    def export_frame(self, artifact_url: str, time_seconds: float, lut_id: str | None = None) -> VideoEditArtifact:
         source = self._resolve_artifact_url(artifact_url)
         self._require_tools()
+        lut = self._resolve_lut(lut_id)
         info = self.video_info(source)
         timestamp = self._validate_time(time_seconds, float(info["duration"]), float(info["fps"]))
         output_dir = self.editor_root / "exports" / uuid4().hex
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{source.stem}-frame-{self._milliseconds(timestamp)}.png"
-        self._run_command(
+        output_path = output_dir / f"{source.stem}-frame-{self._milliseconds(timestamp)}-{lut.id}.png"
+        command = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            self._format_seconds(timestamp),
+            "-i",
+            str(source),
+        ]
+        filter_value = self._video_filter(lut)
+        if filter_value:
+            command.extend(["-vf", filter_value])
+        command.extend(
             [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                self._format_seconds(timestamp),
-                "-i",
-                str(source),
                 "-frames:v",
                 "1",
                 "-update",
@@ -74,6 +118,7 @@ class VideoEditorService:
                 str(output_path),
             ]
         )
+        self._run_command(command)
         if not output_path.is_file():
             raise VideoEditorError("ffmpeg did not create the requested frame artifact.")
 
@@ -87,16 +132,25 @@ class VideoEditorService:
             width=int(info["width"]),
             height=int(info["height"]),
             timeSeconds=timestamp,
+            lutId=lut.id,
+            lutLabel=lut.label,
         )
 
-    def trim(self, artifact_url: str, start_seconds: float, end_seconds: float) -> VideoEditArtifact:
+    def trim(
+        self,
+        artifact_url: str,
+        start_seconds: float,
+        end_seconds: float,
+        lut_id: str | None = None,
+    ) -> VideoEditArtifact:
         source = self._resolve_artifact_url(artifact_url)
         self._require_tools()
+        lut = self._resolve_lut(lut_id)
         info = self.video_info(source)
         start, end = self._validate_trim_range(start_seconds, end_seconds, float(info["duration"]))
         output_dir = self.editor_root / "exports" / uuid4().hex
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{source.stem}-trim-{self._milliseconds(start)}-{self._milliseconds(end)}.mp4"
+        output_path = output_dir / f"{source.stem}-trim-{self._milliseconds(start)}-{self._milliseconds(end)}-{lut.id}.mp4"
         command = [
             "ffmpeg",
             "-y",
@@ -111,6 +165,9 @@ class VideoEditorService:
         ]
         if info["has_audio"]:
             command.extend(["-map", "0:a:0"])
+        filter_value = self._video_filter(lut)
+        if filter_value:
+            command.extend(["-filter:v", filter_value])
         command.extend(
             [
                 "-c:v",
@@ -147,6 +204,8 @@ class VideoEditorService:
             durationSeconds=float(output_info["duration"]),
             startSeconds=start,
             endSeconds=end,
+            lutId=lut.id,
+            lutLabel=lut.label,
         )
 
     def video_info(self, path: Path) -> dict[str, object]:
@@ -198,11 +257,13 @@ class VideoEditorService:
     def _artifact_url_for_path(self, path: Path) -> str:
         return f"/api/artifacts/{path.resolve().relative_to(self.artifacts_root).as_posix()}"
 
-    def _timeline_cache_key(self, source: Path, thumbnail_count: int) -> str:
+    def _timeline_cache_key(self, source: Path, thumbnail_count: int, lut: VideoLutPreset) -> str:
         relative = source.resolve().relative_to(self.artifacts_root).as_posix()
         stat = source.stat()
         digest = hashlib.sha256(
-            f"timeline-v2|{relative}|{stat.st_mtime_ns}|{stat.st_size}|{thumbnail_count}".encode("utf-8")
+            f"timeline-v4|{relative}|{stat.st_mtime_ns}|{stat.st_size}|{thumbnail_count}|{self._lut_cache_token(lut)}".encode(
+                "utf-8"
+            )
         ).hexdigest()
         return digest[:24]
 
@@ -217,8 +278,16 @@ class VideoEditorService:
         last_decodable_time = max(0, safe_duration - frame_duration)
         return [min(last_decodable_time, safe_duration * (index + 0.5) / count) for index in range(count)]
 
-    def _timeline_thumbnail(self, *, source: Path, destination: Path, time_seconds: float) -> VideoTimelineThumbnail:
+    def _timeline_thumbnail(
+        self,
+        *,
+        source: Path,
+        destination: Path,
+        time_seconds: float,
+        lut: VideoLutPreset,
+    ) -> VideoTimelineThumbnail:
         if not destination.is_file():
+            filter_value = self._video_filter(lut, "scale=360:-2")
             self._run_command(
                 [
                     "ffmpeg",
@@ -230,7 +299,7 @@ class VideoEditorService:
                     "-frames:v",
                     "1",
                     "-vf",
-                    "scale=360:-2",
+                    filter_value or "scale=360:-2",
                     "-q:v",
                     "3",
                     "-update",
@@ -278,6 +347,97 @@ class VideoEditorService:
         if end > duration:
             raise VideoEditorError("Trim endSeconds cannot be greater than the video duration.")
         return start, end
+
+    def _resolve_lut(self, lut_id: str | None) -> VideoLutPreset:
+        normalized_id = (lut_id or self.ORIGINAL_LUT_ID).strip() or self.ORIGINAL_LUT_ID
+        preset = next((candidate for candidate in self._all_lut_presets() if candidate.id == normalized_id), None)
+        if preset is None:
+            raise VideoEditorError(f"Unknown video LUT: {normalized_id}")
+        lut_path = self._lut_path(preset)
+        if lut_path is None:
+            return preset
+        if not lut_path.is_file():
+            raise VideoEditorError(f"Video LUT was not found: {preset.id}")
+        return preset
+
+    def _video_filter(self, lut: VideoLutPreset, *filters: str) -> str:
+        parts: list[str] = []
+        lut_path = self._lut_path(lut)
+        if lut_path is not None:
+            parts.append(f"lut3d=file={self._escape_filter_value(str(lut_path))}:interp=tetrahedral")
+        parts.extend(filter_value for filter_value in filters if filter_value)
+        return ",".join(parts)
+
+    def _escape_filter_value(self, value: str) -> str:
+        return value.replace("\\", "\\\\").replace(":", "\\:").replace(",", "\\,")
+
+    def _lut_cache_token(self, lut: VideoLutPreset) -> str:
+        lut_path = self._lut_path(lut)
+        if lut_path is None:
+            return lut.id
+        stat = lut_path.stat()
+        return f"{lut.id}|{stat.st_mtime_ns}|{stat.st_size}"
+
+    def _all_lut_presets(self) -> list[VideoLutPreset]:
+        return [*self.LUT_PRESETS, *self._imported_lut_presets()]
+
+    def _imported_lut_presets(self) -> list[VideoLutPreset]:
+        if not self.imported_luts_root.is_dir():
+            return []
+
+        presets: list[VideoLutPreset] = []
+        root = self.imported_luts_root.resolve()
+        for path in sorted(self.imported_luts_root.rglob("*")):
+            if not path.is_file() or path.suffix.lower() != ".cube":
+                continue
+            resolved_path = path.resolve()
+            try:
+                relative = resolved_path.relative_to(root)
+            except ValueError:
+                continue
+            if any(part.startswith(".") or part == "__MACOSX" for part in relative.parts):
+                continue
+            presets.append(
+                VideoLutPreset(
+                    id=self._imported_lut_id(relative),
+                    label=self._imported_lut_label(relative),
+                    path=resolved_path,
+                )
+            )
+        return presets
+
+    def _lut_path(self, lut: VideoLutPreset) -> Path | None:
+        if lut.filename is not None:
+            lut_path = (self.luts_root / lut.filename).resolve()
+            try:
+                lut_path.relative_to(self.luts_root.resolve())
+            except ValueError as exc:
+                raise VideoEditorError("Video LUT is outside the bundled LUT directory.") from exc
+            return lut_path
+
+        if lut.path is not None:
+            lut_path = lut.path.resolve()
+            try:
+                lut_path.relative_to(self.imported_luts_root.resolve())
+            except ValueError as exc:
+                raise VideoEditorError("Video LUT is outside the imported LUT directory.") from exc
+            return lut_path
+
+        return None
+
+    def _imported_lut_id(self, relative_path: Path) -> str:
+        normalized = relative_path.with_suffix("").as_posix()
+        slug = re.sub(r"[^a-z0-9]+", "-", normalized.lower()).strip("-") or "lut"
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:8]
+        return f"imported-{slug[:72]}-{digest}"
+
+    def _imported_lut_label(self, relative_path: Path) -> str:
+        stem = relative_path.stem.replace("_", " ").replace("-", " ").strip()
+        name = re.sub(r"\s+", " ", stem)
+        if len(relative_path.parts) <= 1:
+            return f"Imported - {name}"
+        category = re.sub(r"\s+", " ", relative_path.parts[0].replace("_", " ").strip())
+        return f"{category} - {name}"
 
     def _require_tools(self) -> None:
         missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]

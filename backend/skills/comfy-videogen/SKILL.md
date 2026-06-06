@@ -121,6 +121,30 @@ metadata:
         askWhen: missing
         order: 70
         options: []
+      - id: extraLora
+        label: Extra LoRA
+        description: Optional compatible LoRA name or path, with optional strength like relight:0.7. Use only when the user explicitly asks for a LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        order: 80
+        options: []
+      - id: extraLoraHigh
+        label: WAN high LoRA
+        description: Optional WAN 2.2 high-noise UNet LoRA name or path. Use only when the user asks for a high-noise-specific LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        order: 90
+        options: []
+      - id: extraLoraLow
+        label: WAN low LoRA
+        description: Optional WAN 2.2 low-noise UNet LoRA name or path. Use only when the user asks for a low-noise-specific LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        order: 100
+        options: []
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -243,8 +267,9 @@ for the exact mode: `videogen.t2v`, `videogen.i2v`, `videogen.flf2v`,
 `videogen.wan22-flf2v`.
 
 If the user asks to use or organize a LoRA by name or purpose, use
-`comfy-lora-onboarding` to search `loras/ltx23/` first and pass the chosen file
-with `--extra-lora` only to modes that support ad hoc LoRA insertion.
+`comfy-lora-onboarding` to search the architecture folder first (`loras/ltx23/`
+for LTX, `loras/wan22/` for WAN) and pass the chosen file only to modes that
+support ad hoc LoRA insertion.
 
 ## Modes
 
@@ -331,6 +356,7 @@ uv run comfy-videogen wan22-i2v \
   --fps 16 \
   --high-steps 10 \
   --low-steps 10 \
+  --extra-lora .loki/models/comfyui/loras/wan22/blue-motion.safetensors:0.7 \
   --out outputs
 ```
 
@@ -345,6 +371,8 @@ uv run comfy-videogen wan22-flf2v \
   --fps 16 \
   --high-steps 2 \
   --low-steps 2 \
+  --extra-lora-high .loki/models/comfyui/loras/wan22/high-noise-detail.safetensors:0.6 \
+  --extra-lora-low .loki/models/comfyui/loras/wan22/low-noise-color.safetensors:0.4 \
   --out outputs
 ```
 
@@ -427,10 +455,11 @@ directly to Seedance 2.0.
 
 Extra LoRAs are optional and ad hoc. Use repeatable
 `--extra-lora PATH[:MODEL_STRENGTH[:CLIP_STRENGTH]]` after resolving the file
-through `loras/ltx23/` or the loose `loras/` fallback. In this cut, extra LoRAs
-are supported for `flf2v`; `t2v`, `i2v`, and `ia2av` return clean JSON errors if
-an extra LoRA is supplied because those modes still use upstream wrappers without
-a safe insertion point.
+through `loras/wan22/` or the loose `loras/` fallback. `wan22-i2v` and
+`wan22-flf2v` also support `--extra-lora-high` and `--extra-lora-low` when a LoRA
+should affect only the high-noise or low-noise UNet. The Loki runtime accepts
+`extraLora`, `extraLoraHigh`, and `extraLoraLow` params and resolves short names
+against `loras/wan22/`.
 
 ### Seedance 2.0 Remote API
 

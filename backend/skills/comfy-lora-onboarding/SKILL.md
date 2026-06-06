@@ -42,6 +42,10 @@ loras/
     camera-static.safetensors
     camera-dolly-left.safetensors
     detailer.safetensors
+  wan22/
+    relight.safetensors
+    blue-motion.safetensors
+    high-noise-detail.safetensors
   ace-step-1.5/
     vocal-polish.safetensors
 ```
@@ -56,7 +60,7 @@ Filenames should describe purpose or intent. Prefer names like
 When the user asks to apply a LoRA by name, style, or purpose:
 
 1. Identify the active architecture from the command/profile: `anima`,
-   `qwen-image-edit`, `flux-klein`, `ltx23`, or `ace-step-1.5`.
+   `qwen-image-edit`, `flux-klein`, `ltx23`, `wan22`, or `ace-step-1.5`.
 2. Search first in `${models_dir}/loras/<architecture>/`.
 3. Search `${models_dir}/loras/` as fallback for loose LoRAs.
 4. Rank candidates by matching filename tokens against the user request.
@@ -76,6 +80,10 @@ PATH[:MODEL_STRENGTH[:CLIP_STRENGTH]]
 ```
 
 Defaults are `MODEL_STRENGTH=1.0` and `CLIP_STRENGTH=0.0`.
+
+WAN 2.2 image-to-video and first/last-frame modes also accept high/low specific
+LoRAs through `--extra-lora-high` and `--extra-lora-low`. WAN S2V uses one
+model-only LoRA through `--lora PATH` plus optional `--lora-strength`.
 
 Example:
 

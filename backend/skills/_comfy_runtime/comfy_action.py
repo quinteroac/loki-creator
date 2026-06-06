@@ -802,6 +802,10 @@ def is_anima_profile(model_profile: str) -> bool:
 def lora_architecture_for_profile(model_profile: str) -> str:
     if is_anima_profile(model_profile):
         return "anima"
+    if model_profile in {"ltx23-10eros", "ltx23-dasiwa-golden-lace-v3"}:
+        return "ltx23"
+    if is_wan22_profile(model_profile):
+        return "wan22"
     if model_profile == "qwen-edit2511":
         return "qwen-image-edit"
     if model_profile == "flux-klein-9b-snofs":
@@ -833,15 +837,22 @@ def extra_lora_value_from_raw(raw: object) -> str:
     return first_text(raw)
 
 
-def extra_lora_values(params: dict[str, Any]) -> list[str]:
+def extra_lora_values_from_keys(params: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
     values: list[str] = []
-    for key in ("extraLora", "extra_lora", "extraLoras", "extra_loras", "lora", "loras"):
+    for key in keys:
         raw = params.get(key)
         if isinstance(raw, list):
             values.extend(extra_lora_value_from_raw(value) for value in raw)
         else:
             values.append(extra_lora_value_from_raw(raw))
     return [value for value in values if value]
+
+
+def extra_lora_values(params: dict[str, Any]) -> list[str]:
+    return extra_lora_values_from_keys(
+        params,
+        ("extraLora", "extra_lora", "extraLoras", "extra_loras", "lora", "loras"),
+    )
 
 
 def resolve_extra_lora(value: str, architecture: str) -> str:
@@ -891,6 +902,40 @@ def append_extra_loras(command: list[str], params: dict[str, Any], model_profile
     architecture = lora_architecture_for_profile(model_profile)
     for value in extra_lora_values(params):
         command.extend(["--extra-lora", resolve_extra_lora(value, architecture)])
+
+
+def append_wan_video_loras(command: list[str], params: dict[str, Any], model_profile: str) -> None:
+    architecture = lora_architecture_for_profile(model_profile)
+    for value in extra_lora_values(params):
+        command.extend(["--extra-lora", resolve_extra_lora(value, architecture)])
+    for value in extra_lora_values_from_keys(
+        params,
+        ("extraLoraHigh", "extra_lora_high", "extraLorasHigh", "extra_loras_high", "loraHigh", "lora_high"),
+    ):
+        command.extend(["--extra-lora-high", resolve_extra_lora(value, architecture)])
+    for value in extra_lora_values_from_keys(
+        params,
+        ("extraLoraLow", "extra_lora_low", "extraLorasLow", "extra_loras_low", "loraLow", "lora_low"),
+    ):
+        command.extend(["--extra-lora-low", resolve_extra_lora(value, architecture)])
+
+
+def append_wan_s2v_lora(command: list[str], params: dict[str, Any], model_profile: str) -> None:
+    loras = extra_lora_values(params)
+    if not loras:
+        return
+    if len(loras) > 1:
+        raise RuntimeError("WAN S2V accepts only one LoRA. Use a single params.extraLora value.")
+
+    resolved = resolve_extra_lora(loras[0], lora_architecture_for_profile(model_profile))
+    lora_path, _separator, strengths = resolved.partition(":")
+    command.extend(["--lora", lora_path])
+    model_strength = strengths.split(":", 1)[0] if strengths else first_scalar_text(
+        params.get("loraStrength"),
+        params.get("lora_strength"),
+    )
+    if model_strength:
+        command.extend(["--lora-strength", model_strength])
 
 
 def build_s2vidgen_command(
@@ -947,6 +992,7 @@ def build_s2vidgen_command(
         "--out",
         str(out_dir),
     ]
+    append_wan_s2v_lora(command, params, model_profile)
     cwd = write_run_comfy_config(out_dir.parent, capability="videogen.wan22-s2v", model_profile=model_profile)
     return command, cwd
 
@@ -1139,6 +1185,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
                 value = as_int(params.get(key))
                 if value is not None:
                     command.extend([f"--{cli_key}", str(value)])
+            append_wan_video_loras(command, params, model_profile)
         return command, cwd
 
     if skill_id == "comfy-musicgen":

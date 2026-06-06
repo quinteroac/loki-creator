@@ -688,6 +688,7 @@ button {
   outline-offset: 2px;
 }
 
+.video-editor-controls,
 .video-editor-readout,
 .video-editor-actions {
   display: flex;
@@ -695,8 +696,14 @@ button {
   gap: 8px;
 }
 
+.video-editor-controls {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .video-editor-readout {
   justify-content: space-between;
+  flex: 1 1 230px;
   color: var(--dark-text-soft);
   font-size: 12px;
   font-weight: 600;
@@ -708,6 +715,47 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.video-editor-lut-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 6px 10px;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.video-editor-lut-select span {
+  color: var(--dark-text-soft);
+}
+
+.video-editor-lut-select select {
+  max-width: 144px;
+  min-width: 0;
+  color: var(--dark-text);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  font: inherit;
+  outline: 0;
+}
+
+.video-editor-lut-select select:disabled {
+  color: var(--dark-text-soft);
+  cursor: default;
+}
+
+.video-editor-lut-select:focus-within {
+  outline: 2px solid var(--brand-blue-deep);
+  outline-offset: 2px;
 }
 
 .video-editor-actions {

@@ -17,7 +17,7 @@ type CanvasStageProps = {
   nodes: CanvasNode[];
   selectedIds: string[];
   onCreateNote: (frame: CanvasNodeFrame) => void;
-  onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string) => void;
+  onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string, placementOffset?: number) => void;
   onDeleteDocument: (cardDocumentId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;

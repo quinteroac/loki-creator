@@ -238,6 +238,36 @@ def resolve_wan_steps(params: dict[str, Any], model_profile: str) -> tuple[int, 
     return high_steps if high_steps is not None else default_high, low_steps if low_steps is not None else default_low
 
 
+def resolved_loras_from_keys(params: dict[str, Any], keys: tuple[str, ...], model_profile: str) -> list[str]:
+    architecture = comfy_action.lora_architecture_for_profile(model_profile)
+    return [
+        comfy_action.resolve_extra_lora(value, architecture)
+        for value in comfy_action.extra_lora_values_from_keys(params, keys)
+    ]
+
+
+def wan_lora_metadata(params: dict[str, Any], model_profile: str) -> dict[str, list[str]]:
+    metadata: dict[str, list[str]] = {}
+    extra_loras = [comfy_action.resolve_extra_lora(value, "wan22") for value in comfy_action.extra_lora_values(params)]
+    extra_loras_high = resolved_loras_from_keys(
+        params,
+        ("extraLoraHigh", "extra_lora_high", "extraLorasHigh", "extra_loras_high", "loraHigh", "lora_high"),
+        model_profile,
+    )
+    extra_loras_low = resolved_loras_from_keys(
+        params,
+        ("extraLoraLow", "extra_lora_low", "extraLorasLow", "extra_loras_low", "loraLow", "lora_low"),
+        model_profile,
+    )
+    if extra_loras:
+        metadata["extraLoras"] = extra_loras
+    if extra_loras_high:
+        metadata["extraLorasHigh"] = extra_loras_high
+    if extra_loras_low:
+        metadata["extraLorasLow"] = extra_loras_low
+    return metadata
+
+
 def command_image_args(command: list[str], mode: str, images: list[Path]) -> None:
     if mode == "flf2v":
         first_image = images[0]
@@ -261,6 +291,7 @@ def build_seed_command(
     run_root: Path,
     high_steps: int,
     low_steps: int,
+    lora_params: dict[str, Any] | None = None,
 ) -> tuple[list[str], Path, int, int, int, int]:
     width, height = video_dimensions(aspect_ratio, resolution)
     cli_mode = wan_cli_mode(video_mode)
@@ -295,6 +326,7 @@ def build_seed_command(
         "--low-steps",
         str(low_steps),
     ]
+    comfy_action.append_wan_video_loras(command, lora_params or {}, model_profile)
     command_image_args(command, video_mode, images)
     return command, cwd, width, height, length, fps
 
@@ -335,9 +367,11 @@ def artifact_metadata(
     low_steps: int,
     length: int,
     fps: int,
+    lora_metadata: dict[str, list[str]] | None = None,
     preview_index: int | None = None,
     preview_count: int | None = None,
 ) -> dict[str, Any]:
+    lora_metadata = lora_metadata or {}
     seed_seeker = {
         "skillId": SKILL_ID,
         "mode": mode,
@@ -362,12 +396,13 @@ def artifact_metadata(
         "lowNoiseSteps": low_steps,
         "sourceImageArtifactUrls": source_image_urls,
     }
+    seed_seeker.update(lora_metadata)
     if preview_index is not None:
         seed_seeker["previewIndex"] = preview_index
     if preview_count is not None:
         seed_seeker["previewCount"] = preview_count
 
-    return {
+    metadata = {
         "seedSeeker": seed_seeker,
         "seed": seed,
         "basePrompt": prompt,
@@ -392,6 +427,10 @@ def artifact_metadata(
         "sourceImageArtifactUrls": source_image_urls,
         "tags": [SKILL_ID, f"seed-{seed}", video_mode, mode],
     }
+    metadata.update(lora_metadata)
+    if lora_metadata:
+        metadata["tags"].append("lora")
+    return metadata
 
 
 def raw_artifact_result(
@@ -432,6 +471,7 @@ def run_single_generation(
     mode: str,
     high_steps: int,
     low_steps: int,
+    lora_params: dict[str, Any] | None = None,
     preview_index: int | None = None,
     preview_count: int | None = None,
 ) -> dict[str, Any]:
@@ -448,7 +488,9 @@ def run_single_generation(
         run_root=run_root,
         high_steps=high_steps,
         low_steps=low_steps,
+        lora_params=lora_params,
     )
+    lora_metadata = wan_lora_metadata(lora_params or {}, model_profile)
     payload = comfy_action.run_command(command, cwd)
     video_path = artifact_paths_from_cli(payload)[0]
     metadata = artifact_metadata(
@@ -467,6 +509,7 @@ def run_single_generation(
         low_steps=low_steps,
         length=length,
         fps=fps,
+        lora_metadata=lora_metadata,
         preview_index=preview_index,
         preview_count=preview_count,
     )
@@ -519,6 +562,7 @@ def run_preview(payload: dict[str, Any], *, emit_partials: bool = True) -> dict[
                 mode="preview",
                 high_steps=high_steps,
                 low_steps=low_steps,
+                lora_params=params,
                 preview_index=index,
                 preview_count=PREVIEW_COUNT,
             )
@@ -590,6 +634,7 @@ def run_rerender(payload: dict[str, Any]) -> dict[str, Any]:
         mode="rerender",
         high_steps=high_steps,
         low_steps=low_steps,
+        lora_params=metadata,
     )
 
 

@@ -56,6 +56,14 @@ metadata:
           - value: 720p
             label: 720p
             description: Higher detail with a heavier generation cost.
+      - id: extraLora
+        label: WAN S2V LoRA
+        description: Optional single WAN S2V LoRA name or path, with optional strength like singer-style:0.55. Use only when the user explicitly asks for a LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        order: 40
+        options: []
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -75,6 +83,11 @@ the user for filesystem paths when cards are already selected.
 If `comfy-videogen` or `comfy-models` is not available, use `comfy-tools-setup`
 first. If model validation fails with `missing_model_file`, use
 `comfy-model-downloader` for `videogen.wan22-s2v`.
+
+If the user asks to use a LoRA with WAN S2V, use `comfy-lora-onboarding` to
+resolve one compatible file from `loras/wan22/`. WAN S2V accepts one model-only
+LoRA through `--lora PATH` plus optional `--lora-strength`; do not use
+`--extra-lora` for S2V.
 
 ## Required Arguments
 
@@ -160,6 +173,8 @@ uv run comfy-videogen wan22-s2v \
   --length 224 \
   --fps 16 \
   --audio-duration 14 \
+  --lora .loki/models/comfyui/loras/wan22/singer-style.safetensors \
+  --lora-strength 0.55 \
   --out outputs
 ```
 
@@ -188,3 +203,5 @@ Before invoking the Loki action, verify:
 - `paramsJson` contains the chosen `modelProfile`, `aspectRatio`, and
   `resolution`, and does not include `width`, `height`, `duration`,
   `highNoiseSteps`, or `lowNoiseSteps`.
+- If a LoRA is requested, `paramsJson` includes only one `extraLora`/`lora`
+  value, with optional model strength such as `name:0.55`.

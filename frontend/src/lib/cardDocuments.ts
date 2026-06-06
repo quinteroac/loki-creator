@@ -490,6 +490,8 @@ export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifac
       endSeconds: artifact.endSeconds,
       sampleRate: artifact.sampleRate,
       channels: artifact.channels,
+      lutId: artifact.lutId,
+      lutLabel: artifact.lutLabel,
     },
   };
 }

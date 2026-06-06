@@ -117,6 +117,36 @@ metadata:
           - value: 1080p
             label: 1080p
             description: Maximum final render detail.
+      - id: extraLora
+        label: WAN LoRA
+        description: Optional WAN 2.2 LoRA name or path, with optional strength like relight:0.7. Use only when the user explicitly asks for a LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        dependsOn:
+          runMode: preview
+        order: 70
+        options: []
+      - id: extraLoraHigh
+        label: WAN high LoRA
+        description: Optional WAN 2.2 high-noise UNet LoRA name or path. Use only when the user asks for a high-noise-specific LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        dependsOn:
+          runMode: preview
+        order: 80
+        options: []
+      - id: extraLoraLow
+        label: WAN low LoRA
+        description: Optional WAN 2.2 low-noise UNet LoRA name or path. Use only when the user asks for a low-noise-specific LoRA.
+        type: text
+        required: false
+        askWhen: missing
+        dependsOn:
+          runMode: preview
+        order: 90
+        options: []
     action:
       type: cli-local
       command: [python3, scripts/wan_seed_seeker_action.py]
@@ -150,6 +180,14 @@ image inputs, then choose one candidate for a higher-resolution rerender.
 
 WAN 2.2 does not use the LTX 2x upscale workflow, so the CLI receives the direct
 target dimensions for `360p`, `720p`, and `1080p`.
+
+## LoRAs
+
+If the user asks to explore seeds with a WAN LoRA, use `comfy-lora-onboarding`
+to resolve the file from `loras/wan22/` and pass it as `params.extraLora`.
+Optional high/low specific WAN LoRAs can be passed as `params.extraLoraHigh` and
+`params.extraLoraLow`. Preview metadata stores the resolved LoRA paths, and
+`rerender` reuses them automatically with the selected seed.
 
 ## Prompt Guidance
 
