@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { agentRunEventsUrl, createAgentRun, listAgentModels, stopAgentRun } from "./api/agentRuns";
 import { importArtifact } from "./api/artifacts";
 import { generateCodexImage } from "./api/codexImage";
+import { generateGeminiImage } from "./api/geminiImage";
 import { generateGrokImage, generateGrokVideo } from "./api/grokImagine";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { generateSeedanceVideo } from "./api/seedanceVideo";
@@ -49,6 +50,8 @@ import type {
   CodexImageResolution,
   ComposerMode,
   EditedMediaArtifact,
+  GeminiImageModel,
+  GeminiImageResolution,
   GeneratedCard,
   GrokImageAspectRatio,
   GrokImageResolution,
@@ -121,6 +124,8 @@ export function App() {
   const [grokVideoResolution, setGrokVideoResolution] = useState<GrokVideoResolution>("720p");
   const [grokVideoDuration, setGrokVideoDuration] = useState<GrokVideoDuration>(5);
   const [codexImageResolution, setCodexImageResolution] = useState<CodexImageResolution>("1024x1024");
+  const [geminiImageResolution, setGeminiImageResolution] = useState<GeminiImageResolution>("1024x1024");
+  const [geminiImageModel, setGeminiImageModel] = useState<GeminiImageModel>("Gemini 3.5 Flash (Medium)");
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
@@ -721,7 +726,7 @@ export function App() {
       return;
     }
 
-    if (composerMode === "seedance" || composerMode === "grok" || composerMode === "codex") {
+    if (composerMode === "seedance" || composerMode === "grok" || composerMode === "codex" || composerMode === "gemini") {
       try {
         setIsDirectGenerating(true);
         setStatus(
@@ -729,7 +734,9 @@ export function App() {
             ? "Generating Seedance video..."
             : composerMode === "grok"
               ? `Generating Grok ${grokTool}...`
-              : "Generating Codex image...",
+              : composerMode === "codex"
+                ? "Generating Codex image..."
+                : "Generating Gemini image...",
         );
         const selectedCardSnapshots = await createSelectedCardSnapshots(
           cardDocuments,
@@ -751,22 +758,30 @@ export function App() {
               selectedCardSnapshots,
               attachments,
             })
-            : grokTool === "image"
-              ? await generateGrokImage({
+            : composerMode === "gemini"
+              ? await generateGeminiImage({
+                prompt: text,
+                resolution: geminiImageResolution,
+                model: geminiImageModel,
+                selectedCardSnapshots,
+                attachments,
+              })
+              : grokTool === "image"
+                ? await generateGrokImage({
                 prompt: text,
                 aspectRatio: grokImageAspectRatio,
                 resolution: grokImageResolution,
                 selectedCardSnapshots,
                 attachments,
               })
-              : await generateGrokVideo({
-                prompt: text,
-                aspectRatio: grokVideoAspectRatio,
-                resolution: grokVideoResolution,
-                duration: grokVideoDuration,
-                selectedCardSnapshots,
-                attachments,
-              });
+                : await generateGrokVideo({
+                  prompt: text,
+                  aspectRatio: grokVideoAspectRatio,
+                  resolution: grokVideoResolution,
+                  duration: grokVideoDuration,
+                  selectedCardSnapshots,
+                  attachments,
+                });
         addGeneratedCards(result.cards);
         setInstruction("");
         setAttachments([]);
@@ -775,7 +790,9 @@ export function App() {
             ? "Seedance video generated."
             : composerMode === "grok"
               ? `Grok ${grokTool} generated.`
-              : "Codex image generated.",
+              : composerMode === "codex"
+                ? "Codex image generated."
+                : "Gemini image generated.",
         );
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not generate.");
@@ -1337,6 +1354,8 @@ export function App() {
         attachments={attachments}
         canvasNodes={cardDocuments}
         codexImageResolution={codexImageResolution}
+        geminiImageModel={geminiImageModel}
+        geminiImageResolution={geminiImageResolution}
         availableModels={availableModels}
         fileInputRef={fileInputRef}
         filteredSkills={filteredSkills}
@@ -1347,6 +1366,8 @@ export function App() {
         onAttachFiles={handleFiles}
         onCreateAgent={handleCreateAgent}
         onCodexImageResolutionChange={setCodexImageResolution}
+        onGeminiImageModelChange={setGeminiImageModel}
+        onGeminiImageResolutionChange={setGeminiImageResolution}
         onInstructionChange={setInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
         onQuestionOption={answerPendingQuestion}

@@ -12,6 +12,8 @@ from app.models import (
     ArchiveArtifactsResponse,
     CodexImageGenerationRequest,
     CodexImageGenerationResponse,
+    GeminiImageGenerationRequest,
+    GeminiImageGenerationResponse,
     GrokGenerationResponse,
     GrokImageGenerationRequest,
     GrokVideoGenerationRequest,
@@ -40,6 +42,8 @@ from app.services import (
     ArtifactArchiveService,
     CodexImageGenerationError,
     CodexImageGenerationService,
+    GeminiImageGenerationError,
+    GeminiImageGenerationService,
     GrokImagineGenerationError,
     GrokImagineGenerationService,
     InstructionService,
@@ -99,6 +103,10 @@ def get_grok_imagine_generation_service() -> GrokImagineGenerationService:
 
 def get_codex_image_generation_service() -> CodexImageGenerationService:
     return CodexImageGenerationService(artifacts_root)
+
+
+def get_gemini_image_generation_service() -> GeminiImageGenerationService:
+    return GeminiImageGenerationService(artifacts_root)
 
 
 @router.get("/health")
@@ -162,6 +170,17 @@ def generate_codex_image(
     try:
         return service.generate(payload)
     except CodexImageGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/generations/gemini-image", response_model=GeminiImageGenerationResponse)
+def generate_gemini_image(
+    payload: GeminiImageGenerationRequest,
+    service: GeminiImageGenerationService = Depends(get_gemini_image_generation_service),
+) -> GeminiImageGenerationResponse:
+    try:
+        return service.generate(payload)
+    except GeminiImageGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

@@ -9,6 +9,8 @@ import type {
   AgentQuestion,
   CodexImageResolution,
   ComposerMode,
+  GeminiImageModel,
+  GeminiImageResolution,
   GeneratedCard,
   GrokImageAspectRatio,
   GrokImageResolution,
@@ -30,6 +32,8 @@ type AgentComposerProps = {
   isRunning: boolean;
   composerMode: ComposerMode;
   codexImageResolution: CodexImageResolution;
+  geminiImageModel: GeminiImageModel;
+  geminiImageResolution: GeminiImageResolution;
   grokImageAspectRatio: GrokImageAspectRatio;
   grokImageResolution: GrokImageResolution;
   grokTool: GrokTool;
@@ -38,6 +42,8 @@ type AgentComposerProps = {
   grokVideoResolution: GrokVideoResolution;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCodexImageResolutionChange: (resolution: CodexImageResolution) => void;
+  onGeminiImageModelChange: (model: GeminiImageModel) => void;
+  onGeminiImageResolutionChange: (resolution: GeminiImageResolution) => void;
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -85,6 +91,8 @@ export function AgentComposer({
   isRunning,
   composerMode,
   codexImageResolution,
+  geminiImageModel,
+  geminiImageResolution,
   grokImageAspectRatio,
   grokImageResolution,
   grokTool,
@@ -93,6 +101,8 @@ export function AgentComposer({
   grokVideoResolution,
   onAttachFiles,
   onCodexImageResolutionChange,
+  onGeminiImageModelChange,
+  onGeminiImageResolutionChange,
   onCreateAgent,
   onInstructionChange,
   onInstructionKeyDown,
@@ -330,6 +340,7 @@ export function AgentComposer({
                 <option value="seedance">Seedance</option>
                 <option value="grok">Grok</option>
                 <option value="codex">Codex</option>
+                <option value="gemini">Gemini</option>
               </select>
             </label>
             {composerMode === "seedance" && (
@@ -453,6 +464,44 @@ export function AgentComposer({
                   <option value="auto">Auto</option>
                 </select>
               </label>
+            )}
+            {composerMode === "gemini" && (
+              <>
+                <label className="composer-select-chip">
+                  <span>Model</span>
+                  <select
+                    value={geminiImageModel}
+                    onChange={(event) => onGeminiImageModelChange(event.target.value as GeminiImageModel)}
+                    aria-label="Gemini image model"
+                  >
+                    <option value="Gemini 3.5 Flash (Medium)">3.5 Flash M</option>
+                    <option value="Gemini 3.5 Flash (High)">3.5 Flash H</option>
+                    <option value="Gemini 3.5 Flash (Low)">3.5 Flash L</option>
+                    <option value="Gemini 3.1 Pro (Low)">3.1 Pro L</option>
+                    <option value="Gemini 3.1 Pro (High)">3.1 Pro H</option>
+                    <option value="Claude Sonnet 4.6 (Thinking)">Sonnet 4.6</option>
+                    <option value="Claude Opus 4.6 (Thinking)">Opus 4.6</option>
+                    <option value="GPT-OSS 120B (Medium)">GPT-OSS 120B</option>
+                  </select>
+                </label>
+                <label className="composer-select-chip">
+                  <span>Res</span>
+                  <select
+                    value={geminiImageResolution}
+                    onChange={(event) => onGeminiImageResolutionChange(event.target.value as GeminiImageResolution)}
+                    aria-label="Gemini image resolution"
+                  >
+                    <option value="1024x1024">1024 square</option>
+                    <option value="1536x1024">1536 landscape</option>
+                    <option value="1024x1536">1536 portrait</option>
+                    <option value="2048x2048">2K square</option>
+                    <option value="2048x1152">2K landscape</option>
+                    <option value="3840x2160">4K landscape</option>
+                    <option value="2160x3840">4K portrait</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                </label>
+              </>
             )}
             {composerMode === "agent" && (
               <>

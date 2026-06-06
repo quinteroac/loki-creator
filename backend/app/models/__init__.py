@@ -21,6 +21,8 @@ from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequ
 from app.models.generations import (
     CodexImageGenerationRequest,
     CodexImageGenerationResponse,
+    GeminiImageGenerationRequest,
+    GeminiImageGenerationResponse,
     GrokGenerationResponse,
     GrokImageGenerationRequest,
     GrokVideoGenerationRequest,
@@ -70,6 +72,8 @@ __all__ = [
     "InstructionResponse",
     "CodexImageGenerationRequest",
     "CodexImageGenerationResponse",
+    "GeminiImageGenerationRequest",
+    "GeminiImageGenerationResponse",
     "GrokGenerationResponse",
     "GrokImageGenerationRequest",
     "GrokVideoGenerationRequest",

@@ -35,7 +35,7 @@ export type SeedanceAspectRatio = "16:9" | "9:16";
 
 export type SeedanceDuration = 4 | 5 | 7 | 10 | 15;
 
-export type ComposerMode = "agent" | "seedance" | "grok" | "codex";
+export type ComposerMode = "agent" | "seedance" | "grok" | "codex" | "gemini";
 
 export type CodexImageResolution =
   | "1024x1024"
@@ -46,6 +46,18 @@ export type CodexImageResolution =
   | "3840x2160"
   | "2160x3840"
   | "auto";
+
+export type GeminiImageResolution = CodexImageResolution;
+
+export type GeminiImageModel =
+  | "Gemini 3.5 Flash (Medium)"
+  | "Gemini 3.5 Flash (High)"
+  | "Gemini 3.5 Flash (Low)"
+  | "Gemini 3.1 Pro (Low)"
+  | "Gemini 3.1 Pro (High)"
+  | "Claude Sonnet 4.6 (Thinking)"
+  | "Claude Opus 4.6 (Thinking)"
+  | "GPT-OSS 120B (Medium)";
 
 export type GrokTool = "image" | "video";
 
@@ -101,6 +113,19 @@ export type CodexImageGenerationRequest = {
 };
 
 export type CodexImageGenerationResponse = {
+  cards: GeneratedCard[];
+};
+
+export type GeminiImageGenerationRequest = {
+  prompt: string;
+  resolution: GeminiImageResolution;
+  model: GeminiImageModel;
+  selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
+  context?: Record<string, unknown>;
+};
+
+export type GeminiImageGenerationResponse = {
   cards: GeneratedCard[];
 };
 

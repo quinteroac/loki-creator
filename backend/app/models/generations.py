@@ -74,3 +74,38 @@ class CodexImageGenerationResponse(BaseModel):
     cards: list[GeneratedCard] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class GeminiImageGenerationRequest(BaseModel):
+    prompt: str
+    resolution: Literal[
+        "1024x1024",
+        "1536x1024",
+        "1024x1536",
+        "2048x2048",
+        "2048x1152",
+        "3840x2160",
+        "2160x3840",
+        "auto",
+    ] = "1024x1024"
+    model: Literal[
+        "Gemini 3.5 Flash (Medium)",
+        "Gemini 3.5 Flash (High)",
+        "Gemini 3.5 Flash (Low)",
+        "Gemini 3.1 Pro (Low)",
+        "Gemini 3.1 Pro (High)",
+        "Claude Sonnet 4.6 (Thinking)",
+        "Claude Opus 4.6 (Thinking)",
+        "GPT-OSS 120B (Medium)",
+    ] = "Gemini 3.5 Flash (Medium)"
+    selected_card_snapshots: list[dict[str, Any]] = Field(default_factory=list, alias="selectedCardSnapshots")
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class GeminiImageGenerationResponse(BaseModel):
+    cards: list[GeneratedCard] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
