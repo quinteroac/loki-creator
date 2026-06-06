@@ -61,8 +61,9 @@ metadata:
 
 Use this skill only for editing an existing image through the `comfy-imagegen`
 CLI. The input image should come from selected card snapshots first:
-`mediaAssets` images are preferred, and `preview` is the fallback when the card
-is an HTML/CSS/canvas composition.
+`metadata.artifactUrl` or `mediaAssets` image artifact URLs are required.
+Rendered previews and inline `dataUrl` payloads are UI-only and are not valid
+skill inputs.
 
 Local modes use the models directory declared in this skill's Loki metadata.
 If a supported built-in edit model is missing, use `comfy-model-downloader` with

@@ -20,8 +20,9 @@ metadata:
 
 Use this skill only for upscaling an existing image through the
 `comfy-imagegen upscale` CLI. The input image should come from selected card
-snapshots first: `mediaAssets` images are preferred, and `preview` is the
-fallback when the card is an HTML/CSS/canvas composition.
+snapshots first: `metadata.artifactUrl` or `mediaAssets` image artifact URLs
+are required. Rendered previews and inline `dataUrl` payloads are UI-only and
+are not valid skill inputs.
 
 Local modes use the models directory declared in this skill's Loki metadata.
 If the ClearReality upscale model is missing, use `comfy-model-downloader` with

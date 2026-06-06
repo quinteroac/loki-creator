@@ -31,6 +31,22 @@ export type CardDocument = {
 
 export type GeneratedCard = CardDocument;
 
+export type SeedanceAspectRatio = "16:9" | "9:16";
+
+export type SeedanceDuration = 4 | 5 | 7 | 10 | 15;
+
+export type SeedanceVideoGenerationRequest = {
+  prompt: string;
+  aspectRatio: SeedanceAspectRatio;
+  duration: SeedanceDuration;
+  selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
+};
+
+export type SeedanceVideoGenerationResponse = {
+  cards: GeneratedCard[];
+};
+
 export type VideoTimelineThumbnail = {
   artifactUrl: string;
   timeSeconds: number;

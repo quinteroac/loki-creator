@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import shutil
 import subprocess
@@ -148,12 +147,12 @@ class MediaCleanupFfmpegTest(unittest.TestCase):
             self.assertEqual(info["height"], 48)
             self.assertTrue(info["has_audio"])
 
-    def test_attachment_data_url_can_be_used_as_source(self) -> None:
+    def test_attachment_artifact_can_be_used_as_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}):
             root = Path(tmpdir)
-            image = root / "image.png"
+            image = root / "imports" / "image.png"
+            image.parent.mkdir(parents=True)
             create_image(image)
-            data_url = "data:image/png;base64," + base64.b64encode(image.read_bytes()).decode("ascii")
             payload = {
                 "runId": "skill_run_attachment",
                 "skillId": "media-cleanup",
@@ -167,7 +166,7 @@ class MediaCleanupFfmpegTest(unittest.TestCase):
                     {
                         "kind": "image",
                         "mimeType": "image/png",
-                        "dataUrl": data_url,
+                        "artifactUrl": artifact_url(root, image),
                     }
                 ],
             }

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import math
 import mimetypes
@@ -96,13 +95,6 @@ def as_int(value: object) -> int | None:
         return None
 
 
-def parse_data_url(data_url: str) -> tuple[str, bytes]:
-    header, separator, encoded = data_url.partition(",")
-    if separator != "," or not header.startswith("data:") or ";base64" not in header:
-        raise ValueError("invalid base64 data URL")
-    return header[5:].split(";", 1)[0] or "application/octet-stream", base64.b64decode(encoded)
-
-
 def extension_for_mime(mime_type: str) -> str:
     return (
         IMAGE_MIME_TYPES.get(mime_type)
@@ -111,15 +103,6 @@ def extension_for_mime(mime_type: str) -> str:
         or mimetypes.guess_extension(mime_type)
         or ".bin"
     )
-
-
-def write_data_url(data_url: str, destination: Path) -> Path | None:
-    mime_type, data = parse_data_url(data_url)
-    if mime_type not in {*IMAGE_MIME_TYPES, *AUDIO_MIME_TYPES, *VIDEO_MIME_TYPES}:
-        return None
-    path = destination.with_suffix(extension_for_mime(mime_type))
-    path.write_bytes(data)
-    return path
 
 
 def resolve_artifact_src(src: str) -> Path | None:
@@ -157,68 +140,61 @@ def append_metadata_artifact(media: dict[str, list[Path]], snapshot: dict[str, A
     return append_media_path(media, kind, resolve_artifact_src(artifact_url))
 
 
+def append_local_media_references(media: dict[str, list[Path]], payload: dict[str, Any]) -> None:
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    for references in (params.get("localMediaReferences"), context.get("localMediaReferences")):
+        if not isinstance(references, list):
+            continue
+        for reference in references:
+            if not isinstance(reference, dict):
+                continue
+            kind = first_text(reference.get("kind"))
+            if kind not in media:
+                continue
+            path = Path(first_text(reference.get("path"))).resolve()
+            try:
+                path.relative_to(artifacts_root())
+            except ValueError:
+                continue
+            append_media_path(media, kind, path if path.is_file() else None)
+
+
 def materialize_selected_media(payload: dict[str, Any], inputs_dir: Path) -> dict[str, list[Path]]:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     media: dict[str, list[Path]] = {"image": [], "audio": [], "video": []}
+    append_local_media_references(media, payload)
+
     attachments = payload.get("attachments")
     if isinstance(attachments, list):
-        for attachment_index, attachment in enumerate(attachments, start=1):
+        for attachment in attachments:
             if not isinstance(attachment, dict) or attachment.get("omitted"):
                 continue
             kind = first_text(attachment.get("kind"))
             if kind not in media:
                 continue
-            data_url = first_text(attachment.get("dataUrl"))
-            if not data_url.startswith(f"data:{kind}/"):
-                continue
-            try:
-                path = write_data_url(data_url, inputs_dir / f"attachment-{attachment_index:02d}-{kind}")
-            except Exception:
-                path = None
-            if path is not None:
-                append_media_path(media, kind, path)
+            append_media_path(media, kind, resolve_artifact_src(first_text(attachment.get("artifactUrl"), attachment.get("src"))))
 
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
         return media
 
-    for snapshot_index, snapshot in enumerate(snapshots, start=1):
+    for snapshot in snapshots:
         if not isinstance(snapshot, dict):
             continue
 
-        images_before_snapshot = len(media["image"])
         append_metadata_artifact(media, snapshot)
 
         assets = snapshot.get("mediaAssets")
         if isinstance(assets, list):
-            for asset_index, asset in enumerate(assets, start=1):
+            for asset in assets:
                 if not isinstance(asset, dict):
                     continue
                 kind = first_text(asset.get("kind"))
                 if kind not in media:
                     continue
                 src = first_text(asset.get("src"))
-                path = resolve_artifact_src(src)
-                if path is None:
-                    data_url = first_text(asset.get("dataUrl"))
-                    if not data_url.startswith(f"data:{kind}/"):
-                        continue
-                    try:
-                        path = write_data_url(data_url, inputs_dir / f"{snapshot_index:02d}-{asset_index:02d}-{kind}")
-                    except Exception:
-                        path = None
-                append_media_path(media, kind, path)
-
-        if len(media["image"]) == images_before_snapshot:
-            preview = snapshot.get("preview")
-            if isinstance(preview, dict) and not preview.get("omitted"):
-                data_url = first_text(preview.get("dataUrl"))
-                if data_url.startswith("data:image/"):
-                    try:
-                        path = write_data_url(data_url, inputs_dir / f"{snapshot_index:02d}-preview")
-                    except Exception:
-                        path = None
-                    append_media_path(media, "image", path)
+                append_media_path(media, kind, resolve_artifact_src(src))
 
     return media
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import mimetypes
 import os
@@ -69,16 +67,6 @@ def output_dir(payload: dict) -> Path:
     return path
 
 
-def parse_data_url(data_url: str) -> tuple[str, bytes]:
-    header, separator, encoded = data_url.partition(",")
-    if separator != "," or not header.startswith("data:"):
-        raise ValueError("invalid data URL")
-    if ";base64" not in header:
-        raise ValueError("only base64 data URLs are supported")
-    mime_type = header[5:].split(";", 1)[0] or "application/octet-stream"
-    return mime_type, base64.b64decode(encoded)
-
-
 def extension_for_mime_type(mime_type: str) -> str:
     if mime_type in IMAGE_MIME_TYPES:
         return IMAGE_MIME_TYPES[mime_type]
@@ -131,28 +119,11 @@ def resolve_artifact_src(src: str) -> Path | None:
     return artifact_path if artifact_path.is_file() else None
 
 
-def write_data_url_media(data_url: str, destination: Path) -> tuple[Path, str] | None:
-    mime_type, data = parse_data_url(data_url)
-    if not (mime_type.startswith("image/") or mime_type.startswith("video/")):
-        return None
-    path = destination.with_suffix(extension_for_mime_type(mime_type))
-    path.write_bytes(data)
-    return path, mime_type
-
-
 def resolve_media_source(src: str, destination: Path, fallback_mime_type = "") -> tuple[Path, str, str] | None:
     artifact_path = resolve_artifact_src(src)
     if artifact_path is not None:
         mime_type = fallback_mime_type or mimetypes.guess_type(artifact_path.name)[0] or ""
         return artifact_path, mime_type, f"path:{artifact_path.resolve()}"
-
-    if src.startswith("data:image/") or src.startswith("data:video/"):
-        written = write_data_url_media(src, destination)
-        if written is None:
-            return None
-        path, mime_type = written
-        digest = hashlib.sha256(src.encode("utf-8")).hexdigest()
-        return path, mime_type, f"data:{digest}"
 
     return None
 
@@ -179,9 +150,9 @@ def snapshot_media_sources(snapshot: dict) -> list[tuple[str, str]]:
             if not isinstance(asset, dict) or asset_media_kind(asset) is None:
                 continue
             mime_type = first_text(asset.get("mimeType"))
-            for source in (first_text(asset.get("src")), first_text(asset.get("dataUrl"))):
-                if source:
-                    sources.append((source, mime_type))
+            source = first_text(asset.get("src"))
+            if source:
+                sources.append((source, mime_type))
 
     metadata = snapshot.get("metadata")
     if isinstance(metadata, dict):
@@ -196,11 +167,11 @@ def snapshot_media_sources(snapshot: dict) -> list[tuple[str, str]]:
 def attachment_media_sources(attachment: dict) -> list[tuple[str, str]]:
     kind = first_text(attachment.get("kind"))
     mime_type = first_text(attachment.get("mimeType"))
-    data_url = first_text(attachment.get("dataUrl"))
-    if attachment.get("omitted") or not data_url:
+    source = first_text(attachment.get("artifactUrl"), attachment.get("src"))
+    if attachment.get("omitted") or not source:
         return []
     if kind in {"image", "video"} or mime_type.startswith(("image/", "video/")):
-        return [(data_url, mime_type)]
+        return [(source, mime_type)]
     return []
 
 

@@ -10,12 +10,13 @@ There is no legacy runtime compatibility layer. Public product concepts are skil
 2. The user writes a prompt, optionally selects skills, optionally selects canvas cards, and optionally imports bounded files as canvas cards.
 3. Selected cards are converted into multimodal snapshots containing HTML, detected media assets, metadata, and a rendered preview when available. Imported file cards participate in this same selected-card snapshot flow.
 4. The agent bridge resolves required skill arguments. If a skill needs input, it returns one `needs_input` question instead of running the agent.
-5. Once arguments are collected, the agent bridge loads Agent Skills through Pi resource discovery and exposes selected Loki skills as agent-callable skill actions.
-6. When the agent needs to create or transform visible output, it invokes a Loki skill action.
-7. The backend creates a skill run through `POST /api/skill-runs`.
-8. The skill action returns normal artifacts/results such as images, video, audio, HTML, text, diagnostics, or cards.
-9. The backend card packager converts those outputs into `GeneratedCard` objects.
-10. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
+5. Once arguments are collected, the agent bridge loads Agent Skills through Pi resource discovery and exposes selected Loki skills as agent-callable skill actions when they need Loki execution.
+6. Skills that use media references receive local Loki artifact paths. Inline data URLs and rendered previews are UI-only context, not executable media inputs.
+7. When the agent needs to create or transform visible output, it invokes either a Loki skill action or the mapped Pi tool.
+8. The backend creates a skill run through `POST /api/skill-runs`, or creates a succeeded packaged run through `POST /api/skill-runs/package` when Pi already produced the raw artifact.
+9. The action/tool returns normal artifacts/results such as images, video, audio, HTML, text, diagnostics, or cards.
+10. The backend card packager converts those outputs into `GeneratedCard` objects.
+11. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
 
 ## Backend
 
@@ -110,7 +111,7 @@ Everything beyond `SKILL.md` is freeform according to the Agent Skills conventio
 - `references/` for optional supporting material.
 - `assets/` for bundled resources.
 
-The first real skill is `backend/skills/imagegen/`. It vendors the standard Codex `imagegen` skill and adds a Loki action that delegates generation/editing to `codex exec`, validates the requested aspect ratio, and returns the resulting image artifact. The shared packager turns that artifact into a card.
+The first real skill is `backend/skills/imagegen/`. It vendors the standard Codex `imagegen` skill for instructions and argument metadata. In normal Pi agent runs, `imagegen` executes through the Loki skill action so selected image edits can pass local artifact paths to Codex with `--image`. Pure generation and selected-image editing share this backend skill path.
 
 Comfy skills from `quinteroac/comfy-agent-tools` are copied under `backend/skills/comfy-*` with minimal Loki metadata. Image workflows are split by visible intent into `comfy-image-generate`, `comfy-image-edit`, and `comfy-image-upscale`, while the private implementation still calls the upstream `comfy-imagegen` CLI. Their functional skill instructions remain standard; a shared private wrapper at `backend/skills/_comfy_runtime/` calls installed `comfy-*` CLIs and returns raw artifacts or diagnostics. Local model configuration uses `.comfy-agent-tools.json`; the default Loki models path is `.loki/models/comfyui`.
 
@@ -153,14 +154,14 @@ not copies of artifact files.
 Selected cards are treated as multimodal artifacts, not as trusted instructions. A selected card snapshot includes:
 
 - full artifact HTML,
-- rendered preview when available,
-- detected media assets,
+- rendered preview when available for UI/context only,
+- detected media assets with artifact URLs when available,
 - prompt and display labels,
 - metadata as secondary context.
 
-The agent bridge summarizes selected cards in the prompt, exposes them through the internal `inspect_loki_context` tool, and forwards the complete snapshots to skill actions through both `selectedCardSnapshots` and `context.selectedCardSnapshots`.
+The agent bridge summarizes selected cards in the prompt, exposes them through the internal `inspect_loki_context` tool, forwards the complete snapshots to skill actions through both `selectedCardSnapshots` and `context.selectedCardSnapshots`, and adds validated local media references in `context.localMediaReferences`.
 
-For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact or operation to a skill action. Skill actions return artifacts and validate runtime-specific constraints; they do not replace the agent's creative reasoning.
+For edits, the model should transform the selected artifact itself when possible, then pass the transformed artifact or operation to a skill action. Media edits must use local artifact paths. If a selected image, video, or audio reference cannot be resolved to a local Loki artifact file, the run fails with a contract error instead of using an inline preview, base64 payload, or reference-inspired generation.
 
 ## Imported Files
 
@@ -178,9 +179,11 @@ The Elysia bridge owns Pi sessions and model selection. It does not execute skil
 
 - discovers backend skills from `GET /api/skills`,
 - symlinks `backend/skills/*` into `.agents/skills/*` for Pi skill discovery,
-- creates a Pi custom action for each selected Loki skill,
+- creates a Pi custom action for selected Loki skills that need Loki execution,
+- resolves selected media references to local Loki artifact paths,
 - creates internal Pi tools such as `ask_user` and `inspect_loki_context`,
-- forwards action calls to `POST /api/skill-runs`,
+- forwards Loki action calls to `POST /api/skill-runs`,
+- forwards packageable Pi tool results to `POST /api/skill-runs/package`,
 - waits for skill run completion,
 - returns `skillRunIds` and `cardIds` to the frontend.
 

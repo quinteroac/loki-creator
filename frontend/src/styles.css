@@ -1673,6 +1673,7 @@ textarea::placeholder {
 }
 
 .agent-chip,
+.seedance-chip,
 .attach-chip {
   flex: 0 0 auto;
 }
@@ -1699,6 +1700,38 @@ textarea::placeholder {
   color: var(--dark-text);
   background: var(--charcoal);
   border-color: var(--dark-hairline);
+}
+
+.composer-select-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 8px 4px 10px;
+  color: var(--dark-text-muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.composer-select-chip select {
+  min-height: 24px;
+  padding: 2px 18px 2px 6px;
+  color: var(--dark-text);
+  background: var(--charcoal);
+  border: 0;
+  border-radius: 9999px;
+  outline: 0;
+  font: inherit;
+}
+
+.send-orb:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .chat-chip svg {

@@ -16,7 +16,10 @@ from app.models import (
     ProjectDocument,
     ProjectSaveRequest,
     ProjectSummary,
+    SeedanceVideoGenerationRequest,
+    SeedanceVideoGenerationResponse,
     SkillDefinition,
+    SkillPackagedRunRequest,
     SkillRun,
     SkillRunRequest,
     VideoEditArtifact,
@@ -33,6 +36,8 @@ from app.services import (
     InstructionService,
     ProjectNotFoundError,
     ProjectService,
+    SeedanceVideoGenerationError,
+    SeedanceVideoGenerationService,
     SkillRegistry,
     SkillRunService,
     VideoEditorError,
@@ -75,6 +80,10 @@ def get_audio_editor_service() -> AudioEditorService:
     return AudioEditorService(artifacts_root)
 
 
+def get_seedance_video_generation_service() -> SeedanceVideoGenerationService:
+    return SeedanceVideoGenerationService(artifacts_root)
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -93,6 +102,17 @@ def list_skills(
     registry: SkillRegistry = Depends(get_skill_registry),
 ) -> list[SkillDefinition]:
     return registry.list_skills()
+
+
+@router.post("/generations/seedance-video", response_model=SeedanceVideoGenerationResponse)
+def generate_seedance_video(
+    payload: SeedanceVideoGenerationRequest,
+    service: SeedanceVideoGenerationService = Depends(get_seedance_video_generation_service),
+) -> SeedanceVideoGenerationResponse:
+    try:
+        return service.generate(payload)
+    except SeedanceVideoGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/projects", response_model=list[ProjectSummary])
@@ -131,6 +151,14 @@ def create_skill_run(
     run = service.create_run(payload)
     background_tasks.add_task(service.run_skill, run.id, payload)
     return run
+
+
+@router.post("/skill-runs/package", response_model=SkillRun)
+def create_packaged_skill_run(
+    payload: SkillPackagedRunRequest,
+    service: SkillRunService = Depends(get_skill_run_service),
+) -> SkillRun:
+    return service.create_packaged_run(payload)
 
 
 @router.get("/skill-runs", response_model=list[SkillRun])

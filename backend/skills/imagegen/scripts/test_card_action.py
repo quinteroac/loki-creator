@@ -83,7 +83,7 @@ class ImagegenCardActionTest(unittest.TestCase):
 
         self.assertIn("Create exactly 4 separate final image files", prompt)
 
-    def test_main_accepts_legacy_generated_image_with_different_dimensions(self) -> None:
+    def test_main_accepts_generated_image_with_different_dimensions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("card_action.artifacts_root", return_value=Path(tmpdir)):
             output_path = Path(tmpdir) / "skills" / "imagegen" / "skill-run" / "outputs" / "image.png"
 
@@ -118,6 +118,25 @@ class ImagegenCardActionTest(unittest.TestCase):
         self.assertEqual(metadata["height"], 941)
         self.assertEqual(metadata["imageIndex"], 1)
         self.assertEqual(metadata["imageCount"], 1)
+
+    def test_main_rejects_inline_selected_image_inputs(self) -> None:
+        payload = {
+            "runId": "skill-run",
+            "prompt": "pool scene",
+            "params": {"resolution": "1024x1024"},
+            "selectedCardSnapshots": [
+                {"mediaAssets": [{"kind": "image", "dataUrl": "data:image/png;base64,aGVsbG8="}]}
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("card_action.artifacts_root", return_value=Path(tmpdir)), patch(
+            "card_action.read_payload",
+            return_value=payload,
+        ), patch("card_action.run_codex") as run_codex:
+            with self.assertRaisesRegex(RuntimeError, "persisted as Loki artifact files"):
+                card_action.main()
+
+        run_codex.assert_not_called()
 
     def test_main_produces_multiple_image_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("card_action.artifacts_root", return_value=Path(tmpdir)):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import random
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -108,18 +107,8 @@ def ensure_source_under_artifacts(path: Path, inputs_dir: Path, index: int) -> P
     try:
         resolved.relative_to(comfy_action.artifacts_root())
         return resolved
-    except ValueError:
-        pass
-
-    if not resolved.is_file():
-        raise RuntimeError(f"Selected image input does not exist: {path}")
-
-    inputs_dir.mkdir(parents=True, exist_ok=True)
-    destination = inputs_dir / f"source-{index:02d}{resolved.suffix or '.png'}"
-    if destination.exists():
-        destination = destination.with_name(f"{destination.stem}-{index:02d}{destination.suffix}")
-    shutil.copy2(resolved, destination)
-    return destination
+    except ValueError as exc:
+        raise RuntimeError(f"Selected image input must be a local Loki artifact path: {path}") from exc
 
 
 def append_unique_path(paths: list[Path], path: Path) -> None:

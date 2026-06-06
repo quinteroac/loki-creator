@@ -914,7 +914,7 @@ export async function createSelectedCardSnapshots(
       prompt: document.prompt,
       html: document.html,
       preview,
-      mediaAssets: await hydrateMediaAssets(extractSelectedCardMediaAssets(document.html)),
+      mediaAssets: extractSelectedCardMediaAssets(document.html),
       sourceSkillId: document.sourceSkillId,
       sourceActionId: document.sourceActionId,
       metadata: document.metadata,

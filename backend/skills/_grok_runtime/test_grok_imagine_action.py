@@ -16,31 +16,35 @@ IMAGE_DATA_URL = "data:image/png;base64,aGVsbG8="
 
 
 class GrokImagineActionTest(unittest.TestCase):
-    def test_imagine_image_uses_edit_endpoint_for_attached_image(self) -> None:
+    def test_imagine_image_uses_edit_endpoint_for_attached_local_image(self) -> None:
         calls: list[tuple[str, str, dict]] = []
 
         def fake_request_json(method: str, path: str, body: dict | None = None) -> dict:
             calls.append((method, path, body or {}))
             return {"data": [{"b64_json": "aGVsbG8="}]}
 
-        payload = {
-            "skillId": "grok-imagine-image",
-            "runId": "test-image-edit",
-            "prompt": "turn this into a watercolor",
-            "attachments": [
-                {
-                    "kind": "image",
-                    "dataUrl": IMAGE_DATA_URL,
-                    "omitted": False,
-                }
-            ],
-        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "imports" / "input.png"
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"hello")
+            payload = {
+                "skillId": "grok-imagine-image",
+                "runId": "test-image-edit",
+                "prompt": "turn this into a watercolor",
+                "attachments": [
+                    {
+                        "kind": "image",
+                        "artifactUrl": "/api/artifacts/imports/input.png",
+                        "omitted": False,
+                    }
+                ],
+            }
 
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}), patch(
+            with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}), patch(
             "grok_imagine_action.request_json",
             side_effect=fake_request_json,
-        ):
-            result = action.imagine_image(payload)
+            ):
+                result = action.imagine_image(payload)
 
         self.assertEqual(calls[0][1], "/v1/images/edits")
         self.assertEqual(calls[0][2]["image"], {"url": IMAGE_DATA_URL, "type": "image_url"})
@@ -53,21 +57,27 @@ class GrokImagineActionTest(unittest.TestCase):
             calls.append((method, path, body or {}))
             return {"data": [{"b64_json": "aGVsbG8="}]}
 
-        payload = {
-            "skillId": "grok-imagine-image",
-            "runId": "test-multi-image-edit",
-            "prompt": "combine these references",
-            "selectedCardSnapshots": [
-                {"mediaAssets": [{"kind": "image", "dataUrl": IMAGE_DATA_URL}]},
-                {"preview": {"dataUrl": "data:image/png;base64,d29ybGQ=", "omitted": False}},
-            ],
-        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first = Path(tmpdir) / "imports" / "first.png"
+            second = Path(tmpdir) / "imports" / "second.png"
+            first.parent.mkdir(parents=True)
+            first.write_bytes(b"hello")
+            second.write_bytes(b"world")
+            payload = {
+                "skillId": "grok-imagine-image",
+                "runId": "test-multi-image-edit",
+                "prompt": "combine these references",
+                "selectedCardSnapshots": [
+                    {"mediaAssets": [{"kind": "image", "src": "/api/artifacts/imports/first.png"}]},
+                    {"metadata": {"kind": "image", "artifactUrl": "/api/artifacts/imports/second.png"}},
+                ],
+            }
 
-        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}), patch(
+            with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}), patch(
             "grok_imagine_action.request_json",
             side_effect=fake_request_json,
-        ):
-            action.imagine_image(payload)
+            ):
+                action.imagine_image(payload)
 
         self.assertEqual(calls[0][1], "/v1/images/edits")
         self.assertEqual(
@@ -85,17 +95,21 @@ class GrokImagineActionTest(unittest.TestCase):
             calls.append((method, path, body or {}))
             return {"request_id": "video-request-1"}
 
-        payload = {
-            "skillId": "grok-imagine-video",
-            "prompt": "animate the scene",
-            "params": {"poll": False},
-            "selectedCardSnapshots": [
-                {"mediaAssets": [{"kind": "image", "dataUrl": IMAGE_DATA_URL}]},
-            ],
-        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "imports" / "input.png"
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"hello")
+            payload = {
+                "skillId": "grok-imagine-video",
+                "prompt": "animate the scene",
+                "params": {"poll": False},
+                "selectedCardSnapshots": [
+                    {"mediaAssets": [{"kind": "image", "src": "/api/artifacts/imports/input.png"}]},
+                ],
+            }
 
-        with patch("grok_imagine_action.request_json", side_effect=fake_request_json):
-            result = action.imagine_video(payload)
+            with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}), patch("grok_imagine_action.request_json", side_effect=fake_request_json):
+                result = action.imagine_video(payload)
 
         self.assertEqual(calls[0][1], "/v1/videos/generations")
         self.assertEqual(calls[0][2]["image"], {"url": IMAGE_DATA_URL})

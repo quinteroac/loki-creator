@@ -124,6 +124,12 @@ class SkillRawResult(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
+class SkillPackagedRunRequest(SkillRunRequest):
+    raw_result: SkillRawResult = Field(alias="rawResult")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class SkillRun(BaseModel):
     id: str
     skill_id: str = Field(alias="skillId")

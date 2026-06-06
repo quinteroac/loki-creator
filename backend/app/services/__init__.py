@@ -4,6 +4,7 @@ from app.services.artifacts import ArtifactArchiveService
 from app.services.card_packager import CardPackagerService
 from app.services.instructions import InstructionService
 from app.services.projects import ProjectNotFoundError, ProjectService
+from app.services.seedance_video import SeedanceVideoGenerationError, SeedanceVideoGenerationService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
 from app.services.skill_runs import SkillRunService
@@ -19,6 +20,8 @@ __all__ = [
     "InstructionService",
     "ProjectNotFoundError",
     "ProjectService",
+    "SeedanceVideoGenerationError",
+    "SeedanceVideoGenerationService",
     "SkillActionInvoker",
     "SkillRegistry",
     "SkillRunService",

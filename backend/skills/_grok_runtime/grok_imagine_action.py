@@ -68,7 +68,15 @@ def normalize_image_source(src: str) -> str:
     artifact_path = resolve_artifact_src(src)
     if artifact_path is not None:
         return image_path_to_data_url(artifact_path)
-    return src
+
+    path = Path(src).expanduser().resolve()
+    try:
+        path.relative_to(artifacts_root())
+    except ValueError as exc:
+        raise RuntimeError(f"Grok image inputs must be local Loki artifacts, got: {src[:80]}") from exc
+    if not path.is_file():
+        raise RuntimeError(f"Grok image input path does not exist: {path}")
+    return image_path_to_data_url(path)
 
 
 def first_text(*values: object) -> str:
@@ -181,14 +189,23 @@ def write_b64_json(encoded: str, destination: Path, mime_type: str = "image/png"
 
 def selected_image_inputs(payload: dict[str, Any], limit: int = 3) -> list[str]:
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
     inputs: list[str] = []
 
     def add_input(source: str) -> None:
         if len(inputs) >= limit:
             return
+        if source.startswith("data:"):
+            raise RuntimeError("Grok image inputs must be local Loki artifact paths; inline dataUrl is not an executable media input.")
         normalized = normalize_image_source(source)
         if normalized and normalized not in inputs:
             inputs.append(normalized)
+
+    for references in (params.get("localMediaReferences"), context.get("localMediaReferences")):
+        if isinstance(references, list):
+            for reference in references:
+                if isinstance(reference, dict) and first_text(reference.get("kind")) == "image":
+                    add_input(first_text(reference.get("path"), reference.get("artifactUrl")))
 
     explicit = first_text(params.get("image"), params.get("imageUrl"), params.get("imageDataUrl"))
     if explicit:
@@ -198,7 +215,7 @@ def selected_image_inputs(payload: dict[str, Any], limit: int = 3) -> list[str]:
     if isinstance(explicit_images, list):
         for image in explicit_images:
             if isinstance(image, dict):
-                add_input(first_text(image.get("url"), image.get("dataUrl"), image.get("src")))
+                add_input(first_text(image.get("src"), image.get("url"), image.get("path")))
             else:
                 add_input(first_text(image))
 
@@ -206,9 +223,9 @@ def selected_image_inputs(payload: dict[str, Any], limit: int = 3) -> list[str]:
     if isinstance(attachments, list):
         for attachment in attachments:
             if isinstance(attachment, dict) and not attachment.get("omitted"):
-                data_url = first_text(attachment.get("dataUrl"))
-                if data_url.startswith("data:image/"):
-                    add_input(data_url)
+                source = first_text(attachment.get("artifactUrl"), attachment.get("src"))
+                if source:
+                    add_input(source)
 
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
@@ -221,13 +238,13 @@ def selected_image_inputs(payload: dict[str, Any], limit: int = 3) -> list[str]:
         if isinstance(assets, list):
             for asset in assets:
                 if isinstance(asset, dict) and first_text(asset.get("kind")) == "image":
-                    source = first_text(asset.get("dataUrl"), asset.get("src"))
+                    source = first_text(asset.get("src"))
                     if source:
                         add_input(source)
-        preview = snapshot.get("preview")
-        if isinstance(preview, dict) and not preview.get("omitted"):
-            source = first_text(preview.get("dataUrl"))
-            if source.startswith("data:image/"):
+        metadata = snapshot.get("metadata")
+        if isinstance(metadata, dict) and first_text(metadata.get("kind")) == "image":
+            source = first_text(metadata.get("artifactUrl"))
+            if source:
                 add_input(source)
 
     return inputs

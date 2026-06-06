@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import shutil
 import subprocess
@@ -79,25 +78,22 @@ class SplitAudioSelectionTest(unittest.TestCase):
 
         self.assertEqual(audio, artifact_b)
 
-    def test_materialize_selected_audio_accepts_data_url_audio(self) -> None:
+    def test_materialize_selected_audio_rejects_data_url_audio(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            data_url = f"data:audio/wav;base64,{base64.b64encode(b'audio').decode('ascii')}"
             payload = {
                 "selectedCardSnapshots": [
                     {
                         "name": "inline audio",
-                        "mediaAssets": [{"kind": "audio", "dataUrl": data_url}],
+                        "mediaAssets": [{"kind": "audio", "dataUrl": "data:audio/wav;base64,YXVkaW8="}],
                     },
                 ]
             }
 
             with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": str(root)}):
                 audio = split_audio.materialize_selected_audio(payload, root / "inputs")
-                audio_bytes = audio.read_bytes() if audio is not None else b""
 
-        self.assertIsNotNone(audio)
-        self.assertEqual(audio_bytes, b"audio")
+        self.assertIsNone(audio)
 
     def test_split_selected_audio_requires_audio(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}):

@@ -18,6 +18,7 @@ from app.models.artifacts import (
     VideoTrimRequest,
 )
 from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
+from app.models.generations import SeedanceVideoGenerationRequest, SeedanceVideoGenerationResponse
 from app.models.projects import ProjectCanvasNode, ProjectCanvasNodeFrame, ProjectDocument, ProjectSaveRequest, ProjectSummary
 from app.models.skills import (
     SkillArgumentDefinition,
@@ -27,6 +28,7 @@ from app.models.skills import (
     SkillDefinition,
     SkillDiagnostic,
     SkillOutputConfig,
+    SkillPackagedRunRequest,
     SkillRawResult,
     SkillRuntimeConfig,
     SkillResult,
@@ -58,6 +60,8 @@ __all__ = [
     "GeneratedCard",
     "InstructionRequest",
     "InstructionResponse",
+    "SeedanceVideoGenerationRequest",
+    "SeedanceVideoGenerationResponse",
     "ProjectCanvasNode",
     "ProjectCanvasNodeFrame",
     "ProjectDocument",
@@ -70,6 +74,7 @@ __all__ = [
     "SkillDefinition",
     "SkillDiagnostic",
     "SkillOutputConfig",
+    "SkillPackagedRunRequest",
     "SkillRawResult",
     "SkillRuntimeConfig",
     "SkillResult",

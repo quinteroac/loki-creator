@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from app.models import SkillRawResult, SkillResult, SkillRun, SkillRunRequest
+from app.models import SkillPackagedRunRequest, SkillRawResult, SkillResult, SkillRun, SkillRunRequest
 from app.services.card_packager import CardPackagerService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
@@ -52,6 +52,45 @@ class SkillRunService:
         self._cancelled_run_ids.add(run_id)
         self.invoker.cancel(run_id)
         self._cancel(run_id)
+        return self._runs[run_id]
+
+    def create_packaged_run(self, payload: SkillPackagedRunRequest) -> SkillRun:
+        run_id = f"skill_run_{uuid4().hex}"
+        now = datetime.now(timezone.utc)
+        run = SkillRun(
+            id=run_id,
+            skill_id=payload.skill_id,
+            status="running",
+            created_at=now,
+            updated_at=now,
+        )
+        self._runs[run_id] = run
+
+        skill = self.registry.get_skill(payload.skill_id)
+        if skill is None:
+            self._fail(run_id, f"Skill not found: {payload.skill_id}")
+            return self._runs[run_id]
+
+        try:
+            result = self.packager.package(
+                skill=skill,
+                run_id=run_id,
+                prompt=payload.prompt,
+                params=payload.params,
+                raw_result=payload.raw_result,
+            )
+        except Exception as exc:
+            self._fail(run_id, str(exc))
+            return self._runs[run_id]
+
+        self._runs[run_id] = run.model_copy(
+            update={
+                "status": "succeeded",
+                "updated_at": datetime.now(timezone.utc),
+                "result": result,
+                "error": None,
+            },
+        )
         return self._runs[run_id]
 
     def run_skill(self, run_id: str, payload: SkillRunRequest) -> None:

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import base64
-import hashlib
 import json
 import mimetypes
 import os
@@ -69,16 +67,6 @@ def output_dir(payload: dict) -> Path:
     return path
 
 
-def parse_data_url(data_url: str) -> tuple[str, bytes]:
-    header, separator, encoded = data_url.partition(",")
-    if separator != "," or not header.startswith("data:"):
-        raise ValueError("invalid data URL")
-    if ";base64" not in header:
-        raise ValueError("only base64 data URLs are supported")
-    mime_type = header[5:].split(";", 1)[0] or "application/octet-stream"
-    return mime_type, base64.b64decode(encoded)
-
-
 def extension_for_mime_type(mime_type: str, kind: str) -> str:
     if kind == "video" and mime_type in VIDEO_MIME_TYPES:
         return VIDEO_MIME_TYPES[mime_type]
@@ -86,15 +74,6 @@ def extension_for_mime_type(mime_type: str, kind: str) -> str:
         return AUDIO_MIME_TYPES[mime_type]
     fallback = ".mp4" if kind == "video" else ".audio"
     return mimetypes.guess_extension(mime_type) or fallback
-
-
-def write_data_url_media(data_url: str, destination: Path, kind: str) -> Path | None:
-    mime_type, data = parse_data_url(data_url)
-    if not mime_type.startswith(f"{kind}/"):
-        return None
-    path = destination.with_suffix(extension_for_mime_type(mime_type, kind))
-    path.write_bytes(data)
-    return path
 
 
 def resolve_artifact_src(src: str) -> Path | None:
@@ -114,12 +93,6 @@ def resolve_media_source(src: str, destination: Path, kind: str) -> tuple[Path, 
     artifact_path = resolve_artifact_src(src)
     if artifact_path is not None:
         return artifact_path, f"path:{artifact_path.resolve()}"
-
-    if src.startswith(f"data:{kind}/"):
-        path = write_data_url_media(src, destination, kind)
-        if path is not None:
-            digest = hashlib.sha256(src.encode("utf-8")).hexdigest()
-            return path, f"data:{digest}"
 
     return None
 
@@ -142,9 +115,9 @@ def snapshot_sources(snapshot: dict, kind: str) -> list[str]:
                 continue
             if not asset_is_kind(asset, kind):
                 continue
-            for source in (first_text(asset.get("src")), first_text(asset.get("dataUrl"))):
-                if source and source not in sources:
-                    sources.append(source)
+            source = first_text(asset.get("src"))
+            if source and source not in sources:
+                sources.append(source)
 
     metadata = snapshot.get("metadata")
     if isinstance(metadata, dict) and first_text(metadata.get("kind")) == kind:

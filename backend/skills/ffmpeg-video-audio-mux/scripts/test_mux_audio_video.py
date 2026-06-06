@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import os
 import shutil
 import subprocess
@@ -87,13 +86,14 @@ def create_audio(path: Path, *, duration: float = 1.0, frequency: int = 440) -> 
 
 
 class MuxAudioVideoSelectionTest(unittest.TestCase):
-    def test_materialize_selected_media_uses_metadata_and_data_url_sources(self) -> None:
+    def test_materialize_selected_media_uses_local_artifact_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             video = root / "imports" / "video.mp4"
+            audio = root / "imports" / "audio.m4a"
             video.parent.mkdir(parents=True)
             video.write_bytes(b"video")
-            data_url = f"data:audio/wav;base64,{base64.b64encode(b'audio').decode('ascii')}"
+            audio.write_bytes(b"audio")
             payload = {
                 "selectedCardSnapshots": [
                     {
@@ -102,7 +102,7 @@ class MuxAudioVideoSelectionTest(unittest.TestCase):
                     },
                     {
                         "name": "audio",
-                        "mediaAssets": [{"kind": "audio", "dataUrl": data_url}],
+                        "mediaAssets": [{"kind": "audio", "src": "/api/artifacts/imports/audio.m4a"}],
                     },
                 ]
             }
@@ -110,11 +110,9 @@ class MuxAudioVideoSelectionTest(unittest.TestCase):
             with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": str(root)}):
                 resolved_video = mux_audio_video.materialize_selected_media(payload, root / "inputs", "video")
                 resolved_audio = mux_audio_video.materialize_selected_media(payload, root / "inputs", "audio")
-                audio_bytes = resolved_audio.read_bytes() if resolved_audio is not None else b""
 
         self.assertEqual(resolved_video, video)
-        self.assertIsNotNone(resolved_audio)
-        self.assertEqual(audio_bytes, b"audio")
+        self.assertEqual(resolved_audio, audio)
 
     def test_mux_requires_video_and_audio(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}):

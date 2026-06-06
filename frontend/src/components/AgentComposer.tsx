@@ -1,9 +1,9 @@
-import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Bot, Check, Cpu, Film, Layers, Paperclip, Search, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { formatFileSize } from "../lib/attachments";
 import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
-import type { AgentAttachment, AgentModel, AgentQuestion, GeneratedCard } from "../types";
+import type { AgentAttachment, AgentModel, AgentQuestion, GeneratedCard, SeedanceAspectRatio, SeedanceDuration } from "../types";
 
 type AgentComposerProps = {
   attachments: AgentAttachment[];
@@ -11,7 +11,9 @@ type AgentComposerProps = {
   canvasNodes: GeneratedCard[];
   filteredSkills: string[];
   instruction: string;
+  isSubmitting: boolean;
   isRunning: boolean;
+  composerMode: "agent" | "seedance";
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
@@ -19,6 +21,9 @@ type AgentComposerProps = {
   onQuestionOption: (answer: string) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onSelectModel: (model: string) => void;
+  onSeedanceAspectRatioChange: (aspectRatio: SeedanceAspectRatio) => void;
+  onSeedanceDurationChange: (duration: SeedanceDuration) => void;
+  onSetComposerMode: (mode: "agent" | "seedance") => void;
   onStop: () => void | Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
@@ -27,6 +32,8 @@ type AgentComposerProps = {
   selectedCards: string[];
   selectedCardCount: number;
   selectedCardLabel: string;
+  seedanceAspectRatio: SeedanceAspectRatio;
+  seedanceDuration: SeedanceDuration;
   selectedModel: string;
   selectedSkillCount: number;
   selectedSkills: string[];
@@ -45,7 +52,9 @@ export function AgentComposer({
   canvasNodes,
   filteredSkills,
   instruction,
+  isSubmitting,
   isRunning,
+  composerMode,
   onAttachFiles,
   onCreateAgent,
   onInstructionChange,
@@ -53,6 +62,9 @@ export function AgentComposer({
   onQuestionOption,
   onRemoveAttachment,
   onSelectModel,
+  onSeedanceAspectRatioChange,
+  onSeedanceDurationChange,
+  onSetComposerMode,
   onStop,
   onSubmit,
   onToggleCard,
@@ -61,6 +73,8 @@ export function AgentComposer({
   selectedCards,
   selectedCardCount,
   selectedCardLabel,
+  seedanceAspectRatio,
+  seedanceDuration,
   selectedModel,
   selectedSkillCount,
   selectedSkills,
@@ -260,15 +274,58 @@ export function AgentComposer({
           <div className="composer-actions">
             <input ref={fileInputRef} type="file" hidden multiple onChange={onAttachFiles} />
             <button
-              className="chat-chip agent-chip"
+              className={`chat-chip agent-chip ${composerMode === "agent" ? "active" : ""}`}
               type="button"
               data-popover-trigger
               aria-expanded={openMenu === "agents"}
-              onClick={() => setOpenMenu(openMenu === "agents" ? null : "agents")}
+              onClick={() => {
+                onSetComposerMode("agent");
+                setOpenMenu(openMenu === "agents" ? null : "agents");
+              }}
             >
               <Bot size={14} strokeWidth={2} />
               <span>Agent</span>
             </button>
+            <button
+              className={`chat-chip seedance-chip ${composerMode === "seedance" ? "active" : ""}`}
+              type="button"
+              onClick={() => {
+                onSetComposerMode(composerMode === "seedance" ? "agent" : "seedance");
+                setOpenMenu(null);
+              }}
+            >
+              <Film size={14} strokeWidth={2} />
+              <span>Seedance</span>
+            </button>
+            {composerMode === "seedance" && (
+              <>
+                <label className="composer-select-chip">
+                  <span>Frame</span>
+                  <select
+                    value={seedanceAspectRatio}
+                    onChange={(event) => onSeedanceAspectRatioChange(event.target.value as SeedanceAspectRatio)}
+                    aria-label="Seedance aspect ratio"
+                  >
+                    <option value="16:9">16:9</option>
+                    <option value="9:16">9:16</option>
+                  </select>
+                </label>
+                <label className="composer-select-chip">
+                  <span>Duration</span>
+                  <select
+                    value={seedanceDuration}
+                    onChange={(event) => onSeedanceDurationChange(Number(event.target.value) as SeedanceDuration)}
+                    aria-label="Seedance duration"
+                  >
+                    <option value={4}>4s</option>
+                    <option value={5}>5s</option>
+                    <option value={7}>7s</option>
+                    <option value={10}>10s</option>
+                    <option value={15}>15s</option>
+                  </select>
+                </label>
+              </>
+            )}
             <button
               className="chat-chip model-chip"
               type="button"
@@ -320,6 +377,7 @@ export function AgentComposer({
           aria-label={isRunning ? "Stop agent run" : "Send instruction"}
           title={isRunning ? "Stop" : "Send"}
           onClick={isRunning ? onStop : undefined}
+          disabled={!isRunning && isSubmitting}
         >
           {isRunning ? <Square size={17} fill="currentColor" strokeWidth={2.2} /> : <ArrowUp size={20} strokeWidth={2} />}
         </button>

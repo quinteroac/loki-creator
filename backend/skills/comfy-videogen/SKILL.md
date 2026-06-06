@@ -238,8 +238,9 @@ audio, or video cards, do not ask the user for filesystem paths and do not try t
 invent local paths from `/api/artifacts/...` URLs. Invoke this skill with the
 chosen `modelProfile`, `videoMode`, duration, resolution, and aspect ratio; the
 runtime resolves selected card `metadata.artifactUrl`, `mediaAssets`, and
-`dataUrl` values into local files for `--input`, `--audio`, `--first`, `--last`,
-or `--control-video`.
+validated local media references into local files for `--input`, `--audio`,
+`--first`, `--last`, or `--control-video`. Inline `dataUrl` values and rendered
+previews are UI-only and are not valid skill inputs.
 
 Duration and WAN step choices:
 

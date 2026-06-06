@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { agentRunEventsUrl, createAgentRun, listAgentModels, stopAgentRun } from "./api/agentRuns";
 import { importArtifact } from "./api/artifacts";
 import { listProjects, loadProject, saveProject } from "./api/projects";
+import { generateSeedanceVideo } from "./api/seedanceVideo";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
 import { listSkills } from "./api/skills";
 import { AgentComposer } from "./components/AgentComposer";
@@ -44,7 +45,10 @@ import type {
   CanvasNodeFrame,
   CardDocument,
   EditedMediaArtifact,
+  GeneratedCard,
   ProjectSummary,
+  SeedanceAspectRatio,
+  SeedanceDuration,
   SelectedCardPreview,
   SkillRun,
 } from "./types";
@@ -97,11 +101,15 @@ export function App() {
   const [selectedSkills, setSelectedSkills] = useState(["Auto"]);
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
+  const [composerMode, setComposerMode] = useState<"agent" | "seedance">("agent");
+  const [seedanceAspectRatio, setSeedanceAspectRatio] = useState<SeedanceAspectRatio>("16:9");
+  const [seedanceDuration, setSeedanceDuration] = useState<SeedanceDuration>(5);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [agentChatMessages, setAgentChatMessages] = useState<AgentChatMessage[]>([]);
   const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStreamEvent["status"] | null>(null);
+  const [isSeedanceGenerating, setIsSeedanceGenerating] = useState(false);
   const [agentRunStartedAt, setAgentRunStartedAt] = useState<number | null>(null);
   const [agentLastActivityAt, setAgentLastActivityAt] = useState<number | null>(null);
   const [agentClockTick, setAgentClockTick] = useState(0);
@@ -237,14 +245,10 @@ export function App() {
     };
   }, []);
 
-  const addCardsFromRun = useCallback((run: SkillRun) => {
-    if (!visibleSkillIds.has(run.skillId)) return;
-
-    const generatedCards = (run.result?.cards ?? []).filter((card) => {
-      if (processedCardIdsRef.current.has(card.id)) return false;
-      if (!card.sourceSkillId) return true;
-      return visibleSkillIds.has(card.sourceSkillId);
-    }).map(normalizeCardDocument);
+  const addGeneratedCards = useCallback((cards: GeneratedCard[]) => {
+    const generatedCards = cards
+      .filter((card) => !processedCardIdsRef.current.has(card.id))
+      .map(normalizeCardDocument);
     if (generatedCards.length === 0) return;
 
     const canvasWidth = window.innerWidth;
@@ -275,7 +279,18 @@ export function App() {
       return newNodes.length > 0 ? [...currentNodes, ...newNodes] : currentNodes;
     });
 
-  }, [visibleSkillIds]);
+  }, []);
+
+  const addCardsFromRun = useCallback((run: SkillRun) => {
+    if (!visibleSkillIds.has(run.skillId)) return;
+
+    const generatedCards = (run.result?.cards ?? []).filter((card) => {
+      if (!card.sourceSkillId) return true;
+      return visibleSkillIds.has(card.sourceSkillId);
+    });
+
+    addGeneratedCards(generatedCards);
+  }, [addGeneratedCards, visibleSkillIds]);
 
   useEffect(() => {
     let isMounted = true;
@@ -665,6 +680,11 @@ export function App() {
   async function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    if (isSeedanceGenerating) {
+      setStatus("Seedance video generation is already running.");
+      return;
+    }
+
     if (agentRunStatusRef.current === "running") {
       await stopActiveAgentRun();
       return;
@@ -678,7 +698,35 @@ export function App() {
     }
 
     if (!text) {
-      setStatus("Write an instruction before sending it to the agent.");
+      setStatus(composerMode === "seedance" ? "Write a prompt before generating a Seedance video." : "Write an instruction before sending it to the agent.");
+      return;
+    }
+
+    if (composerMode === "seedance") {
+      try {
+        setIsSeedanceGenerating(true);
+        setStatus("Generating Seedance video...");
+        const selectedCardSnapshots = await createSelectedCardSnapshots(
+          cardDocuments,
+          selectedCards,
+          previewCapturesRef.current,
+        );
+        const result = await generateSeedanceVideo({
+          prompt: text,
+          aspectRatio: seedanceAspectRatio,
+          duration: seedanceDuration,
+          selectedCardSnapshots,
+          attachments,
+        });
+        addGeneratedCards(result.cards);
+        setInstruction("");
+        setAttachments([]);
+        setStatus("Seedance video generated.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Could not generate Seedance video.");
+      } finally {
+        setIsSeedanceGenerating(false);
+      }
       return;
     }
 
@@ -1237,14 +1285,19 @@ export function App() {
         fileInputRef={fileInputRef}
         filteredSkills={filteredSkills}
         instruction={instruction}
+        isSubmitting={isSeedanceGenerating}
         isRunning={agentRunStatus === "running"}
+        composerMode={composerMode}
         onAttachFiles={handleFiles}
         onCreateAgent={handleCreateAgent}
         onInstructionChange={setInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
         onQuestionOption={answerPendingQuestion}
         onRemoveAttachment={removeAttachment}
+        onSeedanceAspectRatioChange={setSeedanceAspectRatio}
+        onSeedanceDurationChange={setSeedanceDuration}
         onSelectModel={selectModel}
+        onSetComposerMode={setComposerMode}
         onStop={stopActiveAgentRun}
         onSubmit={submitInstruction}
         onToggleCard={toggleCard}
@@ -1253,6 +1306,8 @@ export function App() {
         selectedCards={selectedCards}
         selectedCardCount={selectedCards.length}
         selectedCardLabel={selectedCardLabel}
+        seedanceAspectRatio={seedanceAspectRatio}
+        seedanceDuration={seedanceDuration}
         selectedModel={selectedModel}
         selectedSkillCount={selectedSkills.length}
         selectedSkills={selectedSkills}

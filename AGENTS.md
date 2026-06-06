@@ -17,6 +17,8 @@ Before implementing any UI work, open and review [`DESIGN.md`](./DESIGN.md) to e
 
 ## General Workflow
 
+- If the user reports a problem, analyze the error and inform the user before making any change.
+
 1. Read and understand the relevant sections of [`DESIGN.md`](./DESIGN.md).
 2. Identify which design tokens, components, and patterns apply to the task.
 3. Implement the UI change using only the specified design system elements.
@@ -26,6 +28,7 @@ Before implementing any UI work, open and review [`DESIGN.md`](./DESIGN.md) to e
 
 - Before changing backend/frontend architecture, tool contracts, tool jobs, card rendering, or agent/tool flows, read [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 - Apply SOLID principles in both frontend and backend code.
+- Do not create fallbacks. If something fails, it must fail explicitly and be fixed. The priority is not that things appear to work at any cost, but that they work according to the design.
 - Keep modules focused on one responsibility: UI components render UI, hooks manage reusable UI behavior, services perform side effects, and pure utilities hold reusable business rules.
 - Prefer dependency boundaries that make code easy to replace or extend without editing unrelated modules.
 - Avoid large catch-all files. When a component, route, or service grows beyond one clear responsibility, split it into smaller modules with explicit props or function inputs.

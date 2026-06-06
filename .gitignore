@@ -23,6 +23,7 @@ backend/.venv/
 .agents/*
 !.agents/skills/
 !.agents/skills/**
+.pi/
 .grok/*
 !.grok/skills/
 !.grok/skills/**

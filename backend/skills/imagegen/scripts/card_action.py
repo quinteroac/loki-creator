@@ -1,4 +1,3 @@
-import base64
 import json
 import mimetypes
 import os
@@ -59,32 +58,10 @@ def safe_slug(value: str, fallback: str) -> str:
     return slug[:80] or fallback
 
 
-def parse_data_url(data_url: str) -> tuple[str, bytes]:
-    header, separator, encoded = data_url.partition(",")
-    if separator != "," or not header.startswith("data:"):
-        raise ValueError("invalid data URL")
-
-    mime_type = header[5:].split(";", 1)[0] or "application/octet-stream"
-    if ";base64" not in header:
-        raise ValueError("only base64 data URLs are supported")
-
-    return mime_type, base64.b64decode(encoded)
-
-
 def extension_for_mime_type(mime_type: str) -> str:
     if mime_type in SUPPORTED_IMAGE_MIME_TYPES:
         return SUPPORTED_IMAGE_MIME_TYPES[mime_type]
     return mimetypes.guess_extension(mime_type) or ".bin"
-
-
-def write_data_url_image(data_url: str, destination: Path) -> Path | None:
-    mime_type, data = parse_data_url(data_url)
-    if mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
-        return None
-
-    destination = destination.with_suffix(extension_for_mime_type(mime_type))
-    destination.write_bytes(data)
-    return destination
 
 
 def resolve_artifact_src(src: str) -> Path | None:
@@ -100,35 +77,59 @@ def resolve_artifact_src(src: str) -> Path | None:
     return artifact_path if artifact_path.is_file() else None
 
 
+def append_image_path(paths: list[Path], src: str) -> bool:
+    artifact_path = resolve_artifact_src(src)
+    if artifact_path is None or artifact_path in paths:
+        return False
+    paths.append(artifact_path)
+    return True
+
+
+def local_media_references(payload: dict) -> list[dict]:
+    references: list[dict] = []
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    for source in (params.get("localMediaReferences"), context.get("localMediaReferences")):
+        if isinstance(source, list):
+            references.extend(reference for reference in source if isinstance(reference, dict))
+    return references
+
+
 def materialize_selected_images(payload: dict, inputs_dir: Path) -> list[Path]:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     materialized: list[Path] = []
+    for reference in local_media_references(payload):
+        if first_text(reference.get("kind")) != "image":
+            continue
+        path = Path(first_text(reference.get("path"))).resolve()
+        try:
+            path.relative_to(artifacts_root())
+        except ValueError:
+            continue
+        if path.is_file() and path not in materialized:
+            materialized.append(path)
+
     attachments = payload.get("attachments")
     if isinstance(attachments, list):
-        for attachment_index, attachment in enumerate(attachments, start=1):
+        for attachment in attachments:
             if not isinstance(attachment, dict) or attachment.get("omitted"):
                 continue
             if attachment.get("kind") != "image":
                 continue
-            data_url = first_text(attachment.get("dataUrl"))
-            if not data_url.startswith("data:image/"):
-                continue
-            try:
-                image_path = write_data_url_image(data_url, inputs_dir / f"attachment-{attachment_index:02d}")
-            except Exception:
-                image_path = None
-            if image_path is not None:
-                materialized.append(image_path)
+            append_image_path(materialized, first_text(attachment.get("artifactUrl"), attachment.get("src")))
 
     snapshots = payload.get("selectedCardSnapshots")
     if not isinstance(snapshots, list):
         return materialized
 
-    for snapshot_index, snapshot in enumerate(snapshots, start=1):
+    for snapshot in snapshots:
         if not isinstance(snapshot, dict):
             continue
 
-        image_data_urls: list[str] = []
+        metadata = snapshot.get("metadata")
+        if isinstance(metadata, dict) and first_text(metadata.get("kind")) == "image":
+            append_image_path(materialized, first_text(metadata.get("artifactUrl")))
+
         media_assets = snapshot.get("mediaAssets")
         if isinstance(media_assets, list):
             for asset in media_assets:
@@ -136,34 +137,38 @@ def materialize_selected_images(payload: dict, inputs_dir: Path) -> list[Path]:
                     continue
                 if asset.get("kind") != "image":
                     continue
-                data_url = first_text(asset.get("dataUrl"), asset.get("src"))
-                artifact_path = resolve_artifact_src(data_url)
-                if artifact_path is not None:
-                    materialized.append(artifact_path)
-                elif data_url.startswith("data:image/"):
-                    image_data_urls.append(data_url)
-
-        if not image_data_urls:
-            preview = snapshot.get("preview")
-            if isinstance(preview, dict) and not preview.get("omitted"):
-                data_url = first_text(preview.get("dataUrl"))
-                if data_url.startswith("data:image/"):
-                    image_data_urls.append(data_url)
-
-        card_slug = safe_slug(first_text(snapshot.get("displayTitle"), snapshot.get("name")), f"card-{snapshot_index}")
-        for image_index, data_url in enumerate(image_data_urls, start=1):
-            try:
-                image_path = write_data_url_image(
-                    data_url,
-                    inputs_dir / f"{snapshot_index:02d}-{image_index:02d}-{card_slug}",
-                )
-            except Exception:
-                image_path = None
-
-            if image_path is not None:
-                materialized.append(image_path)
+                append_image_path(materialized, first_text(asset.get("src")))
 
     return materialized
+
+
+def has_non_local_image_reference(payload: dict) -> bool:
+    attachments = payload.get("attachments")
+    if isinstance(attachments, list):
+        for attachment in attachments:
+            if not isinstance(attachment, dict) or attachment.get("omitted"):
+                continue
+            if attachment.get("kind") == "image" and first_text(attachment.get("dataUrl")):
+                return True
+
+    snapshots = payload.get("selectedCardSnapshots")
+    if not isinstance(snapshots, list):
+        return False
+
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+        media_assets = snapshot.get("mediaAssets")
+        if isinstance(media_assets, list):
+            for asset in media_assets:
+                if not isinstance(asset, dict) or asset.get("omitted"):
+                    continue
+                if asset.get("kind") == "image" and not first_text(asset.get("src")) and first_text(asset.get("dataUrl")):
+                    return True
+        preview = snapshot.get("preview")
+        if isinstance(preview, dict) and not preview.get("omitted") and first_text(preview.get("dataUrl")):
+            return True
+    return False
 
 
 def write_output_schema(run_dir: Path) -> Path:
@@ -354,8 +359,8 @@ Selected image inputs available as --image attachments:
 {selected_image_lines}
 
 Output requirements:
-- Use the imagegen skill's default built-in image generation/editing path unless the request explicitly requires a fallback.
-- If image attachments are present, treat them as visual input from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
+- Use the imagegen skill's default built-in image generation/editing path.
+- If image attachments are present, treat them as local filesystem inputs from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
 - {count_requirement}
 - For storyboards, sequences, numbered lists, asset packs, frames, variants, or options, save each item as its own separate image file. Do not combine separate requested items into a collage, contact sheet, grid, comic page, or single composite unless the user explicitly asks for one combined image.
 - {resolution_requirement}
@@ -532,6 +537,8 @@ def main() -> None:
     (run_dir / "request.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     selected_images = materialize_selected_images(payload, run_dir / "inputs")
+    if not selected_images and has_non_local_image_reference(payload):
+        raise RuntimeError("imagegen requires selected image media to be persisted as Loki artifact files; inline dataUrl or preview images are not executable inputs.")
     result = run_codex(payload, run_dir, selected_images)
     codex_images = normalize_codex_images(result)
     if not codex_images:
