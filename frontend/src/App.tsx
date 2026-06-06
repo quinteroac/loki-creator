@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
-import { agentRunEventsUrl, createAgentRun, listAgentModels } from "./api/agentRuns";
+import { agentRunEventsUrl, createAgentRun, listAgentModels, stopAgentRun } from "./api/agentRuns";
 import { importArtifact } from "./api/artifacts";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
@@ -127,7 +127,9 @@ export function App() {
   const [status, setStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const agentEventSourceRef = useRef<EventSource | null>(null);
+  const activeAgentRunIdRef = useRef<string | null>(null);
   const agentRunStatusRef = useRef<AgentRunStreamEvent["status"] | null>(null);
+  const stoppedAgentRunIdsRef = useRef<Set<string>>(new Set());
   const ignoredSkillRunIdsRef = useRef<Set<string>>(new Set());
   const hasSeededIgnoredSkillRunsRef = useRef(false);
   const processedCardIdsRef = useRef<Set<string>>(new Set());
@@ -343,6 +345,9 @@ export function App() {
       agentRunStatusRef.current = event.status;
       setAgentRunStatus(event.status);
     }
+    if (event.type === "done") {
+      activeAgentRunIdRef.current = null;
+    }
 
     const text = event.message?.trim();
     if (!text && event.type !== "assistant_delta") return;
@@ -452,6 +457,8 @@ export function App() {
 
   function startAgentRunStream(streamId: string) {
     agentEventSourceRef.current?.close();
+    activeAgentRunIdRef.current = streamId;
+    stoppedAgentRunIdsRef.current.delete(streamId);
     const now = Date.now();
     setAgentRunStartedAt(now);
     setAgentLastActivityAt(now);
@@ -492,10 +499,25 @@ export function App() {
   }
 
   async function handleAgentRunResponse(agentRun: AgentRunResponse, baseRequest: AgentRunRequest) {
+    if (stoppedAgentRunIdsRef.current.has(agentRun.id) && agentRun.status !== "cancelled") {
+      return;
+    }
+
     setLatestAgentResponse(agentRun);
     agentRunStatusRef.current = agentRun.status;
     setAgentRunStatus(agentRun.status);
     setAgentLastActivityAt(Date.now());
+    activeAgentRunIdRef.current = null;
+
+    if (agentRun.status === "cancelled") {
+      appendAgentStreamEvent({
+        type: "done",
+        status: "cancelled",
+        message: "Agent run stopped.",
+      });
+      setStatus("Agent stopped.");
+      return;
+    }
 
     if (agentRun.status === "needs_input" && agentRun.question && agentRun.conversationId) {
       appendAgentStreamEvent({
@@ -534,6 +556,10 @@ export function App() {
 
     for (const runId of agentRun.skillRunIds) {
       const completedRun = await waitForSkillRun(runId);
+      if (completedRun.status === "cancelled") {
+        setStatus("Skill run stopped.");
+        return;
+      }
       if (completedRun.status === "failed") {
         setStatus(completedRun.error || "Skill run failed.");
         return;
@@ -606,13 +632,44 @@ export function App() {
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
     } catch (error) {
+      if (stoppedAgentRunIdsRef.current.has(streamId)) return;
       setPendingQuestion(answeredQuestion);
       setStatus(error instanceof Error ? error.message : "Could not connect to the agent bridge.");
     }
   }
 
+  async function stopActiveAgentRun() {
+    const streamId = activeAgentRunIdRef.current;
+    if (!streamId || agentRunStatusRef.current !== "running") return;
+
+    stoppedAgentRunIdsRef.current.add(streamId);
+    setStatus("Stopping agent...");
+
+    try {
+      await stopAgentRun(streamId);
+      agentEventSourceRef.current?.close();
+      agentEventSourceRef.current = null;
+      activeAgentRunIdRef.current = null;
+      appendAgentStreamEvent({
+        type: "done",
+        status: "cancelled",
+        message: "Agent run stopped.",
+      });
+      setStatus("Agent stopped.");
+    } catch (error) {
+      stoppedAgentRunIdsRef.current.delete(streamId);
+      setStatus(error instanceof Error ? error.message : "Could not stop the agent run.");
+    }
+  }
+
   async function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (agentRunStatusRef.current === "running") {
+      await stopActiveAgentRun();
+      return;
+    }
+
     const text = instruction.trim();
 
     if (pendingQuestion) {
@@ -625,15 +682,17 @@ export function App() {
       return;
     }
 
+    const streamId = createClientId("agent_run");
+
     try {
       setStatus("Running agent...");
-      const streamId = createClientId("agent_run");
       const request = await buildAgentRequest(text);
       request.streamId = streamId;
       startAgentRunStream(streamId);
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
     } catch (error) {
+      if (stoppedAgentRunIdsRef.current.has(streamId)) return;
       setStatus(error instanceof Error ? error.message : "Could not connect to the agent bridge.");
     }
   }
@@ -1178,6 +1237,7 @@ export function App() {
         fileInputRef={fileInputRef}
         filteredSkills={filteredSkills}
         instruction={instruction}
+        isRunning={agentRunStatus === "running"}
         onAttachFiles={handleFiles}
         onCreateAgent={handleCreateAgent}
         onInstructionChange={setInstruction}
@@ -1185,6 +1245,7 @@ export function App() {
         onQuestionOption={answerPendingQuestion}
         onRemoveAttachment={removeAttachment}
         onSelectModel={selectModel}
+        onStop={stopActiveAgentRun}
         onSubmit={submitInstruction}
         onToggleCard={toggleCard}
         onToggleSkill={toggleSkill}

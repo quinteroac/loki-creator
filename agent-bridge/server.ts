@@ -68,7 +68,7 @@ type LokiSkillArgument = {
 type LokiSkillRun = {
   id: string;
   skillId: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   result?: {
     cards?: Array<{
       id: string;
@@ -151,7 +151,7 @@ type AgentQuestion = {
 type AgentRunResponse = {
   id: string;
   agentId: string;
-  status: "succeeded" | "failed" | "needs_input";
+  status: "succeeded" | "failed" | "needs_input" | "cancelled";
   responseText: string;
   skillRunIds: string[];
   cardIds: string[];
@@ -187,6 +187,7 @@ type AgentRunState = {
   cardIds: string[];
   skillErrors: string[];
   skillCalls: Map<string, Promise<LokiSkillCallResult>>;
+  activeRun?: ActiveAgentRun;
   pendingQuestion?: AgentQuestion;
   diagnostics: string[];
   thinkingChunks: string[];
@@ -195,6 +196,20 @@ type AgentRunState = {
   toolEventCount: number;
   emit: (event: AgentRunStreamEvent) => void;
 };
+
+type ActiveAgentRun = {
+  id: string;
+  controller: AbortController;
+  skillRunIds: Set<string>;
+  disposeSession?: () => void;
+};
+
+class AgentRunCancelledError extends Error {
+  constructor(message = "Agent run stopped by user.") {
+    super(message);
+    this.name = "AgentRunCancelledError";
+  }
+}
 
 type AgentRuntimeMode = "pi-tools" | "grok-build-stdio";
 
@@ -233,6 +248,8 @@ const supportedVisionMimeTypes = new Set(["image/png", "image/jpeg", "image/jpg"
 let agentServicesPromise: ReturnType<typeof createAgentSessionServices> | undefined;
 const pendingConversations = new Map<string, PendingConversation>();
 const streamClients = new Map<string, Set<ReadableStreamDefaultController<Uint8Array>>>();
+const activeAgentRuns = new Map<string, ActiveAgentRun>();
+const requestedAgentRunStops = new Set<string>();
 const encoder = new TextEncoder();
 
 const agents: LokiAgent[] = [
@@ -262,6 +279,71 @@ function emitAgentRunEvent(streamId: string | undefined, event: AgentRunStreamEv
       clients.delete(controller);
     }
   }
+}
+
+function createCancelledAgentRunResponse(
+  id: string,
+  agentId: string,
+  runState?: AgentRunState,
+): AgentRunResponse {
+  return {
+    id,
+    agentId,
+    status: "cancelled",
+    responseText: "Agent run stopped by user.",
+    skillRunIds: runState?.skillRunIds ?? [],
+    cardIds: runState?.cardIds ?? [],
+    error: "Agent run stopped by user.",
+  };
+}
+
+function throwIfAgentRunCancelled(activeRun?: ActiveAgentRun) {
+  if (activeRun?.controller.signal.aborted) {
+    throw new AgentRunCancelledError();
+  }
+}
+
+async function withAgentRunCancellation<T>(promise: Promise<T>, activeRun?: ActiveAgentRun): Promise<T> {
+  if (!activeRun) return promise;
+  throwIfAgentRunCancelled(activeRun);
+
+  let removeAbortListener = () => {};
+  const abortPromise = new Promise<never>((_, reject) => {
+    const handleAbort = () => reject(new AgentRunCancelledError());
+    activeRun.controller.signal.addEventListener("abort", handleAbort, { once: true });
+    removeAbortListener = () => activeRun.controller.signal.removeEventListener("abort", handleAbort);
+  });
+
+  try {
+    return await Promise.race([promise, abortPromise]);
+  } finally {
+    removeAbortListener();
+  }
+}
+
+async function cancelBackendSkillRun(runId: string) {
+  try {
+    await requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs/${runId}/cancel`, { method: "POST" });
+  } catch {
+    // Cancellation is best-effort; the bridge still stops the agent session.
+  }
+}
+
+async function stopAgentRun(runId: string) {
+  requestedAgentRunStops.add(runId);
+  const activeRun = activeAgentRuns.get(runId);
+
+  if (!activeRun) {
+    emitAgentRunEvent(runId, { type: "done", status: "cancelled", message: "Agent run stopped." });
+    return { id: runId, stopped: false, status: "cancelled" };
+  }
+
+  activeRun.controller.abort();
+  activeRun.disposeSession?.();
+  await Promise.all([...activeRun.skillRunIds].map((skillRunId) => cancelBackendSkillRun(skillRunId)));
+  emitAgentRunEvent(runId, { type: "status", status: "cancelled", message: "Stopping agent run." });
+  emitAgentRunEvent(runId, { type: "done", status: "cancelled", message: "Agent run stopped." });
+  return { id: runId, stopped: true, status: "cancelled" };
 }
 
 function hasAgentRunEventClients(streamId: string | undefined) {
@@ -966,18 +1048,30 @@ function extractOperationalPromptFromAgentText(agentText: string, fallbackPrompt
   return candidates.at(-1)?.text ?? fallbackPrompt;
 }
 
-async function waitForSkillRun(runId: string): Promise<LokiSkillRun> {
+async function waitForSkillRun(runId: string, activeRun?: ActiveAgentRun): Promise<LokiSkillRun> {
   while (true) {
-    const run = await requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs/${runId}`);
-    if (run.status === "succeeded" || run.status === "failed") {
+    throwIfAgentRunCancelled(activeRun);
+    const run = await withAgentRunCancellation(
+      requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs/${runId}`, {
+        signal: activeRun?.controller.signal,
+      }),
+      activeRun,
+    );
+    if (run.status === "succeeded" || run.status === "failed" || run.status === "cancelled") {
       return run;
     }
 
-    await Bun.sleep(500);
+    await withAgentRunCancellation(Bun.sleep(500), activeRun);
   }
 }
 
-async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, request: AgentRunRequest) {
+async function runLokiSkill(
+  skill: LokiSkill,
+  skillParams: LokiSkillParams,
+  request: AgentRunRequest,
+  runState: AgentRunState,
+) {
+  throwIfAgentRunCancelled(runState.activeRun);
   const structuredParams = parseSkillParamsJson(skillParams.paramsJson);
   const collectedParams = request.collectedArgs ?? {};
   const inferredParams = await inferLoraParamsFromRequest(
@@ -986,41 +1080,50 @@ async function runLokiSkill(skill: LokiSkill, skillParams: LokiSkillParams, requ
     skillParams,
     { ...structuredParams, ...collectedParams },
   );
-  const createdRun = await requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      skillId: skill.id,
-      prompt: request.prompt,
-      context: {
-        ...request.context,
-        agentId: request.agentId ?? "base-agent",
-        model: request.model,
-        collectedArgs: request.collectedArgs ?? {},
+  const createdRun = await withAgentRunCancellation(
+    requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: runState.activeRun?.controller.signal,
+      body: JSON.stringify({
+        skillId: skill.id,
+        prompt: request.prompt,
+        context: {
+          ...request.context,
+          agentId: request.agentId ?? "base-agent",
+          model: request.model,
+          collectedArgs: request.collectedArgs ?? {},
+          selectedCardSnapshots: request.selectedCardSnapshots ?? [],
+          attachments: request.attachments ?? [],
+        },
+        selectedCards: request.selectedCards,
         selectedCardSnapshots: request.selectedCardSnapshots ?? [],
         attachments: request.attachments ?? [],
-      },
-      selectedCards: request.selectedCards,
-      selectedCardSnapshots: request.selectedCardSnapshots ?? [],
-      attachments: request.attachments ?? [],
-      params: {
-        ...inferredParams,
-        ...structuredParams,
-        ...collectedParams,
-        skillPrompt: skillParams.prompt,
-        outputText: skillParams.outputText,
-        title: skillParams.title,
-        subtitle: skillParams.subtitle,
-        body: skillParams.body,
-        footer: skillParams.footer,
-      },
+        params: {
+          ...inferredParams,
+          ...structuredParams,
+          ...collectedParams,
+          skillPrompt: skillParams.prompt,
+          outputText: skillParams.outputText,
+          title: skillParams.title,
+          subtitle: skillParams.subtitle,
+          body: skillParams.body,
+          footer: skillParams.footer,
+        },
+      }),
     }),
-  });
+    runState.activeRun,
+  );
+  runState.activeRun?.skillRunIds.add(createdRun.id);
 
   let completedRun: LokiSkillRun;
   try {
-    completedRun = await waitForSkillRun(createdRun.id);
+    completedRun = await waitForSkillRun(createdRun.id, runState.activeRun);
   } catch (error) {
+    if (error instanceof AgentRunCancelledError || runState.activeRun?.controller.signal.aborted) {
+      await cancelBackendSkillRun(createdRun.id);
+      throw new AgentRunCancelledError();
+    }
     const message = error instanceof Error ? error.message : "Unknown error waiting for Loki skill run";
     completedRun = {
       ...createdRun,
@@ -1143,11 +1246,22 @@ function createLokiSkillPiTool(
         skillName: skill.name,
         message: summarizeSkillInvocation(skill, params),
       });
-      const skillCall = runLokiSkill(skill, params, request);
+      const skillCall = runLokiSkill(skill, params, request, runState);
       runState.skillCalls.set(skill.id, skillCall);
       const { run, cards, cardIds } = await skillCall;
       runState.skillRunIds.push(run.id);
       runState.cardIds.push(...cardIds);
+
+      if (run.status === "cancelled") {
+        runState.emit({
+          type: "skill",
+          status: "cancelled",
+          skillName: skill.name,
+          skillRunId: run.id,
+          message: `${skill.name} stopped.`,
+        });
+        throw new AgentRunCancelledError();
+      }
 
       if (run.status === "failed") {
         runState.skillCalls.delete(skill.id);
@@ -1227,11 +1341,22 @@ async function runSelectedSkillFromAgentReasoning(
     message: summarizeSkillInvocation(skill, skillParams),
   });
 
-  const skillCall = runLokiSkill(skill, skillParams, effectiveRequest);
+  const skillCall = runLokiSkill(skill, skillParams, effectiveRequest, runState);
   runState.skillCalls.set(skill.id, skillCall);
   const { run, cards, cardIds } = await skillCall;
   runState.skillRunIds.push(run.id);
   runState.cardIds.push(...cardIds);
+
+  if (run.status === "cancelled") {
+    runState.emit({
+      type: "skill",
+      status: "cancelled",
+      skillName: skill.name,
+      skillRunId: run.id,
+      message: `${skill.name} stopped.`,
+    });
+    throw new AgentRunCancelledError();
+  }
 
   if (run.status === "failed") {
     runState.skillCalls.delete(skill.id);
@@ -1742,11 +1867,18 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   const id = request.streamId || `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
   const agentId = request.agentId || "base-agent";
   const emit = (event: AgentRunStreamEvent) => emitAgentRunEvent(request.streamId, event);
+  const activeRun: ActiveAgentRun = {
+    id,
+    controller: new AbortController(),
+    skillRunIds: new Set<string>(),
+  };
+  activeAgentRuns.set(id, activeRun);
   const runState: AgentRunState = {
     skillRunIds: [] as string[],
     cardIds: [] as string[],
     skillErrors: [] as string[],
     skillCalls: new Map<string, Promise<LokiSkillCallResult>>(),
+    activeRun,
     diagnostics: [] as string[],
     thinkingChunks: [] as string[],
     textDeltaCount: 0,
@@ -1759,13 +1891,21 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
   let session: Awaited<ReturnType<typeof createAgentSession>>["session"] | undefined;
 
   try {
+    if (requestedAgentRunStops.has(id)) {
+      activeRun.controller.abort();
+      requestedAgentRunStops.delete(id);
+      emit({ type: "done", status: "cancelled", message: "Agent run stopped." });
+      return createCancelledAgentRunResponse(id, agentId, runState);
+    }
+
     appendRunDiagnostic(
       runState,
       `run started streamId=${request.streamId ?? "none"} streamConnected=${hasAgentRunEventClients(request.streamId)}`,
     );
+    throwIfAgentRunCancelled(activeRun);
     emit({ type: "user", message: request.prompt });
     emit({ type: "status", status: "running", message: "Preparing Loki context." });
-    const availableSkills = await listFrontendSkills();
+    const availableSkills = await withAgentRunCancellation(listFrontendSkills(), activeRun);
     appendRunDiagnostic(runState, `loaded backend skills count=${availableSkills.length}`);
     const existingConversation = request.conversationId
       ? pendingConversations.get(request.conversationId)
@@ -1812,8 +1952,8 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       pendingConversations.delete(existingConversation.id);
     }
 
-    const { authStorage, modelRegistry, resourceLoader } = await getAgentServices();
-    const model = await resolveSelectedModel(effectiveRequest.model);
+    const { authStorage, modelRegistry, resourceLoader } = await withAgentRunCancellation(getAgentServices(), activeRun);
+    const model = await withAgentRunCancellation(resolveSelectedModel(effectiveRequest.model), activeRun);
     const runtimeMode = getAgentRuntimeMode(model);
     appendRunDiagnostic(
       runState,
@@ -1832,18 +1972,22 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       `customTools=${customTools.map((tool) => tool.name).join(",") || "none"}`,
     );
 
-    const result = await createAgentSession({
-      cwd: repoRoot,
-      authStorage,
-      modelRegistry,
-      model,
-      resourceLoader,
-      sessionManager: SessionManager.inMemory(repoRoot),
-      noTools: "builtin",
-      customTools,
-      tools: customTools.map((tool) => tool.name),
-    });
+    const result = await withAgentRunCancellation(
+      createAgentSession({
+        cwd: repoRoot,
+        authStorage,
+        modelRegistry,
+        model,
+        resourceLoader,
+        sessionManager: SessionManager.inMemory(repoRoot),
+        noTools: "builtin",
+        customTools,
+        tools: customTools.map((tool) => tool.name),
+      }),
+      activeRun,
+    );
     session = result.session;
+    activeRun.disposeSession = () => session?.dispose();
     appendRunDiagnostic(runState, "Pi session created");
 
     session.subscribe((event) => {
@@ -1909,7 +2053,10 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       `session.prompt starting streamConnected=${hasAgentRunEventClients(request.streamId)}`,
     );
     const promptStartedAt = Date.now();
-    await session.prompt(agentPrompt, { source: "api", images: agentVisionImages.length > 0 ? agentVisionImages : undefined });
+    await withAgentRunCancellation(
+      session.prompt(agentPrompt, { source: "api", images: agentVisionImages.length > 0 ? agentVisionImages : undefined }),
+      activeRun,
+    );
     appendRunDiagnostic(
       runState,
       `session.prompt finished elapsedMs=${Date.now() - promptStartedAt} textDeltas=${runState.textDeltaCount} thinkingDeltas=${runState.thinkingDeltaCount} toolEvents=${runState.toolEventCount} skillRunIds=${runState.skillRunIds.length}`,
@@ -1924,10 +2071,13 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       appendRunDiagnostic(runState, "explicit selected skill was not invoked after first agent turn; requesting corrective tool invocation");
       emit({ type: "status", status: "running", message: "Agent is retrying the selected skill invocation." });
       const retryStartedAt = Date.now();
-      await session.prompt(buildExplicitSkillRetryPrompt(effectiveRequest, selectedSkills), {
-        source: "api",
-        images: agentVisionImages.length > 0 ? agentVisionImages : undefined,
-      });
+      await withAgentRunCancellation(
+        session.prompt(buildExplicitSkillRetryPrompt(effectiveRequest, selectedSkills), {
+          source: "api",
+          images: agentVisionImages.length > 0 ? agentVisionImages : undefined,
+        }),
+        activeRun,
+      );
       appendRunDiagnostic(
         runState,
         `explicit selected skill retry finished elapsedMs=${Date.now() - retryStartedAt} textDeltas=${runState.textDeltaCount} thinkingDeltas=${runState.thinkingDeltaCount} toolEvents=${runState.toolEventCount} skillRunIds=${runState.skillRunIds.length}`,
@@ -2035,6 +2185,12 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
       cardIds: runState.cardIds,
     };
   } catch (error) {
+    if (error instanceof AgentRunCancelledError || activeRun.controller.signal.aborted) {
+      await Promise.all([...activeRun.skillRunIds].map((skillRunId) => cancelBackendSkillRun(skillRunId)));
+      emit({ type: "done", status: "cancelled", message: "Agent run stopped." });
+      return createCancelledAgentRunResponse(id, agentId, runState);
+    }
+
     const message = error instanceof Error ? error.message : "Unknown Pi agent error";
     appendRunDiagnostic(runState, `run failed in catch: ${message}`);
     emit({ type: "error", status: "failed", message });
@@ -2050,6 +2206,10 @@ async function runAgent(request: AgentRunRequest): Promise<AgentRunResponse> {
     };
   } finally {
     session?.dispose();
+    if (activeAgentRuns.get(id) === activeRun) {
+      activeAgentRuns.delete(id);
+    }
+    requestedAgentRunStops.delete(id);
   }
 }
 
@@ -2071,6 +2231,7 @@ const app = new Elysia()
   .get("/api/agents", () => agents)
   .get("/api/models", () => listAvailableModelsAsync())
   .get("/api/agent-runs/:id/events", ({ params }) => createAgentRunEventStream(params.id))
+  .post("/api/agent-runs/:id/stop", ({ params }) => stopAgentRun(params.id))
   .post(
     "/api/agent-runs",
     async ({ body }) => runAgent(body),

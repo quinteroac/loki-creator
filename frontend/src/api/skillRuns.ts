@@ -24,7 +24,7 @@ export async function waitForSkillRun(runId: string): Promise<SkillRun> {
     }
 
     const run = (await response.json()) as SkillRun;
-    if (run.status === "succeeded" || run.status === "failed") return run;
+    if (run.status === "succeeded" || run.status === "failed" || run.status === "cancelled") return run;
 
     await new Promise((resolve) => window.setTimeout(resolve, 500));
   }

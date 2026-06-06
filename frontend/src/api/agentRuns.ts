@@ -42,6 +42,19 @@ export async function createAgentRun(payload: AgentRunRequest): Promise<AgentRun
   return response.json();
 }
 
+export async function stopAgentRun(runId: string): Promise<{ id: string; stopped: boolean; status: "cancelled" }> {
+  const response = await fetch(`${AGENT_API_URL}/api/agent-runs/${encodeURIComponent(runId)}/stop`, {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(message || `Agent stop request failed: ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export function agentRunEventsUrl(streamId: string) {
   return `${AGENT_API_URL}/api/agent-runs/${encodeURIComponent(streamId)}/events`;
 }

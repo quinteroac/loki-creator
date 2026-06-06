@@ -214,7 +214,7 @@ export type SkillArgumentDefinition = {
   order: number;
 };
 
-export type SkillRunStatus = "queued" | "running" | "succeeded" | "failed";
+export type SkillRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 
 export type SkillRun = {
   id: string;
@@ -279,7 +279,7 @@ export type AgentQuestion = {
 export type AgentRunResponse = {
   id: string;
   agentId: string;
-  status: "succeeded" | "failed" | "needs_input";
+  status: "succeeded" | "failed" | "needs_input" | "cancelled";
   responseText: string;
   skillRunIds: string[];
   cardIds: string[];

@@ -1,4 +1,6 @@
 import json
+import os
+import signal
 import subprocess
 from pathlib import Path
 from typing import Any, Callable
@@ -16,6 +18,28 @@ class SkillInvocationError(RuntimeError):
 
 
 class SkillActionInvoker:
+    def __init__(self) -> None:
+        self._processes: dict[str, subprocess.Popen[str]] = {}
+
+    def cancel(self, run_id: str) -> None:
+        process = self._processes.get(run_id)
+        if process is None or process.poll() is not None:
+            return
+
+        try:
+            if os.name == "nt":
+                process.terminate()
+            else:
+                os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            if os.name == "nt":
+                process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+
     def invoke(
         self,
         skill: SkillDefinition,
@@ -36,6 +60,7 @@ class SkillActionInvoker:
         except ValueError as exc:
             raise SkillInvocationError(f"Skill path is outside the repository: {skill.path}") from exc
 
+        run_id = str(payload.get("runId") or "")
         process = subprocess.Popen(
             action.command,
             stdin=subprocess.PIPE,
@@ -43,7 +68,10 @@ class SkillActionInvoker:
             stderr=subprocess.PIPE,
             text=True,
             cwd=skill_dir,
+            start_new_session=os.name != "nt",
         )
+        if run_id:
+            self._processes[run_id] = process
         stdout_lines: list[str] = []
         stderr_text = ""
         try:
@@ -72,6 +100,9 @@ class SkillActionInvoker:
         except subprocess.TimeoutExpired as exc:
             process.kill()
             raise SkillInvocationError(f"Skill action timed out after {action.timeout_seconds}s") from exc
+        finally:
+            if run_id:
+                self._processes.pop(run_id, None)
 
         if process.returncode != 0:
             message = stderr_text.strip() or "".join(stdout_lines).strip() or "skill action failed"

@@ -1,4 +1,4 @@
-import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles, X } from "lucide-react";
+import { ArrowUp, Bot, Check, Cpu, Layers, Paperclip, Search, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { formatFileSize } from "../lib/attachments";
@@ -11,6 +11,7 @@ type AgentComposerProps = {
   canvasNodes: GeneratedCard[];
   filteredSkills: string[];
   instruction: string;
+  isRunning: boolean;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
@@ -18,6 +19,7 @@ type AgentComposerProps = {
   onQuestionOption: (answer: string) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onSelectModel: (model: string) => void;
+  onStop: () => void | Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
   onToggleSkill: (skill: string) => void;
@@ -43,6 +45,7 @@ export function AgentComposer({
   canvasNodes,
   filteredSkills,
   instruction,
+  isRunning,
   onAttachFiles,
   onCreateAgent,
   onInstructionChange,
@@ -50,6 +53,7 @@ export function AgentComposer({
   onQuestionOption,
   onRemoveAttachment,
   onSelectModel,
+  onStop,
   onSubmit,
   onToggleCard,
   onToggleSkill,
@@ -69,6 +73,7 @@ export function AgentComposer({
   fileInputRef,
 }: AgentComposerProps) {
   const [modelSearch, setModelSearch] = useState("");
+  const [isPromptFocused, setIsPromptFocused] = useState(false);
   const filteredModels = useMemo(() => {
     const query = modelSearch.trim().toLowerCase();
 
@@ -215,7 +220,7 @@ export function AgentComposer({
         </div>
       )}
 
-      <form className="composer" onSubmit={onSubmit}>
+      <form className={`composer ${isPromptFocused ? "composer-prompt-focused" : ""}`} onSubmit={onSubmit}>
         <div className="composer-main">
           {attachments.length > 0 && (
             <div className="attachment-tray" aria-label="Attached files">
@@ -240,10 +245,13 @@ export function AgentComposer({
           )}
 
           <textarea
+            className="composer-prompt"
             name="instruction"
             rows={1}
             value={instruction}
             onChange={(event) => onInstructionChange(event.target.value)}
+            onFocus={() => setIsPromptFocused(true)}
+            onBlur={() => setIsPromptFocused(false)}
             onKeyDown={onInstructionKeyDown}
             placeholder={pendingQuestion ? "Answer the agent..." : "Write to imagine"}
             aria-label={pendingQuestion ? "Answer for the agent" : "Instruction for the agent"}
@@ -306,8 +314,14 @@ export function AgentComposer({
           </div>
         </div>
 
-        <button className="send-orb" type="submit" aria-label="Send instruction">
-          <ArrowUp size={20} strokeWidth={2} />
+        <button
+          className={`send-orb ${isRunning ? "stop-orb" : ""}`}
+          type={isRunning ? "button" : "submit"}
+          aria-label={isRunning ? "Stop agent run" : "Send instruction"}
+          title={isRunning ? "Stop" : "Send"}
+          onClick={isRunning ? onStop : undefined}
+        >
+          {isRunning ? <Square size={17} fill="currentColor" strokeWidth={2.2} /> : <ArrowUp size={20} strokeWidth={2} />}
         </button>
       </form>
       <p className="composer-status" aria-live="polite">

@@ -8,7 +8,7 @@ from app.models.instructions import GeneratedCard
 
 SkillOrigin = Literal["built-in", "user"]
 SkillVisibility = Literal["user", "internal"]
-SkillRunStatus = Literal["queued", "running", "succeeded", "failed"]
+SkillRunStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 SkillArgumentType = Literal["choice", "text"]
 SkillArgumentAskWhen = Literal["always", "missing"]
 SkillOutputKind = Literal["auto", "image", "video", "audio", "html", "text", "diagnostic", "artifact"]

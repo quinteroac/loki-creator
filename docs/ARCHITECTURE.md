@@ -243,10 +243,12 @@ It is not a real skill.
 - `GET /api/skill-runs`
 - `GET /api/skill-runs?status=succeeded`
 - `GET /api/skill-runs/{run_id}`
+- `POST /api/skill-runs/{run_id}/cancel`
 - `GET /api/artifacts/{artifact_path}`
 - `GET /api/agents` on the bridge
 - `GET /api/models` on the bridge
 - `POST /api/agent-runs` on the bridge
+- `POST /api/agent-runs/{run_id}/stop` on the bridge
 
 ## Design Principles
 

@@ -154,6 +154,19 @@ def get_skill_run(
     return run
 
 
+@router.post("/skill-runs/{run_id}/cancel", response_model=SkillRun)
+def cancel_skill_run(
+    run_id: str,
+    service: SkillRunService = Depends(get_skill_run_service),
+) -> SkillRun:
+    run = service.cancel_run(run_id)
+
+    if run is None:
+        raise HTTPException(status_code=404, detail="Skill run not found")
+
+    return run
+
+
 @router.post("/artifacts/archive", response_model=ArchiveArtifactsResponse)
 def archive_artifacts(
     payload: ArchiveArtifactsRequest,

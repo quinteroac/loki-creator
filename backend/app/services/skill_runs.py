@@ -18,6 +18,7 @@ class SkillRunService:
         self.invoker = invoker or SkillActionInvoker()
         self.packager = packager or CardPackagerService()
         self._runs: dict[str, SkillRun] = {}
+        self._cancelled_run_ids: set[str] = set()
 
     def create_run(self, payload: SkillRunRequest) -> SkillRun:
         run_id = f"skill_run_{uuid4().hex}"
@@ -41,9 +42,24 @@ class SkillRunService:
             return runs
         return [run for run in runs if run.status == status]
 
+    def cancel_run(self, run_id: str) -> SkillRun | None:
+        run = self._runs.get(run_id)
+        if run is None:
+            return None
+        if run.status in {"succeeded", "failed", "cancelled"}:
+            return run
+
+        self._cancelled_run_ids.add(run_id)
+        self.invoker.cancel(run_id)
+        self._cancel(run_id)
+        return self._runs[run_id]
+
     def run_skill(self, run_id: str, payload: SkillRunRequest) -> None:
         run = self._runs.get(run_id)
         if run is None:
+            return
+        if self._is_cancelled(run_id):
+            self._cancel(run_id)
             return
 
         self._set_status(run_id, "running")
@@ -54,6 +70,8 @@ class SkillRunService:
 
         try:
             def handle_partial_result(raw_result: SkillRawResult) -> None:
+                if self._is_cancelled(run_id):
+                    raise RuntimeError("Skill run stopped by user.")
                 partial_result = self.packager.package(
                     skill=skill,
                     run_id=run_id,
@@ -85,7 +103,14 @@ class SkillRunService:
                 raw_result=raw_result,
             )
         except Exception as exc:
+            if self._is_cancelled(run_id):
+                self._cancel(run_id)
+                return
             self._fail(run_id, str(exc))
+            return
+
+        if self._is_cancelled(run_id):
+            self._cancel(run_id)
             return
 
         now = datetime.now(timezone.utc)
@@ -98,6 +123,9 @@ class SkillRunService:
                 "error": None,
             },
         )
+
+    def _is_cancelled(self, run_id: str) -> bool:
+        return run_id in self._cancelled_run_ids
 
     def _set_status(self, run_id: str, status: str) -> None:
         run = self._runs[run_id]
@@ -112,6 +140,16 @@ class SkillRunService:
                 "status": "failed",
                 "updated_at": datetime.now(timezone.utc),
                 "error": error,
+            },
+        )
+
+    def _cancel(self, run_id: str) -> None:
+        run = self._runs[run_id]
+        self._runs[run_id] = run.model_copy(
+            update={
+                "status": "cancelled",
+                "updated_at": datetime.now(timezone.utc),
+                "error": "Skill run stopped by user.",
             },
         )
 
