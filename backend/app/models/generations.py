@@ -49,3 +49,28 @@ class GrokGenerationResponse(BaseModel):
     cards: list[GeneratedCard] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class CodexImageGenerationRequest(BaseModel):
+    prompt: str
+    resolution: Literal[
+        "1024x1024",
+        "1536x1024",
+        "1024x1536",
+        "2048x2048",
+        "2048x1152",
+        "3840x2160",
+        "2160x3840",
+        "auto",
+    ] = "1024x1024"
+    selected_card_snapshots: list[dict[str, Any]] = Field(default_factory=list, alias="selectedCardSnapshots")
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CodexImageGenerationResponse(BaseModel):
+    cards: list[GeneratedCard] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)

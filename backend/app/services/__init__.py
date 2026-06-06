@@ -2,6 +2,7 @@ from app.services.builtin_agents import BASE_AGENT, BUILTIN_AGENTS
 from app.services.audio_editor import AudioEditorError, AudioEditorService
 from app.services.artifacts import ArtifactArchiveService
 from app.services.card_packager import CardPackagerService
+from app.services.codex_image import CodexImageGenerationError, CodexImageGenerationService
 from app.services.grok_imagine import GrokImagineGenerationError, GrokImagineGenerationService
 from app.services.instructions import InstructionService
 from app.services.projects import ProjectNotFoundError, ProjectService
@@ -18,6 +19,8 @@ __all__ = [
     "AudioEditorService",
     "ArtifactArchiveService",
     "CardPackagerService",
+    "CodexImageGenerationError",
+    "CodexImageGenerationService",
     "GrokImagineGenerationError",
     "GrokImagineGenerationService",
     "InstructionService",

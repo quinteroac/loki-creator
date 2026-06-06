@@ -10,6 +10,8 @@ from app.models import (
     AudioTrimRequest,
     ArchiveArtifactsRequest,
     ArchiveArtifactsResponse,
+    CodexImageGenerationRequest,
+    CodexImageGenerationResponse,
     GrokGenerationResponse,
     GrokImageGenerationRequest,
     GrokVideoGenerationRequest,
@@ -36,6 +38,8 @@ from app.services import (
     AudioEditorError,
     AudioEditorService,
     ArtifactArchiveService,
+    CodexImageGenerationError,
+    CodexImageGenerationService,
     GrokImagineGenerationError,
     GrokImagineGenerationService,
     InstructionService,
@@ -93,6 +97,10 @@ def get_grok_imagine_generation_service() -> GrokImagineGenerationService:
     return GrokImagineGenerationService(artifacts_root)
 
 
+def get_codex_image_generation_service() -> CodexImageGenerationService:
+    return CodexImageGenerationService(artifacts_root)
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -143,6 +151,17 @@ def generate_grok_video(
     try:
         return service.generate_video(payload)
     except GrokImagineGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/generations/codex-image", response_model=CodexImageGenerationResponse)
+def generate_codex_image(
+    payload: CodexImageGenerationRequest,
+    service: CodexImageGenerationService = Depends(get_codex_image_generation_service),
+) -> CodexImageGenerationResponse:
+    try:
+        return service.generate(payload)
+    except CodexImageGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

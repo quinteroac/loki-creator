@@ -18,7 +18,7 @@ There is no legacy runtime compatibility layer. Public product concepts are skil
 10. The backend card packager converts those outputs into `GeneratedCard` objects.
 11. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
 
-Direct generation modes such as Seedance and Grok bypass the agent bridge and call backend generation endpoints. They still use local artifact-backed selected card snapshots, reject preview-only media as executable input, and package outputs through the same card packager.
+Direct generation modes such as Seedance, Grok, and Codex bypass the agent bridge and call backend generation endpoints. They still use local artifact-backed selected card snapshots, reject preview-only media as executable input, and package outputs through the same card packager.
 
 ## Backend
 
@@ -251,6 +251,7 @@ It is not a real skill.
 - `POST /api/skill-runs/{run_id}/cancel`
 - `POST /api/generations/grok-image`
 - `POST /api/generations/grok-video`
+- `POST /api/generations/codex-image`
 - `POST /api/generations/seedance-video`
 - `GET /api/artifacts/{artifact_path}`
 - `GET /api/agents` on the bridge

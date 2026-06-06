@@ -19,6 +19,8 @@ from app.models.artifacts import (
 )
 from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
 from app.models.generations import (
+    CodexImageGenerationRequest,
+    CodexImageGenerationResponse,
     GrokGenerationResponse,
     GrokImageGenerationRequest,
     GrokVideoGenerationRequest,
@@ -66,6 +68,8 @@ __all__ = [
     "GeneratedCard",
     "InstructionRequest",
     "InstructionResponse",
+    "CodexImageGenerationRequest",
+    "CodexImageGenerationResponse",
     "GrokGenerationResponse",
     "GrokImageGenerationRequest",
     "GrokVideoGenerationRequest",

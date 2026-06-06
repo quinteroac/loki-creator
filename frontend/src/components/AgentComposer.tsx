@@ -7,6 +7,7 @@ import type {
   AgentAttachment,
   AgentModel,
   AgentQuestion,
+  CodexImageResolution,
   ComposerMode,
   GeneratedCard,
   GrokImageAspectRatio,
@@ -28,6 +29,7 @@ type AgentComposerProps = {
   isSubmitting: boolean;
   isRunning: boolean;
   composerMode: ComposerMode;
+  codexImageResolution: CodexImageResolution;
   grokImageAspectRatio: GrokImageAspectRatio;
   grokImageResolution: GrokImageResolution;
   grokTool: GrokTool;
@@ -35,6 +37,7 @@ type AgentComposerProps = {
   grokVideoDuration: GrokVideoDuration;
   grokVideoResolution: GrokVideoResolution;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
+  onCodexImageResolutionChange: (resolution: CodexImageResolution) => void;
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
@@ -81,6 +84,7 @@ export function AgentComposer({
   isSubmitting,
   isRunning,
   composerMode,
+  codexImageResolution,
   grokImageAspectRatio,
   grokImageResolution,
   grokTool,
@@ -88,6 +92,7 @@ export function AgentComposer({
   grokVideoDuration,
   grokVideoResolution,
   onAttachFiles,
+  onCodexImageResolutionChange,
   onCreateAgent,
   onInstructionChange,
   onInstructionKeyDown,
@@ -324,6 +329,7 @@ export function AgentComposer({
                 <option value="agent">Agent</option>
                 <option value="seedance">Seedance</option>
                 <option value="grok">Grok</option>
+                <option value="codex">Codex</option>
               </select>
             </label>
             {composerMode === "seedance" && (
@@ -428,6 +434,25 @@ export function AgentComposer({
                   </label>
                 )}
               </>
+            )}
+            {composerMode === "codex" && (
+              <label className="composer-select-chip">
+                <span>Res</span>
+                <select
+                  value={codexImageResolution}
+                  onChange={(event) => onCodexImageResolutionChange(event.target.value as CodexImageResolution)}
+                  aria-label="Codex image resolution"
+                >
+                  <option value="1024x1024">1024 square</option>
+                  <option value="1536x1024">1536 landscape</option>
+                  <option value="1024x1536">1536 portrait</option>
+                  <option value="2048x2048">2K square</option>
+                  <option value="2048x1152">2K landscape</option>
+                  <option value="3840x2160">4K landscape</option>
+                  <option value="2160x3840">4K portrait</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </label>
             )}
             {composerMode === "agent" && (
               <>

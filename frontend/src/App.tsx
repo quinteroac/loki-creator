@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { agentRunEventsUrl, createAgentRun, listAgentModels, stopAgentRun } from "./api/agentRuns";
 import { importArtifact } from "./api/artifacts";
+import { generateCodexImage } from "./api/codexImage";
 import { generateGrokImage, generateGrokVideo } from "./api/grokImagine";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { generateSeedanceVideo } from "./api/seedanceVideo";
@@ -45,6 +46,7 @@ import type {
   CanvasNode,
   CanvasNodeFrame,
   CardDocument,
+  CodexImageResolution,
   ComposerMode,
   EditedMediaArtifact,
   GeneratedCard,
@@ -118,6 +120,7 @@ export function App() {
   const [grokVideoAspectRatio, setGrokVideoAspectRatio] = useState<GrokVideoAspectRatio>("16:9");
   const [grokVideoResolution, setGrokVideoResolution] = useState<GrokVideoResolution>("720p");
   const [grokVideoDuration, setGrokVideoDuration] = useState<GrokVideoDuration>(5);
+  const [codexImageResolution, setCodexImageResolution] = useState<CodexImageResolution>("1024x1024");
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
@@ -718,10 +721,16 @@ export function App() {
       return;
     }
 
-    if (composerMode === "seedance" || composerMode === "grok") {
+    if (composerMode === "seedance" || composerMode === "grok" || composerMode === "codex") {
       try {
         setIsDirectGenerating(true);
-        setStatus(composerMode === "seedance" ? "Generating Seedance video..." : `Generating Grok ${grokTool}...`);
+        setStatus(
+          composerMode === "seedance"
+            ? "Generating Seedance video..."
+            : composerMode === "grok"
+              ? `Generating Grok ${grokTool}...`
+              : "Generating Codex image...",
+        );
         const selectedCardSnapshots = await createSelectedCardSnapshots(
           cardDocuments,
           selectedCards,
@@ -735,26 +744,39 @@ export function App() {
             selectedCardSnapshots,
             attachments,
           })
-          : grokTool === "image"
-            ? await generateGrokImage({
+          : composerMode === "codex"
+            ? await generateCodexImage({
               prompt: text,
-              aspectRatio: grokImageAspectRatio,
-              resolution: grokImageResolution,
+              resolution: codexImageResolution,
               selectedCardSnapshots,
               attachments,
             })
-            : await generateGrokVideo({
-              prompt: text,
-              aspectRatio: grokVideoAspectRatio,
-              resolution: grokVideoResolution,
-              duration: grokVideoDuration,
-              selectedCardSnapshots,
-              attachments,
-            });
+            : grokTool === "image"
+              ? await generateGrokImage({
+                prompt: text,
+                aspectRatio: grokImageAspectRatio,
+                resolution: grokImageResolution,
+                selectedCardSnapshots,
+                attachments,
+              })
+              : await generateGrokVideo({
+                prompt: text,
+                aspectRatio: grokVideoAspectRatio,
+                resolution: grokVideoResolution,
+                duration: grokVideoDuration,
+                selectedCardSnapshots,
+                attachments,
+              });
         addGeneratedCards(result.cards);
         setInstruction("");
         setAttachments([]);
-        setStatus(composerMode === "seedance" ? "Seedance video generated." : `Grok ${grokTool} generated.`);
+        setStatus(
+          composerMode === "seedance"
+            ? "Seedance video generated."
+            : composerMode === "grok"
+              ? `Grok ${grokTool} generated.`
+              : "Codex image generated.",
+        );
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "Could not generate.");
       } finally {
@@ -1314,6 +1336,7 @@ export function App() {
       <AgentComposer
         attachments={attachments}
         canvasNodes={cardDocuments}
+        codexImageResolution={codexImageResolution}
         availableModels={availableModels}
         fileInputRef={fileInputRef}
         filteredSkills={filteredSkills}
@@ -1323,6 +1346,7 @@ export function App() {
         composerMode={composerMode}
         onAttachFiles={handleFiles}
         onCreateAgent={handleCreateAgent}
+        onCodexImageResolutionChange={setCodexImageResolution}
         onInstructionChange={setInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
         onQuestionOption={answerPendingQuestion}
