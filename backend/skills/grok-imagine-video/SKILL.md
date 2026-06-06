@@ -3,7 +3,7 @@ name: grok-imagine-video
 description: Generate videos with Grok Imagine through the xAI Imagine API. Use when the user explicitly asks for Grok, xAI, Imagine, text-to-video, or image-to-video with Grok. Do not use for image-only generation, local LTX/ComfyUI video, Seedance, audio, or non-Grok video models.
 metadata:
   loki:
-    visibility: user
+    visibility: internal
     capabilities: [video-generation, image-to-video, raster-card-output, grok, xai]
     arguments:
       - id: aspectRatio

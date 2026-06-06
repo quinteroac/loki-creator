@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { agentRunEventsUrl, createAgentRun, listAgentModels, stopAgentRun } from "./api/agentRuns";
 import { importArtifact } from "./api/artifacts";
+import { generateGrokImage, generateGrokVideo } from "./api/grokImagine";
 import { listProjects, loadProject, saveProject } from "./api/projects";
 import { generateSeedanceVideo } from "./api/seedanceVideo";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
@@ -44,8 +45,15 @@ import type {
   CanvasNode,
   CanvasNodeFrame,
   CardDocument,
+  ComposerMode,
   EditedMediaArtifact,
   GeneratedCard,
+  GrokImageAspectRatio,
+  GrokImageResolution,
+  GrokTool,
+  GrokVideoAspectRatio,
+  GrokVideoDuration,
+  GrokVideoResolution,
   ProjectSummary,
   SeedanceAspectRatio,
   SeedanceDuration,
@@ -101,15 +109,21 @@ export function App() {
   const [selectedSkills, setSelectedSkills] = useState(["Auto"]);
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
-  const [composerMode, setComposerMode] = useState<"agent" | "seedance">("agent");
+  const [composerMode, setComposerMode] = useState<ComposerMode>("agent");
   const [seedanceAspectRatio, setSeedanceAspectRatio] = useState<SeedanceAspectRatio>("16:9");
   const [seedanceDuration, setSeedanceDuration] = useState<SeedanceDuration>(5);
+  const [grokTool, setGrokTool] = useState<GrokTool>("image");
+  const [grokImageAspectRatio, setGrokImageAspectRatio] = useState<GrokImageAspectRatio>("1:1");
+  const [grokImageResolution, setGrokImageResolution] = useState<GrokImageResolution>("1k");
+  const [grokVideoAspectRatio, setGrokVideoAspectRatio] = useState<GrokVideoAspectRatio>("16:9");
+  const [grokVideoResolution, setGrokVideoResolution] = useState<GrokVideoResolution>("720p");
+  const [grokVideoDuration, setGrokVideoDuration] = useState<GrokVideoDuration>(5);
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [agentChatMessages, setAgentChatMessages] = useState<AgentChatMessage[]>([]);
   const [agentRunStatus, setAgentRunStatus] = useState<AgentRunStreamEvent["status"] | null>(null);
-  const [isSeedanceGenerating, setIsSeedanceGenerating] = useState(false);
+  const [isDirectGenerating, setIsDirectGenerating] = useState(false);
   const [agentRunStartedAt, setAgentRunStartedAt] = useState<number | null>(null);
   const [agentLastActivityAt, setAgentLastActivityAt] = useState<number | null>(null);
   const [agentClockTick, setAgentClockTick] = useState(0);
@@ -171,7 +185,9 @@ export function App() {
       try {
         const skills = await listSkills();
         if (isMounted) {
-          const userSkills = skills.filter((skill) => skill.visibility === "user");
+          const userSkills = skills.filter((skill) =>
+            skill.visibility === "user" && !["grok-imagine-image", "grok-imagine-video"].includes(skill.id)
+          );
           setAvailableSkills(userSkills.map((skill) => skill.name));
           setVisibleSkillIds(new Set(userSkills.map((skill) => skill.id)));
         }
@@ -680,8 +696,8 @@ export function App() {
   async function submitInstruction(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (isSeedanceGenerating) {
-      setStatus("Seedance video generation is already running.");
+    if (isDirectGenerating) {
+      setStatus("Direct generation is already running.");
       return;
     }
 
@@ -698,34 +714,51 @@ export function App() {
     }
 
     if (!text) {
-      setStatus(composerMode === "seedance" ? "Write a prompt before generating a Seedance video." : "Write an instruction before sending it to the agent.");
+      setStatus(composerMode === "agent" ? "Write an instruction before sending it to the agent." : "Write a prompt before generating.");
       return;
     }
 
-    if (composerMode === "seedance") {
+    if (composerMode === "seedance" || composerMode === "grok") {
       try {
-        setIsSeedanceGenerating(true);
-        setStatus("Generating Seedance video...");
+        setIsDirectGenerating(true);
+        setStatus(composerMode === "seedance" ? "Generating Seedance video..." : `Generating Grok ${grokTool}...`);
         const selectedCardSnapshots = await createSelectedCardSnapshots(
           cardDocuments,
           selectedCards,
           previewCapturesRef.current,
         );
-        const result = await generateSeedanceVideo({
-          prompt: text,
-          aspectRatio: seedanceAspectRatio,
-          duration: seedanceDuration,
-          selectedCardSnapshots,
-          attachments,
-        });
+        const result = composerMode === "seedance"
+          ? await generateSeedanceVideo({
+            prompt: text,
+            aspectRatio: seedanceAspectRatio,
+            duration: seedanceDuration,
+            selectedCardSnapshots,
+            attachments,
+          })
+          : grokTool === "image"
+            ? await generateGrokImage({
+              prompt: text,
+              aspectRatio: grokImageAspectRatio,
+              resolution: grokImageResolution,
+              selectedCardSnapshots,
+              attachments,
+            })
+            : await generateGrokVideo({
+              prompt: text,
+              aspectRatio: grokVideoAspectRatio,
+              resolution: grokVideoResolution,
+              duration: grokVideoDuration,
+              selectedCardSnapshots,
+              attachments,
+            });
         addGeneratedCards(result.cards);
         setInstruction("");
         setAttachments([]);
-        setStatus("Seedance video generated.");
+        setStatus(composerMode === "seedance" ? "Seedance video generated." : `Grok ${grokTool} generated.`);
       } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Could not generate Seedance video.");
+        setStatus(error instanceof Error ? error.message : "Could not generate.");
       } finally {
-        setIsSeedanceGenerating(false);
+        setIsDirectGenerating(false);
       }
       return;
     }
@@ -1285,7 +1318,7 @@ export function App() {
         fileInputRef={fileInputRef}
         filteredSkills={filteredSkills}
         instruction={instruction}
-        isSubmitting={isSeedanceGenerating}
+        isSubmitting={isDirectGenerating}
         isRunning={agentRunStatus === "running"}
         composerMode={composerMode}
         onAttachFiles={handleFiles}
@@ -1294,6 +1327,18 @@ export function App() {
         onInstructionKeyDown={handleInstructionKeyDown}
         onQuestionOption={answerPendingQuestion}
         onRemoveAttachment={removeAttachment}
+        grokImageAspectRatio={grokImageAspectRatio}
+        grokImageResolution={grokImageResolution}
+        grokTool={grokTool}
+        grokVideoAspectRatio={grokVideoAspectRatio}
+        grokVideoDuration={grokVideoDuration}
+        grokVideoResolution={grokVideoResolution}
+        onGrokImageAspectRatioChange={setGrokImageAspectRatio}
+        onGrokImageResolutionChange={setGrokImageResolution}
+        onGrokToolChange={setGrokTool}
+        onGrokVideoAspectRatioChange={setGrokVideoAspectRatio}
+        onGrokVideoDurationChange={setGrokVideoDuration}
+        onGrokVideoResolutionChange={setGrokVideoResolution}
         onSeedanceAspectRatioChange={setSeedanceAspectRatio}
         onSeedanceDurationChange={setSeedanceDuration}
         onSelectModel={selectModel}

@@ -1,9 +1,23 @@
-import { ArrowUp, Bot, Check, Cpu, Film, Layers, Paperclip, Search, Sparkles, Square, X } from "lucide-react";
+import { ArrowUp, Check, Cpu, Layers, Paperclip, Search, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { formatFileSize } from "../lib/attachments";
 import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
-import type { AgentAttachment, AgentModel, AgentQuestion, GeneratedCard, SeedanceAspectRatio, SeedanceDuration } from "../types";
+import type {
+  AgentAttachment,
+  AgentModel,
+  AgentQuestion,
+  ComposerMode,
+  GeneratedCard,
+  GrokImageAspectRatio,
+  GrokImageResolution,
+  GrokTool,
+  GrokVideoAspectRatio,
+  GrokVideoDuration,
+  GrokVideoResolution,
+  SeedanceAspectRatio,
+  SeedanceDuration,
+} from "../types";
 
 type AgentComposerProps = {
   attachments: AgentAttachment[];
@@ -13,17 +27,29 @@ type AgentComposerProps = {
   instruction: string;
   isSubmitting: boolean;
   isRunning: boolean;
-  composerMode: "agent" | "seedance";
+  composerMode: ComposerMode;
+  grokImageAspectRatio: GrokImageAspectRatio;
+  grokImageResolution: GrokImageResolution;
+  grokTool: GrokTool;
+  grokVideoAspectRatio: GrokVideoAspectRatio;
+  grokVideoDuration: GrokVideoDuration;
+  grokVideoResolution: GrokVideoResolution;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCreateAgent: () => void;
   onInstructionChange: (instruction: string) => void;
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onQuestionOption: (answer: string) => void;
   onRemoveAttachment: (attachmentId: string) => void;
+  onGrokImageAspectRatioChange: (aspectRatio: GrokImageAspectRatio) => void;
+  onGrokImageResolutionChange: (resolution: GrokImageResolution) => void;
+  onGrokToolChange: (tool: GrokTool) => void;
+  onGrokVideoAspectRatioChange: (aspectRatio: GrokVideoAspectRatio) => void;
+  onGrokVideoDurationChange: (duration: GrokVideoDuration) => void;
+  onGrokVideoResolutionChange: (resolution: GrokVideoResolution) => void;
   onSelectModel: (model: string) => void;
   onSeedanceAspectRatioChange: (aspectRatio: SeedanceAspectRatio) => void;
   onSeedanceDurationChange: (duration: SeedanceDuration) => void;
-  onSetComposerMode: (mode: "agent" | "seedance") => void;
+  onSetComposerMode: (mode: ComposerMode) => void;
   onStop: () => void | Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleCard: (cardId: string) => void;
@@ -55,12 +81,24 @@ export function AgentComposer({
   isSubmitting,
   isRunning,
   composerMode,
+  grokImageAspectRatio,
+  grokImageResolution,
+  grokTool,
+  grokVideoAspectRatio,
+  grokVideoDuration,
+  grokVideoResolution,
   onAttachFiles,
   onCreateAgent,
   onInstructionChange,
   onInstructionKeyDown,
   onQuestionOption,
   onRemoveAttachment,
+  onGrokImageAspectRatioChange,
+  onGrokImageResolutionChange,
+  onGrokToolChange,
+  onGrokVideoAspectRatioChange,
+  onGrokVideoDurationChange,
+  onGrokVideoResolutionChange,
   onSelectModel,
   onSeedanceAspectRatioChange,
   onSeedanceDurationChange,
@@ -273,30 +311,21 @@ export function AgentComposer({
 
           <div className="composer-actions">
             <input ref={fileInputRef} type="file" hidden multiple onChange={onAttachFiles} />
-            <button
-              className={`chat-chip agent-chip ${composerMode === "agent" ? "active" : ""}`}
-              type="button"
-              data-popover-trigger
-              aria-expanded={openMenu === "agents"}
-              onClick={() => {
-                onSetComposerMode("agent");
-                setOpenMenu(openMenu === "agents" ? null : "agents");
-              }}
-            >
-              <Bot size={14} strokeWidth={2} />
-              <span>Agent</span>
-            </button>
-            <button
-              className={`chat-chip seedance-chip ${composerMode === "seedance" ? "active" : ""}`}
-              type="button"
-              onClick={() => {
-                onSetComposerMode(composerMode === "seedance" ? "agent" : "seedance");
-                setOpenMenu(null);
-              }}
-            >
-              <Film size={14} strokeWidth={2} />
-              <span>Seedance</span>
-            </button>
+            <label className="composer-select-chip mode-select-chip">
+              <span>Mode</span>
+              <select
+                value={composerMode}
+                onChange={(event) => {
+                  onSetComposerMode(event.target.value as ComposerMode);
+                  setOpenMenu(null);
+                }}
+                aria-label="Composer mode"
+              >
+                <option value="agent">Agent</option>
+                <option value="seedance">Seedance</option>
+                <option value="grok">Grok</option>
+              </select>
+            </label>
             {composerMode === "seedance" && (
               <>
                 <label className="composer-select-chip">
@@ -326,27 +355,105 @@ export function AgentComposer({
                 </label>
               </>
             )}
-            <button
-              className="chat-chip model-chip"
-              type="button"
-              data-popover-trigger
-              aria-expanded={openMenu === "model-picker"}
-              onClick={() => setOpenMenu(openMenu === "model-picker" ? null : "model-picker")}
-            >
-              <Cpu size={14} strokeWidth={2} />
-              <span>{selectedModel}</span>
-            </button>
-            <button
-              className="chat-chip skill-chip"
-              type="button"
-              data-popover-trigger
-              aria-expanded={openMenu === "skill-picker"}
-              onClick={() => setOpenMenu(openMenu === "skill-picker" ? null : "skill-picker")}
-            >
-              <Sparkles size={14} strokeWidth={2} />
-              <span>{skillButtonLabel}</span>
-              {selectedSkillCount > 1 && <small>{selectedSkillCount}</small>}
-            </button>
+            {composerMode === "grok" && (
+              <>
+                <label className="composer-select-chip">
+                  <span>Tool</span>
+                  <select
+                    value={grokTool}
+                    onChange={(event) => onGrokToolChange(event.target.value as GrokTool)}
+                    aria-label="Grok tool"
+                  >
+                    <option value="image">Grok Image</option>
+                    <option value="video">Grok Video</option>
+                  </select>
+                </label>
+                <label className="composer-select-chip">
+                  <span>Frame</span>
+                  <select
+                    value={grokTool === "image" ? grokImageAspectRatio : grokVideoAspectRatio}
+                    onChange={(event) => {
+                      if (grokTool === "image") {
+                        onGrokImageAspectRatioChange(event.target.value as GrokImageAspectRatio);
+                      } else {
+                        onGrokVideoAspectRatioChange(event.target.value as GrokVideoAspectRatio);
+                      }
+                    }}
+                    aria-label="Grok aspect ratio"
+                  >
+                    <option value="1:1">1:1</option>
+                    <option value="4:3">4:3</option>
+                    <option value="16:9">16:9</option>
+                    <option value="9:16">9:16</option>
+                  </select>
+                </label>
+                <label className="composer-select-chip">
+                  <span>Res</span>
+                  <select
+                    value={grokTool === "image" ? grokImageResolution : grokVideoResolution}
+                    onChange={(event) => {
+                      if (grokTool === "image") {
+                        onGrokImageResolutionChange(event.target.value as GrokImageResolution);
+                      } else {
+                        onGrokVideoResolutionChange(event.target.value as GrokVideoResolution);
+                      }
+                    }}
+                    aria-label="Grok resolution"
+                  >
+                    {grokTool === "image" ? (
+                      <>
+                        <option value="1k">1K</option>
+                        <option value="2k">2K</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="720p">720p</option>
+                        <option value="480p">480p</option>
+                      </>
+                    )}
+                  </select>
+                </label>
+                {grokTool === "video" && (
+                  <label className="composer-select-chip">
+                    <span>Duration</span>
+                    <select
+                      value={grokVideoDuration}
+                      onChange={(event) => onGrokVideoDurationChange(Number(event.target.value) as GrokVideoDuration)}
+                      aria-label="Grok video duration"
+                    >
+                      <option value={5}>5s</option>
+                      <option value={10}>10s</option>
+                      <option value={15}>15s</option>
+                    </select>
+                  </label>
+                )}
+              </>
+            )}
+            {composerMode === "agent" && (
+              <>
+                <button
+                  className="chat-chip model-chip"
+                  type="button"
+                  data-popover-trigger
+                  aria-expanded={openMenu === "model-picker"}
+                  onClick={() => setOpenMenu(openMenu === "model-picker" ? null : "model-picker")}
+                >
+                  <Cpu size={14} strokeWidth={2} />
+                  <span>{selectedModel}</span>
+                </button>
+                <button
+                  className="chat-chip skill-chip"
+                  type="button"
+                  data-popover-trigger
+                  aria-expanded={openMenu === "skill-picker"}
+                  onClick={() => setOpenMenu(openMenu === "skill-picker" ? null : "skill-picker")}
+                >
+                  <Sparkles size={14} strokeWidth={2} />
+                  <span>{skillButtonLabel}</span>
+                  {selectedSkillCount > 1 && <small>{selectedSkillCount}</small>}
+                </button>
+              </>
+            )}
             <button
               className="chat-chip selected-cards-chip"
               type="button"

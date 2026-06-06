@@ -3,7 +3,7 @@ name: grok-imagine-image
 description: Generate or edit raster images with Grok Imagine through the xAI Imagine API. Use when the user explicitly asks for Grok, xAI, Imagine, Grok image generation, or Grok image editing. If the user selected image cards or attached images, treat them as reference/edit inputs. Do not use for video, local ComfyUI generation, or non-Grok image models.
 metadata:
   loki:
-    visibility: user
+    visibility: internal
     capabilities: [image-generation, image-editing, raster-card-output, grok, xai]
     arguments:
       - id: aspectRatio

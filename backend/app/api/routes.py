@@ -10,6 +10,9 @@ from app.models import (
     AudioTrimRequest,
     ArchiveArtifactsRequest,
     ArchiveArtifactsResponse,
+    GrokGenerationResponse,
+    GrokImageGenerationRequest,
+    GrokVideoGenerationRequest,
     ImportedArtifact,
     InstructionRequest,
     InstructionResponse,
@@ -33,6 +36,8 @@ from app.services import (
     AudioEditorError,
     AudioEditorService,
     ArtifactArchiveService,
+    GrokImagineGenerationError,
+    GrokImagineGenerationService,
     InstructionService,
     ProjectNotFoundError,
     ProjectService,
@@ -84,6 +89,10 @@ def get_seedance_video_generation_service() -> SeedanceVideoGenerationService:
     return SeedanceVideoGenerationService(artifacts_root)
 
 
+def get_grok_imagine_generation_service() -> GrokImagineGenerationService:
+    return GrokImagineGenerationService(artifacts_root)
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -112,6 +121,28 @@ def generate_seedance_video(
     try:
         return service.generate(payload)
     except SeedanceVideoGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/generations/grok-image", response_model=GrokGenerationResponse)
+def generate_grok_image(
+    payload: GrokImageGenerationRequest,
+    service: GrokImagineGenerationService = Depends(get_grok_imagine_generation_service),
+) -> GrokGenerationResponse:
+    try:
+        return service.generate_image(payload)
+    except GrokImagineGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/generations/grok-video", response_model=GrokGenerationResponse)
+def generate_grok_video(
+    payload: GrokVideoGenerationRequest,
+    service: GrokImagineGenerationService = Depends(get_grok_imagine_generation_service),
+) -> GrokGenerationResponse:
+    try:
+        return service.generate_video(payload)
+    except GrokImagineGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

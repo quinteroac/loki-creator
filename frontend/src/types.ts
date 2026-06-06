@@ -35,6 +35,20 @@ export type SeedanceAspectRatio = "16:9" | "9:16";
 
 export type SeedanceDuration = 4 | 5 | 7 | 10 | 15;
 
+export type ComposerMode = "agent" | "seedance" | "grok";
+
+export type GrokTool = "image" | "video";
+
+export type GrokImageAspectRatio = "1:1" | "4:3" | "16:9" | "9:16";
+
+export type GrokImageResolution = "1k" | "2k";
+
+export type GrokVideoAspectRatio = "16:9" | "9:16" | "1:1" | "4:3";
+
+export type GrokVideoResolution = "720p" | "480p";
+
+export type GrokVideoDuration = 5 | 10 | 15;
+
 export type SeedanceVideoGenerationRequest = {
   prompt: string;
   aspectRatio: SeedanceAspectRatio;
@@ -44,6 +58,27 @@ export type SeedanceVideoGenerationRequest = {
 };
 
 export type SeedanceVideoGenerationResponse = {
+  cards: GeneratedCard[];
+};
+
+export type GrokImageGenerationRequest = {
+  prompt: string;
+  aspectRatio: GrokImageAspectRatio;
+  resolution: GrokImageResolution;
+  selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
+};
+
+export type GrokVideoGenerationRequest = {
+  prompt: string;
+  aspectRatio: GrokVideoAspectRatio;
+  resolution: GrokVideoResolution;
+  duration: GrokVideoDuration;
+  selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
+};
+
+export type GrokGenerationResponse = {
   cards: GeneratedCard[];
 };
 

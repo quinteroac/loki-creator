@@ -18,7 +18,13 @@ from app.models.artifacts import (
     VideoTrimRequest,
 )
 from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
-from app.models.generations import SeedanceVideoGenerationRequest, SeedanceVideoGenerationResponse
+from app.models.generations import (
+    GrokGenerationResponse,
+    GrokImageGenerationRequest,
+    GrokVideoGenerationRequest,
+    SeedanceVideoGenerationRequest,
+    SeedanceVideoGenerationResponse,
+)
 from app.models.projects import ProjectCanvasNode, ProjectCanvasNodeFrame, ProjectDocument, ProjectSaveRequest, ProjectSummary
 from app.models.skills import (
     SkillArgumentDefinition,
@@ -60,6 +66,9 @@ __all__ = [
     "GeneratedCard",
     "InstructionRequest",
     "InstructionResponse",
+    "GrokGenerationResponse",
+    "GrokImageGenerationRequest",
+    "GrokVideoGenerationRequest",
     "SeedanceVideoGenerationRequest",
     "SeedanceVideoGenerationResponse",
     "ProjectCanvasNode",
