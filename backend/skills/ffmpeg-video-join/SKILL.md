@@ -43,9 +43,12 @@ metadata:
 Use this skill to join two or more selected Loki canvas video cards into one
 MP4 artifact using `ffmpeg`.
 
-The action reads videos only from selected cards. It uses the first resolvable
-video asset from each selected card, preserving the selected card order. Do not
-use this skill when the user wants to generate new video content.
+The action reads videos only from selected cards. By default it uses the first
+resolvable video asset from each selected card, preserving the selected card
+order. If the user asks for a specific clip order, inspect the selected card
+names/ids/media assets and pass `paramsJson.videoOrder` with every selected
+video in the requested order. Do not use this skill when the user wants to
+generate new video content.
 
 ## Parameters
 
@@ -66,6 +69,10 @@ Optional params may be passed through `paramsJson`:
 - `fadeDurationSeconds`: transition duration for transition modes. Default
   `0.5`. The action reduces it when clips are too short, or fails when the clips
   cannot support a transition.
+- `videoOrder`: array containing every selected video in the requested order.
+  Entries may be selected card ids, card names/display titles, filenames,
+  artifact URLs, or local artifact paths. The action fails if any entry cannot
+  be matched or if the order omits selected videos.
 - `title`: output card title. Default `Joined video`.
 
 ## Behavior

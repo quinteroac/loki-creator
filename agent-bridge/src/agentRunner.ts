@@ -910,6 +910,12 @@ const skillToolProfiles: Record<string, SkillToolProfile> = {
     promptDescription:
       "Concise cleanup instruction for selected or attached media. Do not request watermark, logo, signature, credit, copyright, provenance, platform mark, or attribution removal. Put operation and regionsJson in paramsJson.",
   },
+  "ffmpeg-video-join": {
+    description:
+      " For ffmpeg-video-join, if the user specifies a clip order, inspect the selected cards and pass paramsJson.videoOrder as a JSON array containing every selected video in the requested order. Use selected card ids, display titles, names, filenames, artifact URLs, or local paths that match the selected videos. If the requested order is ambiguous, ask before invoking the skill.",
+    promptDescription:
+      "Concise join instruction. Preserve the user's requested clip order; when an explicit order is requested, put every selected video in paramsJson.videoOrder.",
+  },
   "comfy-image-generate": {
     description:
       " For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not use empty reference tokens like use reference image, exact same character, same pose, or same outfit unless the skill is an edit mode with an actual image input.",

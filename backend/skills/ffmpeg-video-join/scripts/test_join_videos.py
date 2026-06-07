@@ -106,6 +106,77 @@ class JoinVideosSelectionTest(unittest.TestCase):
 
         self.assertEqual(videos, [artifact_a, artifact_b])
 
+    def test_apply_video_order_reorders_by_selected_card_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifact_a = root / "imports" / "intro.mp4"
+            artifact_b = root / "imports" / "finale.mp4"
+            artifact_a.parent.mkdir(parents=True)
+            artifact_a.write_bytes(b"a")
+            artifact_b.write_bytes(b"b")
+
+            payload = {
+                "selectedCardSnapshots": [
+                    {
+                        "id": "card_intro",
+                        "name": "Intro clip",
+                        "displayTitle": "Opening",
+                        "mediaAssets": [{"kind": "video", "src": "/api/artifacts/imports/intro.mp4"}],
+                    },
+                    {
+                        "id": "card_finale",
+                        "name": "Finale clip",
+                        "displayTitle": "Ending",
+                        "mediaAssets": [{"kind": "video", "src": "/api/artifacts/imports/finale.mp4"}],
+                    },
+                ]
+            }
+
+            with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": str(root)}):
+                inputs = join_videos.materialize_selected_video_inputs(payload, root / "inputs")
+                ordered = join_videos.apply_video_order(inputs, {"videoOrder": ["Ending", "Opening"]})
+
+        self.assertEqual([video.path for video in ordered], [artifact_b, artifact_a])
+
+    def test_apply_video_order_reorders_by_filename_and_json_string(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            artifact_a = root / "imports" / "a.mp4"
+            artifact_b = root / "imports" / "b.mp4"
+            artifact_a.parent.mkdir(parents=True)
+            artifact_a.write_bytes(b"a")
+            artifact_b.write_bytes(b"b")
+            payload = {
+                "selectedCardSnapshots": [
+                    {"name": "A", "mediaAssets": [{"kind": "video", "src": "/api/artifacts/imports/a.mp4"}]},
+                    {"name": "B", "mediaAssets": [{"kind": "video", "src": "/api/artifacts/imports/b.mp4"}]},
+                ]
+            }
+
+            with patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": str(root)}):
+                inputs = join_videos.materialize_selected_video_inputs(payload, root / "inputs")
+                ordered = join_videos.apply_video_order(inputs, {"videoOrder": '["b.mp4", "a.mp4"]'})
+
+        self.assertEqual([video.path for video in ordered], [artifact_b, artifact_a])
+
+    def test_apply_video_order_fails_when_order_omits_selected_video(self) -> None:
+        videos = [
+            join_videos.VideoInput(Path("/tmp/a.mp4"), "path:/tmp/a.mp4", ("A", "a.mp4")),
+            join_videos.VideoInput(Path("/tmp/b.mp4"), "path:/tmp/b.mp4", ("B", "b.mp4")),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "must include exactly 2 selected videos"):
+            join_videos.apply_video_order(videos, {"videoOrder": ["B"]})
+
+    def test_apply_video_order_fails_when_entry_cannot_be_matched(self) -> None:
+        videos = [
+            join_videos.VideoInput(Path("/tmp/a.mp4"), "path:/tmp/a.mp4", ("A", "a.mp4")),
+            join_videos.VideoInput(Path("/tmp/b.mp4"), "path:/tmp/b.mp4", ("B", "b.mp4")),
+        ]
+
+        with self.assertRaisesRegex(RuntimeError, "could not be matched"):
+            join_videos.apply_video_order(videos, {"videoOrder": ["B", "Missing"]})
+
     def test_join_selected_videos_requires_two_videos(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_ARTIFACTS_ROOT": tmpdir}):
             with self.assertRaisesRegex(RuntimeError, "at least two selected video cards"):

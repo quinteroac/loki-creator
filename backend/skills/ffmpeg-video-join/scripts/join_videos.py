@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,6 +29,13 @@ COLOR_MATCH_GAIN_MIN = 0.6
 COLOR_MATCH_GAIN_MAX = 1.65
 COLOR_MATCH_SAMPLE_SIZE = 32
 RGB_CHANNELS = ("red", "green", "blue")
+
+
+@dataclass(frozen=True)
+class VideoInput:
+    path: Path
+    key: str
+    labels: tuple[str, ...]
 
 
 def read_payload() -> dict:
@@ -124,13 +132,57 @@ def snapshot_video_sources(snapshot: dict) -> list[str]:
     return sources
 
 
-def materialize_selected_videos(payload: dict, inputs_dir: Path) -> list[Path]:
+def normalize_match_text(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = " ".join(value.casefold().strip().split())
+    return normalized
+
+
+def source_labels(src: str, path: Path) -> list[str]:
+    labels = [src, str(path), str(path.resolve()), path.name, path.stem]
+    if src.startswith("/api/artifacts/"):
+        labels.append(src.removeprefix("/api/artifacts/"))
+    return labels
+
+
+def snapshot_video_labels(snapshot: dict, src: str, path: Path) -> tuple[str, ...]:
+    labels: list[str] = [
+        first_text(snapshot.get("id")),
+        first_text(snapshot.get("name")),
+        first_text(snapshot.get("displayTitle")),
+        *source_labels(src, path),
+    ]
+    metadata = snapshot.get("metadata")
+    if isinstance(metadata, dict):
+        labels.extend(
+            [
+                first_text(metadata.get("id")),
+                first_text(metadata.get("name")),
+                first_text(metadata.get("title")),
+                first_text(metadata.get("displayTitle")),
+                first_text(metadata.get("artifactUrl")),
+            ]
+        )
+
+    unique_labels: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        normalized = normalize_match_text(label)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_labels.append(label)
+    return tuple(unique_labels)
+
+
+def materialize_selected_video_inputs(payload: dict, inputs_dir: Path) -> list[VideoInput]:
     inputs_dir.mkdir(parents=True, exist_ok=True)
     selected = payload.get("selectedCardSnapshots")
     if not isinstance(selected, list):
         return []
 
-    videos: list[Path] = []
+    videos: list[VideoInput] = []
     seen: set[str] = set()
 
     for snapshot_index, snapshot in enumerate(selected, start=1):
@@ -143,10 +195,89 @@ def materialize_selected_videos(payload: dict, inputs_dir: Path) -> list[Path]:
             path, key = resolved
             if key not in seen:
                 seen.add(key)
-                videos.append(path)
+                videos.append(
+                    VideoInput(
+                        path=path,
+                        key=key,
+                        labels=snapshot_video_labels(snapshot, src, path),
+                    )
+                )
             break
 
     return videos
+
+
+def materialize_selected_videos(payload: dict, inputs_dir: Path) -> list[Path]:
+    return [video.path for video in materialize_selected_video_inputs(payload, inputs_dir)]
+
+
+def parse_video_order(params: dict) -> list[str]:
+    raw_order = (
+        params.get("videoOrder")
+        or params.get("clipOrder")
+        or params.get("sourceOrder")
+        or params.get("order")
+    )
+    if raw_order is None:
+        return []
+
+    if isinstance(raw_order, str):
+        if not raw_order.strip():
+            return []
+        try:
+            parsed = json.loads(raw_order)
+        except json.JSONDecodeError:
+            parsed = [part.strip() for part in raw_order.split(",")]
+        raw_order = parsed
+
+    if not isinstance(raw_order, list):
+        raise RuntimeError("videoOrder must be a list of selected video ids, titles, filenames, artifact URLs, or paths.")
+
+    order = [first_text(item) for item in raw_order]
+    order = [item for item in order if item]
+    if not order:
+        return []
+    if len(order) != len(set(normalize_match_text(item) for item in order)):
+        raise RuntimeError("videoOrder contains duplicate entries.")
+    return order
+
+
+def video_matches_order_item(video: VideoInput, order_item: str) -> bool:
+    normalized_item = normalize_match_text(order_item)
+    if not normalized_item:
+        return False
+
+    labels = [normalize_match_text(label) for label in video.labels]
+    if normalized_item in labels:
+        return True
+
+    path = normalize_match_text(str(video.path))
+    return path.endswith(f"/{normalized_item}") or path.endswith(normalized_item)
+
+
+def apply_video_order(videos: list[VideoInput], params: dict) -> list[VideoInput]:
+    order = parse_video_order(params)
+    if not order:
+        return videos
+    if len(order) != len(videos):
+        raise RuntimeError(
+            f"videoOrder must include exactly {len(videos)} selected videos; received {len(order)}."
+        )
+
+    remaining = list(videos)
+    ordered: list[VideoInput] = []
+    for order_item in order:
+        matches = [video for video in remaining if video_matches_order_item(video, order_item)]
+        if not matches:
+            available = ", ".join(video.labels[0] if video.labels else str(video.path) for video in remaining)
+            raise RuntimeError(f"videoOrder entry could not be matched to a selected video: {order_item}. Available: {available}")
+        if len(matches) > 1:
+            raise RuntimeError(f"videoOrder entry is ambiguous: {order_item}")
+        match = matches[0]
+        remaining.remove(match)
+        ordered.append(match)
+
+    return ordered
 
 
 def require_tools() -> None:
@@ -593,8 +724,9 @@ def join_selected_videos(payload: dict) -> dict:
     normalized_dir = run_dir.parent / "normalized"
     normalized_dir.mkdir(parents=True, exist_ok=True)
 
-    videos = materialize_selected_videos(payload, inputs_dir)
-    if len(videos) < 2:
+    video_inputs = apply_video_order(materialize_selected_video_inputs(payload, inputs_dir), params)
+    videos = [video.path for video in video_inputs]
+    if len(video_inputs) < 2:
         raise RuntimeError("ffmpeg-video-join requires at least two selected video cards.")
 
     infos = [video_info(path) for path in videos]
@@ -633,6 +765,7 @@ def join_selected_videos(payload: dict) -> dict:
         "height": target_height,
         "targetFps": target_fps,
         "sourceVideos": [str(path) for path in videos],
+        "sourceVideoLabels": [list(video.labels) for video in video_inputs],
         "tags": [SKILL_ID],
         "preferredAspectRatio": "auto",
     }
