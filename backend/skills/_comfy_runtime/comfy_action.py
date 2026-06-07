@@ -59,6 +59,7 @@ VIDEO_RESOLUTION_DIMENSIONS = {
         "9:16": (1080, 1920),
     },
 }
+WAN_FPS_VALUES = {16, 24}
 MUSIC_QUALITY_DEFAULTS = {
     "steps": "64",
     "cfg": "7.0",
@@ -566,6 +567,21 @@ def default_video_fps(mode: str) -> int:
     return 16 if mode.startswith("wan22-") else 24
 
 
+def wan_fps(value: object) -> int:
+    if value is None or value == "":
+        return 16
+    fps = as_int(value)
+    if fps is None or fps not in WAN_FPS_VALUES:
+        raise RuntimeError("WAN FPS must be 16 or 24.")
+    return fps
+
+
+def video_fps_for_params(mode: str, params: dict[str, Any]) -> int:
+    if mode.startswith("wan22-"):
+        return wan_fps(params.get("fps"))
+    return as_int(params.get("fps")) or default_video_fps(mode)
+
+
 def video_length_from_duration(mode: str, duration: int, fps: int) -> int:
     if mode.startswith("wan22-"):
         return duration * fps + 1
@@ -941,7 +957,7 @@ def build_s2vidgen_command(
     if not width or not height:
         raise RuntimeError("comfy-s2vidgen could not resolve video dimensions from aspectRatio and resolution.")
 
-    fps = 16
+    fps = wan_fps(params.get("fps"))
     audio_duration = audio_duration_seconds(audio_input)
     length = max(1, math.ceil(audio_duration * fps))
     command = [
@@ -1140,12 +1156,16 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             if mode.startswith("seedance2-"):
                 command.extend(["--duration", str(duration)])
             elif as_int(params.get("length")) is None:
-                fps = as_int(params.get("fps")) or default_video_fps(mode)
+                fps = video_fps_for_params(mode, params)
                 length = video_length_from_duration(mode, duration, fps)
                 command.extend(["--length", str(length)])
+        if mode in {"wan22-i2v", "wan22-flf2v"}:
+            command.extend(["--fps", str(wan_fps(params.get("fps")))])
         for key in ("length", "fps", "duration", "seed"):
             value = as_int(params.get(key))
             if key == "duration" and duration is not None:
+                continue
+            if key == "fps" and mode in {"wan22-i2v", "wan22-flf2v"}:
                 continue
             if value is not None:
                 command.extend([f"--{key}", str(value)])

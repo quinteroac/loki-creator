@@ -128,6 +128,7 @@ class ComfyActionTest(unittest.TestCase):
                         "aspectRatio": "16:9",
                         "resolution": "480p",
                         "duration": "5",
+                        "fps": "24",
                         "lora": {"name": "blue motion", "strength": 0.75},
                     },
                 },
@@ -137,8 +138,31 @@ class ComfyActionTest(unittest.TestCase):
             config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
 
         self.assertEqual(command[:2], ["comfy-videogen", "wan22-i2v"])
+        self.assertEqual(command[command.index("--fps") + 1], "24")
+        self.assertEqual(command[command.index("--length") + 1], "121")
         self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora_path}:0.75")
         self.assertIn('"videogen.wan22-i2v": "wan22-i2v"', config)
+
+    def test_wan_i2v_defaults_to_16_fps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videogen",
+                    "prompt": "slow camera drift",
+                    "params": {
+                        "modelProfile": "wan22-i2v",
+                        "videoMode": "i2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "duration": "5",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [Path(tmpdir) / "input.png"], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[command.index("--fps") + 1], "16")
+        self.assertEqual(command[command.index("--length") + 1], "81")
 
     def test_wan_flf2v_preserves_explicit_high_and_low_loras(self) -> None:
         high_lora = "/models/loras/wan22/high.safetensors:0.9"
@@ -157,6 +181,7 @@ class ComfyActionTest(unittest.TestCase):
                         "aspectRatio": "9:16",
                         "resolution": "480p",
                         "duration": "3",
+                        "fps": "24",
                         "extraLoraHigh": high_lora,
                         "extraLoraLow": low_lora,
                     },
@@ -166,6 +191,8 @@ class ComfyActionTest(unittest.TestCase):
             )
 
         self.assertEqual(command[:2], ["comfy-videogen", "wan22-flf2v"])
+        self.assertEqual(command[command.index("--fps") + 1], "24")
+        self.assertEqual(command[command.index("--length") + 1], "73")
         self.assertEqual(command[command.index("--extra-lora-high") + 1], high_lora)
         self.assertEqual(command[command.index("--extra-lora-low") + 1], low_lora)
 
@@ -215,6 +242,7 @@ class ComfyActionTest(unittest.TestCase):
                         "aspectRatio": "16:9",
                         "resolution": "480p",
                         "duration": "5",
+                        "fps": "24",
                         "highNoiseSteps": "10",
                         "lowNoiseSteps": "10",
                     },
@@ -229,14 +257,35 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--audio") + 1], str(audio))
         self.assertEqual(command[command.index("--width") + 1], "848")
         self.assertEqual(command[command.index("--height") + 1], "480")
-        self.assertEqual(command[command.index("--length") + 1], "224")
-        self.assertEqual(command[command.index("--fps") + 1], "16")
+        self.assertEqual(command[command.index("--length") + 1], "336")
+        self.assertEqual(command[command.index("--fps") + 1], "24")
         self.assertEqual(command[command.index("--audio-duration") + 1], "14")
         self.assertEqual(command[command.index("--prompt") + 1], "In the video, a singer performs with emotional expression and subtle camera motion.")
         self.assertNotIn("--duration", command)
         self.assertNotIn("--high-steps", command)
         self.assertNotIn("--low-steps", command)
         self.assertIn('"videogen.wan22-s2v": "wan22-s2v"', config)
+
+    def test_wan_rejects_unsupported_fps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            for fps in ("30", "fast"):
+                with self.subTest(fps=fps), self.assertRaisesRegex(RuntimeError, "WAN FPS must be 16 or 24"):
+                    comfy_action.build_cli_command(
+                        {
+                            "skillId": "comfy-videogen",
+                            "prompt": "slow camera drift",
+                            "params": {
+                                "modelProfile": "wan22-i2v",
+                                "videoMode": "i2v",
+                                "aspectRatio": "16:9",
+                                "resolution": "480p",
+                                "duration": "5",
+                                "fps": fps,
+                            },
+                        },
+                        Path(tmpdir) / "outputs",
+                        media={"image": [Path(tmpdir) / "input.png"], "audio": [], "video": []},
+                    )
 
     def test_s2vidgen_dasiwa_littledemon_uses_720p_vertical_dimensions(self) -> None:
         with (
@@ -270,6 +319,7 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--width") + 1], "720")
         self.assertEqual(command[command.index("--height") + 1], "1280")
         self.assertEqual(command[command.index("--length") + 1], "226")
+        self.assertEqual(command[command.index("--fps") + 1], "16")
         self.assertEqual(command[command.index("--audio-duration") + 1], "14.1")
         self.assertIn('"videogen.wan22-s2v": "wan22-dasiwa-littledemon-v2-s2v"', config)
 

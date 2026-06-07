@@ -758,6 +758,63 @@ button {
   outline-offset: 2px;
 }
 
+.video-editor-range-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.video-editor-range-inputs label {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  color: var(--dark-text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.video-editor-range-inputs input {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  padding: 7px 10px;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.video-editor-range-inputs input:focus-visible {
+  border-color: var(--brand-blue-deep);
+  outline: 1px solid var(--brand-blue-deep);
+}
+
+.video-editor-range-inputs input:disabled {
+  color: var(--dark-text-soft);
+  cursor: default;
+  opacity: 0.58;
+}
+
+.video-editor-range-inputs > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--dark-text-soft);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
 .video-editor-actions {
   justify-content: flex-end;
   flex-wrap: wrap;

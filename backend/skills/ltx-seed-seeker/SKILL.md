@@ -123,10 +123,42 @@ image inputs, then choose one candidate for a higher-resolution rerender.
 
 ## Prompt Guidance
 
-Write a single-shot LTX motion prompt that describes subject motion, camera
-movement, atmosphere, and what should remain anchored to the selected image. Do
-not ask for collages or merged candidates; previews return three separate video
-cards.
+Write a single-shot LTX 2.3 motion prompt that describes the selected image as
+the starting visual anchor and then directs what happens next. LTX 2.3 responds
+best to specific shot direction, so write one flowing present-tense paragraph
+with subject motion, camera movement, spatial layout, lighting, material detail,
+and atmosphere. Match the amount of detail to the selected duration; longer
+clips need enough action beats to fill the time.
+
+For image-to-video seed exploration, prioritize verbs and motion over static
+description:
+
+- Say who moves, what moves, how it moves, and how quickly.
+- Describe the camera relative to the subject: slow push-in, pull-back, tracking
+  move, pan, tilt, handheld drift, or static hold.
+- Preserve the selected image identity and composition, but do not repeat every
+  visible static detail unless it must stay anchored.
+- Add texture/material cues when they affect motion: hair strands, fabric,
+  glossy surfaces, dust, rain, reflections, smoke, particles, or edge light.
+- For portrait previews, compose vertically on purpose with clear headroom,
+  hands/body placement, and foreground/background spacing.
+
+Avoid prompts that read like still images, vague phrases such as `the scene
+comes alive`, abstract emotion labels without visible acting cues, readable text
+or logos, chaotic physics, overloaded scenes, and conflicting lighting.
+
+Good seed prompt:
+
+```text
+The camera slowly pushes toward the subject while their hair lifts in a soft
+side wind and their coat fabric ripples. They turn their head toward the light,
+blink once, and take a small step forward. Warm rim light catches the edge of
+the face, fine fabric texture stays visible, and the background drifts into
+soft motion blur.
+```
+
+Do not ask for collages or merged candidates; previews return three separate
+video cards.
 
 Select one image card or attach one image. If multiple images are selected, only
 the first image is used for seed exploration.

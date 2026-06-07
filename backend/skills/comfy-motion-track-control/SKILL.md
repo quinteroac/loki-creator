@@ -44,7 +44,7 @@ uv run comfy-models download videogen.motion-track --yes
 uv run comfy-videogen motion-track \
   --input path/to/start.png \
   --control-video path/to/motion-reference.mp4 \
-  --prompt "cinematic portrait, hair and camera follow the drawn motion paths, natural motion, soft light" \
+  --prompt "A vertical cinematic portrait holds on the subject as the drawn motion paths guide a slow head turn and gentle hair movement. Fine hair strands lift in the side light, fabric folds shift subtly, the camera makes a restrained push-in, and soft warm ambience fills the scene." \
   --attention-strength 1.0 \
   --out outputs
 ```
@@ -66,6 +66,30 @@ the generation settings:
 - Keep the reference visually simple enough that the trajectories are clear.
 - The configured HDR IC-LoRA expects the reference control at full internal
   resolution. The CLI profile records `reference_downscale=1.0`.
+
+## Prompt Guidance
+
+Use the prompt to complement the control video, not replace it. The trajectories
+define the main motion path; the prompt should describe what the subject is, how
+the camera behaves, what secondary motion should accompany the tracks, and which
+visual details must remain coherent.
+
+For LTX 2.3 motion-track prompts:
+
+- Write one present-tense paragraph with concrete action verbs.
+- Describe the subject, shot scale, frame orientation, lighting, material
+  texture, and atmosphere.
+- Explain how the camera relates to the tracked motion: static hold, slow
+  push-in, tracking move, pan, tilt, or handheld drift.
+- Add secondary motion that is physically plausible with the paths: hair
+  strands, cloth folds, breathing, posture shifts, particles, reflections, or
+  environmental movement.
+- Keep the prompt consistent with the drawn paths. Do not request motion that
+  contradicts the control video.
+
+Avoid vague prompts like `make it move naturally`, static photo descriptions,
+abstract emotion labels without visible acting cues, readable text/logos,
+overloaded scenes, chaotic physics, or conflicting lighting.
 
 ## HyperFrames Reference Workflow
 

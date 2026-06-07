@@ -117,6 +117,22 @@ metadata:
           - value: 1080p
             label: 1080p
             description: Maximum final render detail.
+      - id: fps
+        label: FPS
+        description: Choose the WAN preview frame rate. Rerender reuses the selected preview's stored FPS.
+        type: choice
+        required: true
+        askWhen: always
+        dependsOn:
+          runMode: preview
+        order: 60
+        options:
+          - value: "16"
+            label: 16 FPS
+            description: Compatible default for WAN previews.
+          - value: "24"
+            label: 24 FPS
+            description: Smoother WAN previews and rerenders with more frames.
       - id: extraLora
         label: WAN LoRA
         description: Optional WAN 2.2 LoRA name or path, with optional strength like relight:0.7. Use only when the user explicitly asks for a LoRA.
@@ -125,7 +141,7 @@ metadata:
         askWhen: missing
         dependsOn:
           runMode: preview
-        order: 70
+        order: 80
         options: []
       - id: extraLoraHigh
         label: WAN high LoRA
@@ -135,7 +151,7 @@ metadata:
         askWhen: missing
         dependsOn:
           runMode: preview
-        order: 80
+        order: 90
         options: []
       - id: extraLoraLow
         label: WAN low LoRA
@@ -145,7 +161,7 @@ metadata:
         askWhen: missing
         dependsOn:
           runMode: preview
-        order: 90
+        order: 100
         options: []
     action:
       type: cli-local
@@ -165,10 +181,12 @@ image inputs, then choose one candidate for a higher-resolution rerender.
 
 - `preview`: generate exactly three 360p MP4 cards from the same selected image
   inputs, prompt, profile, video mode, aspect ratio, and duration. Each
-  candidate uses a different seed.
+  candidate uses a different seed. FPS must be `16` or `24`; `16` is the
+  compatibility default.
 - `rerender`: require a selected WAN Seed Seeker preview card. The action reuses
   the selected card's stored prompt, seed, profile, video mode, aspect ratio,
-  source images, duration, and WAN step counts. Only `targetResolution` changes.
+  source images, duration, FPS, and WAN step counts. Only `targetResolution`
+  changes. Older preview metadata without `fps` rerenders at the 16 FPS default.
 
 ## Video Modes
 
@@ -180,6 +198,9 @@ image inputs, then choose one candidate for a higher-resolution rerender.
 
 WAN 2.2 does not use the LTX 2x upscale workflow, so the CLI receives the direct
 target dimensions for `360p`, `720p`, and `1080p`.
+
+WAN length is calculated as `duration * fps + 1`. For example, 5 seconds at
+16 FPS produces 81 frames, while 5 seconds at 24 FPS produces 121 frames.
 
 ## LoRAs
 

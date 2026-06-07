@@ -81,6 +81,13 @@ def normalize_duration(value: object) -> int:
     return int(duration)
 
 
+def normalize_fps(value: object) -> int:
+    try:
+        return comfy_action.wan_fps(value)
+    except RuntimeError as exc:
+        raise RuntimeError(f"{SKILL_LABEL} requires fps to be 16 or 24.") from exc
+
+
 def normalize_rerender_resolution(value: object) -> str:
     resolution = first_text(value, "720p")
     if resolution not in ALLOWED_RERENDER_RESOLUTIONS:
@@ -274,6 +281,7 @@ def build_seed_command(
     aspect_ratio: str,
     resolution: str,
     duration: int,
+    fps: int,
     seed: int,
     images: list[Path],
     out_dir: Path,
@@ -284,7 +292,6 @@ def build_seed_command(
 ) -> tuple[list[str], Path, int, int, int, int]:
     width, height = video_dimensions(aspect_ratio, resolution)
     cli_mode = wan_cli_mode(video_mode)
-    fps = comfy_action.default_video_fps(cli_mode)
     length = comfy_action.video_length_from_duration(cli_mode, duration, fps)
     cwd = comfy_action.write_run_comfy_config(
         run_root,
@@ -451,6 +458,7 @@ def run_single_generation(
     aspect_ratio: str,
     resolution: str,
     duration: int,
+    fps: int,
     seed: int,
     images: list[Path],
     out_dir: Path,
@@ -471,6 +479,7 @@ def run_single_generation(
         aspect_ratio=aspect_ratio,
         resolution=resolution,
         duration=duration,
+        fps=fps,
         seed=seed,
         images=images,
         out_dir=out_dir,
@@ -526,6 +535,7 @@ def run_preview(payload: dict[str, Any], *, emit_partials: bool = True) -> dict[
     video_mode = normalize_video_mode(params.get("videoMode"))
     aspect_ratio = normalize_aspect_ratio(params.get("aspectRatio"))
     duration = normalize_duration(params.get("duration"))
+    fps = normalize_fps(params.get("fps"))
     high_steps, low_steps = resolve_wan_steps(params, model_profile)
     images = preview_source_images(payload, run_outputs, video_mode)
     source_image_urls = [url for path in images if (url := artifact_url_for_path(path))]
@@ -542,6 +552,7 @@ def run_preview(payload: dict[str, Any], *, emit_partials: bool = True) -> dict[
                 aspect_ratio=aspect_ratio,
                 resolution=PREVIEW_RESOLUTION,
                 duration=duration,
+                fps=fps,
                 seed=seed,
                 images=images,
                 out_dir=run_outputs / f"preview-{index:02d}",
@@ -602,6 +613,11 @@ def run_rerender(payload: dict[str, Any]) -> dict[str, Any]:
     video_mode = normalize_video_mode(metadata.get("videoMode"))
     aspect_ratio = normalize_aspect_ratio(metadata.get("aspectRatio"))
     duration = normalize_duration(metadata.get("duration"))
+    seed_seeker = metadata.get("seedSeeker") if isinstance(metadata.get("seedSeeker"), dict) else {}
+    fps_value = metadata.get("fps")
+    if fps_value is None or fps_value == "":
+        fps_value = seed_seeker.get("fps")
+    fps = normalize_fps(fps_value)
     resolution = normalize_rerender_resolution(params.get("targetResolution") or params.get("resolution"))
     high_steps, low_steps = resolve_wan_steps(metadata, model_profile)
     images = rerender_source_images(metadata)
@@ -614,6 +630,7 @@ def run_rerender(payload: dict[str, Any]) -> dict[str, Any]:
         aspect_ratio=aspect_ratio,
         resolution=resolution,
         duration=duration,
+        fps=fps,
         seed=seed,
         images=images,
         out_dir=run_outputs / f"rerender-{resolution}",

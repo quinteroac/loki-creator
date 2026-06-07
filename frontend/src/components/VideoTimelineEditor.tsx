@@ -31,6 +31,11 @@ function formatSeconds(value: number) {
   return `${minutes}:${paddedSeconds}`;
 }
 
+function formatSecondsInput(value: number) {
+  const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
+  return safeValue.toFixed(2);
+}
+
 function stopEditorMouseEvent(event: MouseEvent<HTMLElement>) {
   event.stopPropagation();
 }
@@ -170,6 +175,22 @@ export function VideoTimelineEditor({
     }
 
     setSelectedTime(clamp(time, 0, duration));
+  }
+
+  function handleTrimStartInput(value: string) {
+    const parsedValue = Number.parseFloat(value);
+    if (!Number.isFinite(parsedValue)) return;
+    const nextStart = clamp(parsedValue, 0, Math.max(0, trimEnd - MIN_TRIM_SECONDS));
+    setTrimStart(nextStart);
+    setSelectedTime(nextStart);
+  }
+
+  function handleTrimEndInput(value: string) {
+    const parsedValue = Number.parseFloat(value);
+    if (!Number.isFinite(parsedValue)) return;
+    const nextEnd = clamp(parsedValue, Math.min(duration, trimStart + MIN_TRIM_SECONDS), duration);
+    setTrimEnd(nextEnd);
+    setSelectedTime(nextEnd);
   }
 
   function handleTimelinePointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -378,6 +399,38 @@ export function VideoTimelineEditor({
                 ))}
               </select>
             </label>
+          </div>
+
+          <div className="video-editor-range-inputs" aria-label="Trim range in seconds">
+            <label>
+              <span>Inicio (s)</span>
+              <input
+                aria-label="Trim start seconds"
+                disabled={Boolean(action)}
+                inputMode="decimal"
+                min={0}
+                max={Math.max(0, trimEnd - MIN_TRIM_SECONDS)}
+                step="0.01"
+                type="number"
+                value={formatSecondsInput(trimStart)}
+                onChange={(event) => handleTrimStartInput(event.target.value)}
+              />
+            </label>
+            <label>
+              <span>Fin (s)</span>
+              <input
+                aria-label="Trim end seconds"
+                disabled={Boolean(action)}
+                inputMode="decimal"
+                min={Math.min(duration, trimStart + MIN_TRIM_SECONDS)}
+                max={duration}
+                step="0.01"
+                type="number"
+                value={formatSecondsInput(trimEnd)}
+                onChange={(event) => handleTrimEndInput(event.target.value)}
+              />
+            </label>
+            <span>{formatSeconds(trimDuration)}</span>
           </div>
 
           <div className="video-editor-actions">

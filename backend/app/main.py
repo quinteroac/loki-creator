@@ -1,7 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import router
+from app.env import load_dotenv
+
+
+load_dotenv()
+
+from app.api import router  # noqa: E402
 
 
 def create_app() -> FastAPI:

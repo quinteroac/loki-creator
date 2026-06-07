@@ -62,8 +62,22 @@ metadata:
         type: text
         required: false
         askWhen: missing
-        order: 40
+        order: 50
         options: []
+      - id: fps
+        label: FPS
+        description: Choose the WAN S2V frame rate. 16 FPS is the compatible default; 24 FPS produces more frames from the same audio.
+        type: choice
+        required: true
+        askWhen: always
+        order: 40
+        options:
+          - value: "16"
+            label: 16 FPS
+            description: Compatible default for WAN S2V.
+          - value: "24"
+            label: 24 FPS
+            description: Smoother WAN S2V output with more frames.
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -91,13 +105,14 @@ LoRA through `--lora PATH` plus optional `--lora-strength`; do not use
 
 ## Required Arguments
 
-Loki declares `modelProfile`, `aspectRatio`, and `resolution` as required skill
-arguments. The bridge asks only those three before invoking this skill.
+Loki declares `modelProfile`, `aspectRatio`, `resolution`, and `fps` as
+required skill arguments.
 
 Do not ask for duration. The runtime measures the selected audio with `ffprobe`
-and sets `--length` to `ceil(audio_seconds * 16)` with `--fps 16`. For example,
-14 seconds of audio generates 224 frames. Fractional durations round up so the
-video does not cut off the audio.
+and sets `--length` to `ceil(audio_seconds * fps)`. FPS must be `16` or `24`,
+with `16` as the default choice. For example, 14 seconds of audio generates
+224 frames at 16 FPS or 336 frames at 24 FPS. Fractional durations round up so
+the video does not cut off the audio.
 
 Resolution choices:
 
@@ -188,10 +203,10 @@ Before invoking the Loki action, verify:
 
 - The selected inputs include exactly what WAN S2V needs: one image and one
   audio clip.
-- The only required user choices are present: `modelProfile`, `aspectRatio`, and
-  `resolution`.
+- The required user choices are present: `modelProfile`, `aspectRatio`,
+  `resolution`, and `fps`.
 - No duration was requested from the user and no duration is passed in params;
-  runtime derives frames from audio duration at 16 fps.
+  runtime derives frames from audio duration at the selected `fps`.
 - The action `prompt` is the final WAN S2V scene prompt, not a copy of the user
   request, UI text, or selected-card boilerplate.
 - The prompt starts with `In the video, ...` or `The video shows ...`.
@@ -200,8 +215,8 @@ Before invoking the Loki action, verify:
   camera, and environment.
 - Important visual details from the selected image are preserved as scene
   content.
-- `paramsJson` contains the chosen `modelProfile`, `aspectRatio`, and
-  `resolution`, and does not include `width`, `height`, `duration`,
+- `paramsJson` contains the chosen `modelProfile`, `aspectRatio`, `resolution`,
+  and `fps`, and does not include `width`, `height`, `duration`,
   `highNoiseSteps`, or `lowNoiseSteps`.
 - If a LoRA is requested, `paramsJson` includes only one `extraLora`/`lora`
   value, with optional model strength such as `name:0.55`.

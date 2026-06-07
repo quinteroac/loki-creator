@@ -102,6 +102,31 @@ class WanSeedSeekerActionTest(unittest.TestCase):
         self.assertEqual(first_metadata["seedSeeker"]["skillId"], "wan-seed-seeker")
         self.assertEqual(first_metadata["seedSeeker"]["previewCount"], 3)
 
+    def test_preview_i2v_accepts_24_fps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            commands: list[list[str]] = []
+            payload = self.payload(
+                root,
+                params={
+                    "runMode": "preview",
+                    "modelProfile": "wan22-i2v",
+                    "videoMode": "i2v",
+                    "aspectRatio": "16:9",
+                    "duration": "5",
+                    "fps": "24",
+                    "seed": "100",
+                },
+            )
+            patches = self.run_with_patches(root, commands)
+            with patches[0], patches[1], patches[2]:
+                result = wan_seed_seeker_action.run_preview(payload, emit_partials=False)
+
+        self.assertEqual([command[command.index("--fps") + 1] for command in commands], ["24", "24", "24"])
+        self.assertEqual([command[command.index("--length") + 1] for command in commands], ["121", "121", "121"])
+        self.assertEqual(result["artifacts"][0]["metadata"]["fps"], 24)
+        self.assertEqual(result["artifacts"][0]["metadata"]["length"], 121)
+
     def test_preview_i2v_resolves_wan_lora_and_stores_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -251,6 +276,7 @@ class WanSeedSeekerActionTest(unittest.TestCase):
                             "videoMode": "flf2v",
                             "aspectRatio": "4:3",
                             "duration": 7,
+                            "fps": 24,
                             "highNoiseSteps": 2,
                             "lowNoiseSteps": 2,
                             "extraLoras": [f"{lora}:0.5"],
@@ -273,15 +299,54 @@ class WanSeedSeekerActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--prompt") + 1], "stored prompt")
         self.assertEqual(command[command.index("--width") + 1], "1440")
         self.assertEqual(command[command.index("--height") + 1], "1080")
-        self.assertEqual(command[command.index("--length") + 1], "113")
+        self.assertEqual(command[command.index("--length") + 1], "169")
+        self.assertEqual(command[command.index("--fps") + 1], "24")
         self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora}:0.5")
         self.assertTrue(command[command.index("--first") + 1].endswith("first.png"))
         self.assertTrue(command[command.index("--last") + 1].endswith("last.png"))
         self.assertEqual(result["artifacts"][0]["metadata"]["resolution"], "1080p")
         self.assertEqual(result["artifacts"][0]["metadata"]["width"], 1440)
         self.assertEqual(result["artifacts"][0]["metadata"]["height"], 1080)
+        self.assertEqual(result["artifacts"][0]["metadata"]["fps"], 24)
+        self.assertEqual(result["artifacts"][0]["metadata"]["length"], 169)
         self.assertEqual(result["artifacts"][0]["metadata"]["extraLoras"], [f"{lora}:0.5"])
         self.assertIn("Seed: 4242", result["artifacts"][0]["prompt"])
+
+    def test_rerender_defaults_old_preview_without_fps_to_16(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "inputs" / "image.png"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"image")
+            commands: list[list[str]] = []
+            payload = {
+                "skillId": "wan-seed-seeker",
+                "runId": "skill_run_final",
+                "params": {"runMode": "rerender", "targetResolution": "720p"},
+                "selectedCardSnapshots": [
+                    {
+                        "metadata": {
+                            "seedSeeker": {"skillId": "wan-seed-seeker", "mode": "preview"},
+                            "seed": 100,
+                            "basePrompt": "stored prompt",
+                            "modelProfile": "wan22-i2v",
+                            "videoMode": "i2v",
+                            "aspectRatio": "16:9",
+                            "duration": 5,
+                            "sourceImageArtifactUrls": ["/api/artifacts/inputs/image.png"],
+                        },
+                    }
+                ],
+            }
+            patches = self.run_with_patches(root, commands)
+            with patches[0], patches[1], patches[2]:
+                result = wan_seed_seeker_action.run_rerender(payload)
+
+        command = commands[0]
+        self.assertEqual(command[command.index("--fps") + 1], "16")
+        self.assertEqual(command[command.index("--length") + 1], "81")
+        self.assertEqual(result["artifacts"][0]["metadata"]["fps"], 16)
+        self.assertEqual(result["artifacts"][0]["metadata"]["length"], 81)
 
     def test_rerender_requires_selected_wan_preview(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "requires selecting one WAN Seed Seeker preview card"):

@@ -111,7 +111,7 @@ metadata:
         type: text
         required: false
         askWhen: missing
-        order: 60
+        order: 70
         options: []
       - id: lowNoiseSteps
         label: WAN low-noise steps
@@ -119,15 +119,29 @@ metadata:
         type: text
         required: false
         askWhen: missing
-        order: 70
+        order: 80
         options: []
+      - id: fps
+        label: WAN FPS
+        description: Optional WAN 2.2 frame rate. Default is 16 FPS; choose 24 FPS only when the user explicitly asks for smoother WAN motion.
+        type: choice
+        required: false
+        askWhen: missing
+        order: 60
+        options:
+          - value: "16"
+            label: 16 FPS
+            description: Compatible default for WAN 2.2.
+          - value: "24"
+            label: 24 FPS
+            description: Smoother WAN 2.2 output with more frames.
       - id: extraLora
         label: Extra LoRA
         description: Optional compatible LoRA name or path, with optional strength like relight:0.7. Use only when the user explicitly asks for a LoRA.
         type: text
         required: false
         askWhen: missing
-        order: 80
+        order: 90
         options: []
       - id: extraLoraHigh
         label: WAN high LoRA
@@ -135,7 +149,7 @@ metadata:
         type: text
         required: false
         askWhen: missing
-        order: 90
+        order: 100
         options: []
       - id: extraLoraLow
         label: WAN low LoRA
@@ -143,7 +157,7 @@ metadata:
         type: text
         required: false
         askWhen: missing
-        order: 100
+        order: 110
         options: []
     action:
       type: cli-local
@@ -242,16 +256,16 @@ validated local media references into local files for `--input`, `--audio`,
 `--first`, `--last`, or `--control-video`. Inline `dataUrl` values and rendered
 previews are UI-only and are not valid skill inputs.
 
-Duration and WAN step choices:
+Duration, WAN FPS, and WAN step choices:
 
 - `3`, `5`, `7`, `10`, or `15` seconds. Local LTX converts duration to `length` frames
   using `fps=24` unless another fps is explicitly provided. Seedance receives
   the same value as `--duration`.
-- WAN 2.2 uses `fps=16` by default and should use full-second frame counts with
-  one terminal frame: `49` frames for 3 seconds, `81` for 5 seconds, `113` for
-  7 seconds, `161` for 10 seconds, and `241` for 15 seconds. Do not cut WAN
-  clips to `duration * fps` frames such as `80` at 16 FPS, because it weakens
-  motion and first/last-frame adherence.
+- WAN 2.2 uses `fps=16` by default and also accepts `fps=24` when the user
+  explicitly asks for smoother WAN motion. WAN length is always
+  `duration * fps + 1`, so 5 seconds at 16 FPS is `81` frames and 5 seconds at
+  24 FPS is `121` frames. Do not cut WAN clips to `duration * fps` frames such
+  as `80` at 16 FPS, because it weakens motion and first/last-frame adherence.
 - WAN 2.2 accepts optional `highNoiseSteps` and `lowNoiseSteps` params. More
   high-noise steps usually means more motion; more low-noise steps usually means
   more detail/refinement. If both are omitted, the selected profile defaults are
@@ -353,8 +367,8 @@ WAN 2.2 image to video:
 uv run comfy-videogen wan22-i2v \
   --input path/to/image.png \
   --prompt "cinematic camera drift, subtle subject motion, natural lighting" \
-  --length 81 \
-  --fps 16 \
+  --length 121 \
+  --fps 24 \
   --high-steps 10 \
   --low-steps 10 \
   --extra-lora .loki/models/comfyui/loras/wan22/blue-motion.safetensors:0.7 \
@@ -406,16 +420,65 @@ COMFY_ORG_API_KEY=... uv run comfy-videogen seedance2-flf2v \
 
 ## Prompt Guidance
 
-Describe visual motion, camera movement, subject action, scene mood, and audio
-texture. Keep prompts concrete and short enough for a single shot. For `i2v`,
-`ia2av`, and `flf2v`, name what should remain anchored to the input image or
-guide frames.
+For LTX 2.3 profiles, write the action prompt like a compact shot direction for
+a cinematographer. LTX 2.3 handles more detail than earlier LTX workflows, so do
+not reduce the prompt to a vague mood tag. Use one flowing paragraph in present
+tense, with enough detail to fill the selected duration.
 
-For `ia2av`, the prompt should describe how the image should move in relation
-to the audio: tempo-synced lighting pulses, breathing portrait motion, subtle
-camera drift, dance movement, performance gestures, or environmental reaction.
-The video duration is controlled by `--length / --fps`; long songs are trimmed
-to that window unless `--audio-start-time` or `--audio-duration` is passed.
+For every LTX prompt, include:
+
+- Shot setup: shot scale, composition, spatial layout, and whether the frame is
+  vertical, widescreen, square, or classic 4:3.
+- Subject and action: who moves, what moves, how it moves, and what changes from
+  the first moment to the final moment.
+- Camera behavior: push in, pull back, track, pan, tilt, handheld drift, static
+  hold, or another concrete movement relative to the subject.
+- Environment and material detail: lighting, color palette, atmosphere, fabric,
+  hair, surface finish, particles, reflections, wear, or edge detail.
+- Audio when the mode produces or uses audio: ambient sound, voice quality,
+  music, impact sounds, or the way the motion reacts to the audio.
+
+For LTX `t2v`, describe the full scene because the model has no visual anchor.
+For LTX `i2v`, `ia2av`, and `flf2v`, focus on motion and transformation: the
+input image or guide frames already define the visual identity. Preserve
+important visible identity and composition, but avoid spending the prompt on
+static details that are already obvious from the selected card.
+
+For LTX portrait output, compose vertically on purpose: subject placement,
+headroom, hands, foreground/background spacing, and camera movement should make
+sense in a tall frame, not a cropped landscape shot.
+
+For `ia2av`, describe the visual interpretation of the audio: tempo-synced
+lighting pulses, breathing portrait motion, mouth movement, performance
+gestures, dance movement, or environmental reaction. The video duration is
+controlled by `--length / --fps`; long songs are trimmed to that window unless
+`--audio-start-time` or `--audio-duration` is passed.
+
+Avoid LTX prompts that are static, contradictory, or overly numerical. Do not
+write only `a cinematic portrait`, `make the scene come alive`, or abstract
+emotional labels such as `sad`; translate emotion into visible acting cues such
+as gaze, posture, breath, pauses, facial tension, or hand movement. Do not ask
+for readable text/logos, chaotic physics, overloaded crowd scenes, or conflicting
+lighting setups.
+
+Good LTX i2v action prompt:
+
+```text
+The camera slowly pushes toward the woman in the red coat as rain runs down the
+cafe window behind her. She lowers her eyes to the phone, stirs the coffee once,
+then looks up toward the street. Warm tungsten light catches the wet glass,
+soft reflections shimmer on the table, and faint cafe ambience plays under the
+rain.
+```
+
+Good LTX flf2v action prompt:
+
+```text
+A continuous handheld tracking shot moves from the first frame into the final
+pose. The character steps forward, coat fabric fluttering in the wind, hair
+strands lifting around the face, while the background neon streaks into soft
+motion blur and the camera settles into the final composition.
+```
 
 Use the collected `resolution` and `aspectRatio` arguments instead of inventing
 raw dimensions. Loki translates `480p`/`720p` plus the selected frame into
@@ -446,9 +509,10 @@ directly to Seedance 2.0.
 - Profile: `wan22-i2v`
 - Dasiwa profiles: `wan22-dasiwa-tastysin-i2v`, `wan22-dasiwa-boundbite-i2v`
 - Supported modes: `wan22-i2v`, `wan22-flf2v`
-- Video params: `fps=16`; recommended frame counts are `49` for 3 seconds,
-  `81` for 5 seconds, `113` for 7 seconds, `161` for 10 seconds, and `241` for
-  15 seconds.
+- Video params: `fps=16` by default, or `fps=24` when requested. Length is
+  `duration * fps + 1`; at 16 FPS the standard frame counts are `49`, `81`,
+  `113`, `161`, and `241`, while at 24 FPS they are `73`, `121`, `169`, `241`,
+  and `361`.
 - Standard default steps: `highNoiseSteps=10`, `lowNoiseSteps=10`
 - Dasiwa default steps: `highNoiseSteps=2`, `lowNoiseSteps=2`
 - Required local files include WAN 2.2 high/low-noise diffusion models, text
