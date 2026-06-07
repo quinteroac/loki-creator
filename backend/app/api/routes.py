@@ -12,6 +12,8 @@ from app.models import (
     ArchiveArtifactsResponse,
     CodexImageGenerationRequest,
     CodexImageGenerationResponse,
+    ComfyGenerationRequest,
+    ComfyGenerationResponse,
     GeminiImageGenerationRequest,
     GeminiImageGenerationResponse,
     GrokGenerationResponse,
@@ -42,6 +44,8 @@ from app.services import (
     ArtifactArchiveService,
     CodexImageGenerationError,
     CodexImageGenerationService,
+    ComfyGenerationError,
+    ComfyGenerationService,
     GeminiImageGenerationError,
     GeminiImageGenerationService,
     GrokImagineGenerationError,
@@ -103,6 +107,10 @@ def get_grok_imagine_generation_service() -> GrokImagineGenerationService:
 
 def get_codex_image_generation_service() -> CodexImageGenerationService:
     return CodexImageGenerationService(artifacts_root)
+
+
+def get_comfy_generation_service() -> ComfyGenerationService:
+    return ComfyGenerationService(artifacts_root)
 
 
 def get_gemini_image_generation_service() -> GeminiImageGenerationService:
@@ -170,6 +178,17 @@ def generate_codex_image(
     try:
         return service.generate(payload)
     except CodexImageGenerationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/generations/comfy", response_model=ComfyGenerationResponse)
+def generate_comfy(
+    payload: ComfyGenerationRequest,
+    service: ComfyGenerationService = Depends(get_comfy_generation_service),
+) -> ComfyGenerationResponse:
+    try:
+        return service.generate(payload)
+    except ComfyGenerationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 

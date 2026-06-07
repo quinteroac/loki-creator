@@ -8,6 +8,14 @@ import type {
   AgentModel,
   AgentQuestion,
   CodexImageResolution,
+  ComfyAspectRatio,
+  ComfyDuration,
+  ComfyImageMode,
+  ComfyImageProfile,
+  ComfyResolution,
+  ComfyTool,
+  ComfyVideoMode,
+  ComfyVideoProfile,
   ComposerMode,
   GeminiImageModel,
   GeminiImageResolution,
@@ -32,6 +40,14 @@ type AgentComposerProps = {
   isRunning: boolean;
   composerMode: ComposerMode;
   codexImageResolution: CodexImageResolution;
+  comfyAspectRatio: ComfyAspectRatio;
+  comfyDuration: ComfyDuration;
+  comfyImageMode: ComfyImageMode;
+  comfyImageProfile: ComfyImageProfile;
+  comfyResolution: ComfyResolution;
+  comfyTool: ComfyTool;
+  comfyVideoMode: ComfyVideoMode;
+  comfyVideoProfile: ComfyVideoProfile;
   geminiImageModel: GeminiImageModel;
   geminiImageResolution: GeminiImageResolution;
   grokImageAspectRatio: GrokImageAspectRatio;
@@ -42,6 +58,14 @@ type AgentComposerProps = {
   grokVideoResolution: GrokVideoResolution;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCodexImageResolutionChange: (resolution: CodexImageResolution) => void;
+  onComfyAspectRatioChange: (aspectRatio: ComfyAspectRatio) => void;
+  onComfyDurationChange: (duration: ComfyDuration) => void;
+  onComfyImageModeChange: (mode: ComfyImageMode) => void;
+  onComfyImageProfileChange: (profile: ComfyImageProfile) => void;
+  onComfyResolutionChange: (resolution: ComfyResolution) => void;
+  onComfyToolChange: (tool: ComfyTool) => void;
+  onComfyVideoModeChange: (mode: ComfyVideoMode) => void;
+  onComfyVideoProfileChange: (profile: ComfyVideoProfile) => void;
   onGeminiImageModelChange: (model: GeminiImageModel) => void;
   onGeminiImageResolutionChange: (resolution: GeminiImageResolution) => void;
   onCreateAgent: () => void;
@@ -91,6 +115,14 @@ export function AgentComposer({
   isRunning,
   composerMode,
   codexImageResolution,
+  comfyAspectRatio,
+  comfyDuration,
+  comfyImageMode,
+  comfyImageProfile,
+  comfyResolution,
+  comfyTool,
+  comfyVideoMode,
+  comfyVideoProfile,
   geminiImageModel,
   geminiImageResolution,
   grokImageAspectRatio,
@@ -101,6 +133,14 @@ export function AgentComposer({
   grokVideoResolution,
   onAttachFiles,
   onCodexImageResolutionChange,
+  onComfyAspectRatioChange,
+  onComfyDurationChange,
+  onComfyImageModeChange,
+  onComfyImageProfileChange,
+  onComfyResolutionChange,
+  onComfyToolChange,
+  onComfyVideoModeChange,
+  onComfyVideoProfileChange,
   onGeminiImageModelChange,
   onGeminiImageResolutionChange,
   onCreateAgent,
@@ -341,6 +381,7 @@ export function AgentComposer({
                 <option value="grok">Grok</option>
                 <option value="codex">Codex</option>
                 <option value="gemini">Gemini</option>
+                <option value="comfy">Comfy</option>
               </select>
             </label>
             {composerMode === "seedance" && (
@@ -501,6 +542,126 @@ export function AgentComposer({
                     <option value="auto">Auto</option>
                   </select>
                 </label>
+              </>
+            )}
+            {composerMode === "comfy" && (
+              <>
+                <label className="composer-select-chip">
+                  <span>Tool</span>
+                  <select
+                    value={comfyTool}
+                    onChange={(event) => onComfyToolChange(event.target.value as ComfyTool)}
+                    aria-label="Comfy tool"
+                  >
+                    <option value="image">Image</option>
+                    <option value="video">Video</option>
+                  </select>
+                </label>
+                {comfyTool === "image" ? (
+                  <>
+                    <label className="composer-select-chip">
+                      <span>Mode</span>
+                      <select
+                        value={comfyImageMode}
+                        onChange={(event) => onComfyImageModeChange(event.target.value as ComfyImageMode)}
+                        aria-label="Comfy image mode"
+                      >
+                        <option value="generate">Generate</option>
+                        <option value="edit">Edit</option>
+                        <option value="upscale">Upscale</option>
+                      </select>
+                    </label>
+                    {comfyImageMode !== "upscale" && (
+                      <label className="composer-select-chip">
+                        <span>Profile</span>
+                        <select
+                          value={comfyImageProfile}
+                          onChange={(event) => onComfyImageProfileChange(event.target.value as ComfyImageProfile)}
+                          aria-label="Comfy image profile"
+                        >
+                          <option value="anima-base">Anima</option>
+                          <option value="qwen-edit2511">Qwen Edit</option>
+                          <option value="flux-klein-9b-snofs">Flux Klein</option>
+                        </select>
+                      </label>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <label className="composer-select-chip">
+                      <span>Profile</span>
+                      <select
+                        value={comfyVideoProfile}
+                        onChange={(event) => onComfyVideoProfileChange(event.target.value as ComfyVideoProfile)}
+                        aria-label="Comfy video profile"
+                      >
+                        <option value="ltx23-10eros">LTX 10Eros</option>
+                        <option value="ltx23-dasiwa-golden-lace-v3">LTX Dasiwa</option>
+                        <option value="wan22-i2v">WAN 2.2</option>
+                        <option value="wan22-dasiwa-tastysin-i2v">WAN Tastysin</option>
+                        <option value="wan22-dasiwa-boundbite-i2v">WAN Boundbite</option>
+                      </select>
+                    </label>
+                    <label className="composer-select-chip">
+                      <span>Mode</span>
+                      <select
+                        value={comfyVideoMode}
+                        onChange={(event) => onComfyVideoModeChange(event.target.value as ComfyVideoMode)}
+                        aria-label="Comfy video mode"
+                      >
+                        <option value="t2v">Text</option>
+                        <option value="i2v">Image</option>
+                        <option value="flf2v">First/Last</option>
+                        <option value="wan22-i2v">WAN Image</option>
+                        <option value="wan22-flf2v">WAN First/Last</option>
+                      </select>
+                    </label>
+                  </>
+                )}
+                <label className="composer-select-chip">
+                  <span>Frame</span>
+                  <select
+                    value={comfyAspectRatio}
+                    onChange={(event) => onComfyAspectRatioChange(event.target.value as ComfyAspectRatio)}
+                    aria-label="Comfy aspect ratio"
+                  >
+                    <option value="1:1">1:1</option>
+                    <option value="4:3">4:3</option>
+                    <option value="16:9">16:9</option>
+                    <option value="9:16">9:16</option>
+                  </select>
+                </label>
+                {comfyTool === "video" && (
+                  <>
+                    <label className="composer-select-chip">
+                      <span>Res</span>
+                      <select
+                        value={comfyResolution}
+                        onChange={(event) => onComfyResolutionChange(event.target.value as ComfyResolution)}
+                        aria-label="Comfy video resolution"
+                      >
+                        <option value="360p">360p</option>
+                        <option value="480p">480p</option>
+                        <option value="720p">720p</option>
+                        <option value="1080p">1080p</option>
+                      </select>
+                    </label>
+                    <label className="composer-select-chip">
+                      <span>Duration</span>
+                      <select
+                        value={comfyDuration}
+                        onChange={(event) => onComfyDurationChange(Number(event.target.value) as ComfyDuration)}
+                        aria-label="Comfy video duration"
+                      >
+                        <option value={4}>4s</option>
+                        <option value={5}>5s</option>
+                        <option value={7}>7s</option>
+                        <option value={10}>10s</option>
+                        <option value={15}>15s</option>
+                      </select>
+                    </label>
+                  </>
+                )}
               </>
             )}
             {composerMode === "agent" && (

@@ -35,7 +35,28 @@ export type SeedanceAspectRatio = "16:9" | "9:16";
 
 export type SeedanceDuration = 4 | 5 | 7 | 10 | 15;
 
-export type ComposerMode = "agent" | "seedance" | "grok" | "codex" | "gemini";
+export type ComposerMode = "agent" | "seedance" | "grok" | "codex" | "gemini" | "comfy";
+
+export type ComfyTool = "image" | "video";
+
+export type ComfyImageMode = "generate" | "edit" | "upscale";
+
+export type ComfyVideoMode = "t2v" | "i2v" | "flf2v" | "wan22-i2v" | "wan22-flf2v";
+
+export type ComfyImageProfile = "anima-base" | "qwen-edit2511" | "flux-klein-9b-snofs" | "";
+
+export type ComfyVideoProfile =
+  | "ltx23-10eros"
+  | "ltx23-dasiwa-golden-lace-v3"
+  | "wan22-i2v"
+  | "wan22-dasiwa-tastysin-i2v"
+  | "wan22-dasiwa-boundbite-i2v";
+
+export type ComfyAspectRatio = "1:1" | "4:3" | "16:9" | "9:16";
+
+export type ComfyResolution = "360p" | "480p" | "720p" | "1080p";
+
+export type ComfyDuration = 4 | 5 | 7 | 10 | 15;
 
 export type CodexImageResolution =
   | "1024x1024"
@@ -113,6 +134,25 @@ export type CodexImageGenerationRequest = {
 };
 
 export type CodexImageGenerationResponse = {
+  cards: GeneratedCard[];
+};
+
+export type ComfyGenerationRequest = {
+  prompt: string;
+  tool: ComfyTool;
+  imageMode: ComfyImageMode;
+  videoMode: ComfyVideoMode;
+  modelProfile: string;
+  aspectRatio: ComfyAspectRatio;
+  resolution: ComfyResolution;
+  duration: ComfyDuration;
+  seed?: number | null;
+  selectedCardSnapshots: SelectedCardSnapshot[];
+  attachments: AgentAttachment[];
+  context?: Record<string, unknown>;
+};
+
+export type ComfyGenerationResponse = {
   cards: GeneratedCard[];
 };
 

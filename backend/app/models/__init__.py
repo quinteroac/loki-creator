@@ -19,6 +19,8 @@ from app.models.artifacts import (
 )
 from app.models.instructions import CardMetadata, GeneratedCard, InstructionRequest, InstructionResponse
 from app.models.generations import (
+    ComfyGenerationRequest,
+    ComfyGenerationResponse,
     CodexImageGenerationRequest,
     CodexImageGenerationResponse,
     GeminiImageGenerationRequest,
@@ -70,6 +72,8 @@ __all__ = [
     "GeneratedCard",
     "InstructionRequest",
     "InstructionResponse",
+    "ComfyGenerationRequest",
+    "ComfyGenerationResponse",
     "CodexImageGenerationRequest",
     "CodexImageGenerationResponse",
     "GeminiImageGenerationRequest",

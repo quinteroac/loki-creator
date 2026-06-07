@@ -18,7 +18,7 @@ There is no legacy runtime compatibility layer. Public product concepts are skil
 10. The backend card packager converts those outputs into `GeneratedCard` objects.
 11. The frontend reconciles completed skill runs from `GET /api/skill-runs?status=succeeded` and places returned cards on the canvas.
 
-Direct generation modes such as Seedance, Grok, Codex, and Gemini bypass the agent bridge and call backend generation endpoints. They still use local artifact-backed selected card snapshots, reject preview-only media as executable input, and package outputs through the same card packager.
+Direct generation modes such as Seedance, Grok, Codex, Gemini, and Comfy bypass the agent bridge and call backend generation endpoints. They still use local artifact-backed selected card snapshots, reject preview-only media as executable input, and package outputs through the same card packager.
 
 ## Backend
 
@@ -116,6 +116,8 @@ Everything beyond `SKILL.md` is freeform according to the Agent Skills conventio
 The first real skill is `backend/skills/imagegen/`. It vendors the standard Codex `imagegen` skill for instructions and argument metadata. In normal Pi agent runs, `imagegen` executes through the Loki skill action so selected image edits can pass local artifact paths to Codex with `--image`. Pure generation and selected-image editing share this backend skill path.
 
 Comfy skills from `quinteroac/comfy-agent-tools` are copied under `backend/skills/comfy-*` with minimal Loki metadata. Image workflows are split by visible intent into `comfy-image-generate`, `comfy-image-edit`, and `comfy-image-upscale`, while the private implementation still calls the upstream `comfy-imagegen` CLI. Their functional skill instructions remain standard; a shared private wrapper at `backend/skills/_comfy_runtime/` calls installed `comfy-*` CLIs and returns raw artifacts or diagnostics. Local model configuration uses `.comfy-agent-tools.json`; the default Loki models path is `.loki/models/comfyui`.
+
+The frontend also exposes a direct Comfy composer mode through `POST /api/generations/comfy`. This mode bypasses agents and skill-runs, but intentionally uses the same installed `comfy-agent-tools` CLIs for v1 (`comfy-imagegen` and `comfy-videogen`) because the `comfy-diffusion` CLI does not expose generation subcommands. The direct service builds the dedicated CLI command from typed request fields, validates local artifact inputs, and packages returned artifacts through the normal card packager.
 
 Skill arguments are Loki-specific metadata. The bridge asks them one at a time before launching the agent, stores answers in an in-memory conversation, and passes the collected values to skill actions through `params`.
 Arguments may include `dependsOn` to ask a field only when previously collected
@@ -253,6 +255,7 @@ It is not a real skill.
 - `POST /api/generations/grok-video`
 - `POST /api/generations/codex-image`
 - `POST /api/generations/gemini-image`
+- `POST /api/generations/comfy`
 - `POST /api/generations/seedance-video`
 - `GET /api/artifacts/{artifact_path}`
 - `GET /api/agents` on the bridge

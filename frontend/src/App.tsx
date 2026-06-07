@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { agentRunEventsUrl, createAgentRun, listAgentModels, stopAgentRun } from "./api/agentRuns";
 import { importArtifact } from "./api/artifacts";
 import { generateCodexImage } from "./api/codexImage";
+import { generateComfy } from "./api/comfyGeneration";
 import { generateGeminiImage } from "./api/geminiImage";
 import { generateGrokImage, generateGrokVideo } from "./api/grokImagine";
 import { listProjects, loadProject, saveProject } from "./api/projects";
@@ -48,6 +49,14 @@ import type {
   CanvasNodeFrame,
   CardDocument,
   CodexImageResolution,
+  ComfyAspectRatio,
+  ComfyDuration,
+  ComfyImageMode,
+  ComfyImageProfile,
+  ComfyResolution,
+  ComfyTool,
+  ComfyVideoMode,
+  ComfyVideoProfile,
   ComposerMode,
   EditedMediaArtifact,
   GeminiImageModel,
@@ -124,6 +133,14 @@ export function App() {
   const [grokVideoResolution, setGrokVideoResolution] = useState<GrokVideoResolution>("720p");
   const [grokVideoDuration, setGrokVideoDuration] = useState<GrokVideoDuration>(5);
   const [codexImageResolution, setCodexImageResolution] = useState<CodexImageResolution>("1024x1024");
+  const [comfyTool, setComfyTool] = useState<ComfyTool>("image");
+  const [comfyImageMode, setComfyImageMode] = useState<ComfyImageMode>("generate");
+  const [comfyImageProfile, setComfyImageProfile] = useState<ComfyImageProfile>("anima-base");
+  const [comfyVideoMode, setComfyVideoMode] = useState<ComfyVideoMode>("i2v");
+  const [comfyVideoProfile, setComfyVideoProfile] = useState<ComfyVideoProfile>("ltx23-10eros");
+  const [comfyAspectRatio, setComfyAspectRatio] = useState<ComfyAspectRatio>("16:9");
+  const [comfyResolution, setComfyResolution] = useState<ComfyResolution>("480p");
+  const [comfyDuration, setComfyDuration] = useState<ComfyDuration>(5);
   const [geminiImageResolution, setGeminiImageResolution] = useState<GeminiImageResolution>("1024x1024");
   const [geminiImageModel, setGeminiImageModel] = useState<GeminiImageModel>("Gemini 3.5 Flash (Medium)");
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
@@ -561,6 +578,13 @@ export function App() {
         successStatus: "Gemini image generated.",
       };
     }
+    if (composerMode === "comfy") {
+      return {
+        title: comfyTool === "image" ? "Comfy Image" : "Comfy Video",
+        runningStatus: `Generating Comfy ${comfyTool}...`,
+        successStatus: `Comfy ${comfyTool} generated.`,
+      };
+    }
     return {
       title: grokTool === "image" ? "Grok Image" : "Grok Video",
       runningStatus: `Generating Grok ${grokTool}...`,
@@ -786,7 +810,7 @@ export function App() {
       return;
     }
 
-    if (composerMode === "seedance" || composerMode === "grok" || composerMode === "codex" || composerMode === "gemini") {
+    if (composerMode === "seedance" || composerMode === "grok" || composerMode === "codex" || composerMode === "gemini" || composerMode === "comfy") {
       const activity = getDirectGenerationActivity();
       let toolCallId: string | null = null;
       try {
@@ -835,22 +859,37 @@ export function App() {
                 selectedCardSnapshots,
                 attachments,
               })
-              : grokTool === "image"
-                ? await generateGrokImage({
+              : composerMode === "comfy"
+                ? await generateComfy({
                   prompt: text,
-                  aspectRatio: grokImageAspectRatio,
-                  resolution: grokImageResolution,
+                  tool: comfyTool,
+                  imageMode: comfyImageMode,
+                  videoMode: comfyVideoMode,
+                  modelProfile: comfyTool === "image"
+                    ? comfyImageMode === "upscale" ? "" : comfyImageProfile
+                    : comfyVideoProfile,
+                  aspectRatio: comfyAspectRatio,
+                  resolution: comfyResolution,
+                  duration: comfyDuration,
                   selectedCardSnapshots,
                   attachments,
                 })
-                : await generateGrokVideo({
-                  prompt: text,
-                  aspectRatio: grokVideoAspectRatio,
-                  resolution: grokVideoResolution,
-                  duration: grokVideoDuration,
-                  selectedCardSnapshots,
-                  attachments,
-                });
+                : grokTool === "image"
+                  ? await generateGrokImage({
+                    prompt: text,
+                    aspectRatio: grokImageAspectRatio,
+                    resolution: grokImageResolution,
+                    selectedCardSnapshots,
+                    attachments,
+                  })
+                  : await generateGrokVideo({
+                    prompt: text,
+                    aspectRatio: grokVideoAspectRatio,
+                    resolution: grokVideoResolution,
+                    duration: grokVideoDuration,
+                    selectedCardSnapshots,
+                    attachments,
+                  });
         addGeneratedCards(result.cards);
         setInstruction("");
         setAttachments([]);
@@ -1443,6 +1482,14 @@ export function App() {
         attachments={attachments}
         canvasNodes={cardDocuments}
         codexImageResolution={codexImageResolution}
+        comfyAspectRatio={comfyAspectRatio}
+        comfyDuration={comfyDuration}
+        comfyImageMode={comfyImageMode}
+        comfyImageProfile={comfyImageProfile}
+        comfyResolution={comfyResolution}
+        comfyTool={comfyTool}
+        comfyVideoMode={comfyVideoMode}
+        comfyVideoProfile={comfyVideoProfile}
         geminiImageModel={geminiImageModel}
         geminiImageResolution={geminiImageResolution}
         availableModels={availableModels}
@@ -1455,6 +1502,14 @@ export function App() {
         onAttachFiles={handleFiles}
         onCreateAgent={handleCreateAgent}
         onCodexImageResolutionChange={setCodexImageResolution}
+        onComfyAspectRatioChange={setComfyAspectRatio}
+        onComfyDurationChange={setComfyDuration}
+        onComfyImageModeChange={setComfyImageMode}
+        onComfyImageProfileChange={setComfyImageProfile}
+        onComfyResolutionChange={setComfyResolution}
+        onComfyToolChange={setComfyTool}
+        onComfyVideoModeChange={setComfyVideoMode}
+        onComfyVideoProfileChange={setComfyVideoProfile}
         onGeminiImageModelChange={setGeminiImageModel}
         onGeminiImageResolutionChange={setGeminiImageResolution}
         onInstructionChange={setInstruction}
