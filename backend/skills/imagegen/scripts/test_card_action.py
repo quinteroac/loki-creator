@@ -113,6 +113,44 @@ class ImagegenCardActionTest(unittest.TestCase):
 
         self.assertIn("Create exactly 4 separate final image files", prompt)
 
+    def test_build_codex_prompt_includes_bbox_composition_guide_json(self) -> None:
+        payload = {
+            "prompt": "box1 subject, box2 background",
+            "params": {"resolution": "1024x1024"},
+            "selectedCardSnapshots": [
+                {
+                    "id": "card_bbox",
+                    "displayTitle": "BBox",
+                    "structuredData": {
+                        "kind": "bbox",
+                        "compositionGuide": {
+                            "version": 1,
+                            "canvas": {"width": 1024, "height": 1024, "aspectRatio": "1:1"},
+                            "source": None,
+                            "boxes": [
+                                {
+                                    "id": "bbox_1",
+                                    "label": "Box 1",
+                                    "normalized": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4},
+                                    "ideogramBbox": [200, 100, 600, 400],
+                                }
+                            ],
+                        },
+                    },
+                    "metadata": {"kind": "bbox"},
+                }
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = card_action.build_codex_prompt(payload, Path(tmpdir), Path(tmpdir) / "outputs", [])
+
+        self.assertIn("Selected composition guides from bbox cards:", prompt)
+        self.assertIn('"cardId": "card_bbox"', prompt)
+        self.assertIn('"label": "Box 1"', prompt)
+        self.assertIn('"ideogramBbox": [', prompt)
+        self.assertIn("authoritative JSON layout contract", prompt)
+
     def test_main_accepts_generated_image_with_different_dimensions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("card_action.artifacts_root", return_value=Path(tmpdir)):
             output_path = Path(tmpdir) / "skills" / "imagegen" / "skill-run" / "outputs" / "image.png"

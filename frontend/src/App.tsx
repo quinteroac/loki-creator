@@ -18,6 +18,7 @@ import { initialCanvasNodes, initialCardDocuments } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
 import {
   assignUniqueDisplayTitles,
+  createBboxCardDocument,
   createCardDocumentForEditedArtifact,
   createCardDocumentForImportedArtifact,
   createCanvasNodeForDocument,
@@ -28,6 +29,7 @@ import {
   getFileDimensions,
   normalizeCardDocument,
   updateNoteCardDocumentText,
+  updateBboxCardDocument,
   renameCardDocument,
   type CardPreviewCapture,
 } from "./lib/cardDocuments";
@@ -38,6 +40,7 @@ import {
   toggleMultiSelection,
 } from "./lib/selection";
 import { mergeSelectedCardIds, resolveMentionedCardIds } from "./lib/cardMentions";
+import type { BboxCardData } from "./lib/bboxCards";
 import type {
   AgentAttachment,
   AgentChatMessage,
@@ -1134,6 +1137,38 @@ export function App() {
     setStatus("Note created.");
   }
 
+  function createBbox(frame: CanvasNodeFrame) {
+    const sourceDocument = selectedCards
+      .map((cardId) => cardDocuments.find((document) => document.id === cardId))
+      .find((document): document is CardDocument =>
+        document?.metadata?.kind === "image" || document?.metadata?.kind === "video",
+      );
+    const bboxDocument = createBboxCardDocument({ sourceDocument });
+    const documentWidth = bboxDocument.metadata?.width ?? 1024;
+    const documentHeight = bboxDocument.metadata?.height ?? 1024;
+    const bboxNode = {
+      id: `node_${bboxDocument.id}`,
+      cardDocumentId: bboxDocument.id,
+      frame: {
+        ...frame,
+        height: frame.width * (documentHeight / documentWidth),
+      },
+    };
+
+    setCardDocuments((currentDocuments) => {
+      const [document] = assignUniqueDisplayTitles([bboxDocument], currentDocuments);
+
+      return [...currentDocuments, document];
+    });
+    setCanvasNodes((currentNodes) => {
+      if (currentNodes.some((node) => node.cardDocumentId === bboxDocument.id)) return currentNodes;
+
+      return [...currentNodes, bboxNode];
+    });
+    setSelectedCards([bboxDocument.id]);
+    setStatus(sourceDocument ? "BBox card created from selected media." : "BBox card created.");
+  }
+
   function renameDocument(cardDocumentId: string, title: string) {
     setCardDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
@@ -1157,6 +1192,14 @@ export function App() {
               },
             }
           : document,
+      ),
+    );
+  }
+
+  function updateBboxData(cardDocumentId: string, data: BboxCardData) {
+    setCardDocuments((currentDocuments) =>
+      currentDocuments.map((document) =>
+        document.id === cardDocumentId ? updateBboxCardDocument(document, data) : document,
       ),
     );
   }
@@ -1502,6 +1545,7 @@ export function App() {
       <CanvasStage
         documentsById={documentsById}
         nodes={canvasNodes}
+        onCreateBbox={createBbox}
         onCreateNote={createNote}
         onCreateEditedMediaArtifact={createCardFromEditedMediaArtifact}
         onDeleteDocument={deleteDocument}
@@ -1511,6 +1555,7 @@ export function App() {
         onStatus={setStatus}
         onToggleNode={toggleCanvasNode}
         onUpdateDocumentPrompt={updateDocumentPrompt}
+        onUpdateBboxData={updateBboxData}
         onUpdateNodeFrame={updateCanvasNodeFrame}
         selectedIds={selectedCards}
       />

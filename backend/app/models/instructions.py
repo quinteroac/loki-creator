@@ -14,8 +14,8 @@ class InstructionRequest(BaseModel):
     selected_element: str | None = Field(default=None, alias="selectedElement")
 
 
-CardKind = Literal["generic", "image", "video", "audio", "diagnostic", "artifact", "interactive", "note"]
-CardAspectRatio = Literal["1:1", "4:3", "16:9", "9:16", "auto"]
+CardKind = Literal["generic", "image", "video", "audio", "diagnostic", "artifact", "interactive", "note", "bbox"]
+CardAspectRatio = Literal["1:1", "3:2", "4:3", "16:9", "21:9", "2:3", "3:4", "9:16", "auto"]
 
 
 class CardMetadata(BaseModel):

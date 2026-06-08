@@ -13,8 +13,10 @@ import {
   isDataUrlWithinLimit,
   SELECTED_CARD_PREVIEW_MAX_BYTES,
 } from "../lib/cardDocuments";
+import { getBboxData, type BboxCardData } from "../lib/bboxCards";
 import type { CardDocument, CanvasNode, CanvasNodeFrame, EditedMediaArtifact, SelectedCardPreview } from "../types";
 import { AudioTimelineEditor } from "./AudioTimelineEditor";
+import { BboxCardEditor } from "./BboxCardEditor";
 import { VideoTimelineEditor } from "./VideoTimelineEditor";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
@@ -35,6 +37,7 @@ type CanvasCardProps = {
   onRedoDocument: (cardDocumentId: string) => void;
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onStatus: (message: string) => void;
+  onUpdateBboxData: (cardDocumentId: string, data: BboxCardData) => void;
   onUpdateDocumentPrompt: (cardDocumentId: string, prompt: string) => void;
   onUpdateFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
   onToggleSelect: (nodeId: string) => void;
@@ -252,6 +255,7 @@ export function CanvasCard({
   onRedoDocument,
   onRegisterPreviewCapture,
   onStatus,
+  onUpdateBboxData,
   onUpdateDocumentPrompt,
   onToggleSelect,
   onUpdateFrame,
@@ -285,6 +289,7 @@ export function CanvasCard({
   const accessibleTitle = getCardDisplayTitle(document);
   const editableTitle = getCardEditableTitle(document);
   const isNote = document.metadata?.kind === "note";
+  const isBbox = document.metadata?.kind === "bbox";
   const isAudio = document.metadata?.kind === "audio";
   const videoArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "video"
     ? document.metadata.artifactUrl
@@ -531,7 +536,7 @@ export function CanvasCard({
 
     if (hasMoved && dragState.mode === "drag") {
       onUpdateFrame(node.id, {
-        height: isNote ? dragState.startHeight : undefined,
+        height: isNote || isBbox ? dragState.startHeight : undefined,
         width: dragState.startWidth,
         x: Math.max(0, dragState.startX + deltaX),
         y: Math.max(0, dragState.startY + deltaY),
@@ -540,8 +545,8 @@ export function CanvasCard({
 
     if (hasMoved && dragState.mode === "resize") {
       onUpdateFrame(node.id, {
-        height: isNote ? dragState.startHeight + deltaY : undefined,
-        width: isNote ? dragState.startWidth + deltaX : dragState.startWidth + Math.max(deltaX, deltaY * 0.75),
+        height: isNote || isBbox ? dragState.startHeight + deltaY : undefined,
+        width: isNote || isBbox ? dragState.startWidth + deltaX : dragState.startWidth + Math.max(deltaX, deltaY * 0.75),
         x: dragState.startX,
         y: dragState.startY,
       });
@@ -588,6 +593,17 @@ export function CanvasCard({
     if (!isSelected) {
       onToggleSelect(node.id);
     }
+  }
+
+  function handleBboxDataChange(data: BboxCardData) {
+    onUpdateBboxData(document.id, data);
+  }
+
+  function handleBboxDocumentSizeChange(width: number, height: number) {
+    onUpdateFrame(node.id, {
+      ...frame,
+      height: frame.width * (height / width),
+    });
   }
 
   function handleNoteTitleChange(event: ChangeEvent<HTMLInputElement>) {
@@ -716,6 +732,15 @@ export function CanvasCard({
             suppressContentEditableWarning
           />
         </div>
+      ) : isBbox ? (
+        <BboxCardEditor
+          data={getBboxData(document)}
+          height={frameHeight}
+          onChange={handleBboxDataChange}
+          onDocumentSizeChange={handleBboxDocumentSizeChange}
+          onFocusCard={handleNoteFocus}
+          title={accessibleTitle}
+        />
       ) : usesNativeAudioPreview ? (
         <div
           className="canvas-card-preview has-playable-media canvas-card-audio-preview"
@@ -766,7 +791,7 @@ export function CanvasCard({
           )}
         </button>
       )}
-      {!isNote && (
+      {!isNote && !isBbox && (
         <button
           className={`canvas-card-info-toggle ${isMetadataVisible ? "active" : ""}`}
           type="button"
@@ -780,7 +805,7 @@ export function CanvasCard({
           <Info size={15} aria-hidden="true" />
         </button>
       )}
-      {isMetadataVisible && !isNote && (
+      {isMetadataVisible && !isNote && !isBbox && (
         <aside
           className={`canvas-card-metadata-note ${isAudio ? "audio-card-metadata-note" : ""}`}
           aria-label={`${accessibleTitle} details`}

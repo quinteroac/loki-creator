@@ -1031,6 +1031,149 @@ button {
   outline: 0;
 }
 
+.bbox-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 160px;
+  overflow: hidden;
+  color: var(--dark-text);
+  background: var(--canvas);
+  border-radius: 2px;
+  cursor: default;
+}
+
+.bbox-card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 7px;
+  background: var(--panel-bg);
+  border-bottom: 1px solid var(--dark-hairline);
+}
+
+.bbox-card-toolbar select,
+.bbox-card-toolbar input,
+.bbox-card-toolbar button {
+  min-width: 0;
+  height: 28px;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.bbox-card-toolbar select {
+  width: 70px;
+  padding: 0 8px;
+}
+
+.bbox-card-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--dark-text-soft);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.bbox-card-toolbar input {
+  width: 58px;
+  padding: 0 7px;
+}
+
+.bbox-card-toolbar button {
+  display: inline-grid;
+  width: 28px;
+  place-items: center;
+  padding: 0;
+}
+
+.bbox-card-toolbar button:disabled {
+  color: var(--dark-text-soft);
+  opacity: 0.5;
+}
+
+.bbox-card-stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, var(--surface) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--surface) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--surface) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--surface) 75%);
+  background-color: var(--canvas);
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+  cursor: crosshair;
+}
+
+.bbox-card-stage img,
+.bbox-card-stage video {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.bbox-card-box {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 8px;
+  min-height: 8px;
+  color: var(--brand-blue);
+  background: color-mix(in srgb, var(--brand-blue) 16%, transparent);
+  border: 2px solid var(--brand-blue);
+  cursor: move;
+}
+
+.bbox-card-box.selected {
+  color: var(--brand-coral);
+  background: color-mix(in srgb, var(--brand-coral) 18%, transparent);
+  border-color: var(--brand-coral);
+}
+
+.bbox-card-box small {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+  padding: 3px 6px;
+  overflow: hidden;
+  color: var(--on-primary);
+  background: var(--brand-blue);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bbox-card-box.selected small {
+  background: var(--brand-coral);
+}
+
+.bbox-card-box i {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  background: var(--canvas);
+  border: 2px solid currentColor;
+  border-radius: 9999px;
+  cursor: nwse-resize;
+}
+
 .canvas-card-interaction-strip {
   position: absolute;
   z-index: 2;

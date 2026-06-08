@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, WheelEvent } from "react";
-import { StickyNote, ZoomIn, ZoomOut } from "lucide-react";
+import { Crosshair, StickyNote, ZoomIn, ZoomOut } from "lucide-react";
 import {
   CARD_DEFAULT_WIDTH,
   CANVAS_PADDING,
@@ -10,12 +10,14 @@ import {
   getCardHeight,
 } from "../lib/cardDocuments";
 import { CanvasCard } from "./CanvasCard";
+import type { BboxCardData } from "../lib/bboxCards";
 import type { CardDocument, CanvasNode, CanvasNodeFrame, EditedMediaArtifact, SelectedCardPreview } from "../types";
 
 type CanvasStageProps = {
   documentsById: Record<string, CardDocument>;
   nodes: CanvasNode[];
   selectedIds: string[];
+  onCreateBbox: (frame: CanvasNodeFrame) => void;
   onCreateNote: (frame: CanvasNodeFrame) => void;
   onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string, placementOffset?: number) => void;
   onDeleteDocument: (cardDocumentId: string) => void;
@@ -25,6 +27,7 @@ type CanvasStageProps = {
   onRegisterPreviewCapture: (cardDocumentId: string, capturePreview: () => SelectedCardPreview) => () => void;
   onStatus: (message: string) => void;
   onToggleNode: (nodeId: string) => void;
+  onUpdateBboxData: (cardDocumentId: string, data: BboxCardData) => void;
   onUpdateNodeFrame: (nodeId: string, frame: CanvasNodeFrame) => void;
 };
 
@@ -33,7 +36,7 @@ const CANVAS_ZOOM_STEP = 0.1;
 const CANVAS_ZOOM_MIN = 0.3;
 const CANVAS_ZOOM_MAX = 4;
 const CANVAS_CONTEXT_MENU_WIDTH = 184;
-const CANVAS_CONTEXT_MENU_HEIGHT = 56;
+const CANVAS_CONTEXT_MENU_HEIGHT = 104;
 const CANVAS_CONTEXT_MENU_OFFSET = 8;
 const CANVAS_LEFT_MOUSE_BUTTON = 0;
 const CANVAS_MIDDLE_MOUSE_BUTTON = 1;
@@ -111,6 +114,7 @@ export function CanvasStage({
   documentsById,
   nodes,
   selectedIds,
+  onCreateBbox,
   onCreateNote,
   onCreateEditedMediaArtifact,
   onDeleteDocument,
@@ -120,6 +124,7 @@ export function CanvasStage({
   onRegisterPreviewCapture,
   onStatus,
   onToggleNode,
+  onUpdateBboxData,
   onUpdateNodeFrame,
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +322,18 @@ export function CanvasStage({
     setContextMenu(null);
   }
 
+  function createBboxFromContextMenu() {
+    if (!contextMenu) return;
+
+    onCreateBbox({
+      height: NOTE_DEFAULT_HEIGHT,
+      width: NOTE_DEFAULT_WIDTH,
+      x: contextMenu.logicalX,
+      y: contextMenu.logicalY,
+    });
+    setContextMenu(null);
+  }
+
   return (
     <section className="canvas-shell" aria-label="Creative canvas">
       <div
@@ -381,6 +398,7 @@ export function CanvasStage({
                 onRegisterPreviewCapture={onRegisterPreviewCapture}
                 onStatus={onStatus}
                 onUpdateDocumentPrompt={onUpdateDocumentPrompt}
+                onUpdateBboxData={onUpdateBboxData}
                 onUpdateFrame={updateNodeFrame}
                 onToggleSelect={onToggleNode}
                 zoom={zoom}
@@ -407,6 +425,10 @@ export function CanvasStage({
             <button className="context-menu-item" type="button" role="menuitem" onClick={createNoteFromContextMenu}>
               <StickyNote size={16} aria-hidden="true" />
               <span>Crear nota</span>
+            </button>
+            <button className="context-menu-item" type="button" role="menuitem" onClick={createBboxFromContextMenu}>
+              <Crosshair size={16} aria-hidden="true" />
+              <span>Crear bbox</span>
             </button>
           </div>
         )}

@@ -90,6 +90,60 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--std") + 1], "1.75")
         self.assertEqual(command[command.index("--style-art-style") + 1], "vector poster art")
 
+    def test_ideogram4_normalizes_style_colors_to_rrggbb(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "ideogram4-image",
+                    "prompt": "Graphic badge logo",
+                    "params": {
+                        "mode": "t2i",
+                        "qualityProfile": "Default",
+                        "aspectRatio": "1:1",
+                        "styleAesthetics": "bold clean graphic design",
+                        "styleLighting": "flat even lighting",
+                        "styleMedium": "illustration",
+                        "styleArtStyle": "vector poster art",
+                        "styleColors": ["#abc", "0b0f14", "#F4D06F"],
+                        "background": "solid color field",
+                        "objects": [{"bbox": "180,180,820,820", "description": "centered circular badge emblem"}],
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        colors = [
+            command[index + 1]
+            for index, value in enumerate(command)
+            if value == "--style-color"
+        ]
+        self.assertEqual(colors, ["#AABBCC", "#0B0F14", "#F4D06F"])
+
+    def test_ideogram4_rejects_non_hex_style_colors_before_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "#RRGGBB"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "ideogram4-image",
+                        "prompt": "Graphic badge logo",
+                        "params": {
+                            "mode": "t2i",
+                            "qualityProfile": "Default",
+                            "aspectRatio": "1:1",
+                            "styleAesthetics": "bold clean graphic design",
+                            "styleLighting": "flat even lighting",
+                            "styleMedium": "illustration",
+                            "styleArtStyle": "vector poster art",
+                            "styleColors": ["white"],
+                            "background": "solid color field",
+                            "objects": [{"bbox": "180,180,820,820", "description": "centered circular badge emblem"}],
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
     def test_ideogram4_supports_requested_aspect_ratios(self) -> None:
         expected = {
             "1:1": ("1024", "1024"),

@@ -1021,6 +1021,22 @@ def text_list(value: object) -> list[str]:
     return [item.strip() for item in text.split(",") if item.strip()]
 
 
+def normalize_ideogram_style_color(value: str) -> str:
+    normalized = value.strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", normalized):
+        return normalized.upper()
+    if re.fullmatch(r"[0-9a-fA-F]{6}", normalized):
+        return f"#{normalized.upper()}"
+    short_hex = re.fullmatch(r"#?([0-9a-fA-F]{3})", normalized)
+    if short_hex:
+        return "#" + "".join(character * 2 for character in short_hex.group(1)).upper()
+
+    raise RuntimeError(
+        "ideogram4-image params.styleColors must use #RRGGBB hex colors. "
+        f"Invalid color: {value!r}."
+    )
+
+
 def first_param_text(params: dict[str, Any], *keys: str) -> str:
     return first_text(*(params.get(key) for key in keys))
 
@@ -1189,7 +1205,7 @@ def build_ideogram4_command(
     if style_art_style:
         command.extend(["--style-art-style", style_art_style])
     for color in text_list(params.get("styleColors") or params.get("styleColor") or params.get("style_color")):
-        command.extend(["--style-color", color])
+        command.extend(["--style-color", normalize_ideogram_style_color(color)])
     for value in objects:
         command.extend(["--object", value])
     for value in texts:

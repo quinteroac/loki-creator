@@ -309,6 +309,67 @@ def extract_json_object(text: str) -> dict:
     return parsed
 
 
+def selected_composition_guides(payload: dict) -> list[dict]:
+    snapshots = payload.get("selectedCardSnapshots")
+    if not isinstance(snapshots, list):
+        return []
+
+    guides: list[dict] = []
+    for snapshot in snapshots:
+        if not isinstance(snapshot, dict):
+            continue
+
+        structured_data = snapshot.get("structuredData")
+        if isinstance(structured_data, dict):
+            guide = structured_data.get("compositionGuide")
+            if isinstance(guide, dict):
+                guides.append(
+                    {
+                        "cardId": snapshot.get("id"),
+                        "title": snapshot.get("displayTitle") or snapshot.get("name"),
+                        **guide,
+                    }
+                )
+                continue
+
+        metadata = snapshot.get("metadata")
+        if not isinstance(metadata, dict) or metadata.get("kind") != "bbox":
+            continue
+        bbox_data = metadata.get("bboxData")
+        if not isinstance(bbox_data, dict):
+            continue
+        boxes = bbox_data.get("boxes")
+        canvas = bbox_data.get("canvas")
+        if not isinstance(boxes, list) or not isinstance(canvas, dict):
+            continue
+
+        guides.append(
+            {
+                "version": 1,
+                "cardId": snapshot.get("id"),
+                "title": snapshot.get("displayTitle") or snapshot.get("name"),
+                "canvas": canvas,
+                "source": bbox_data.get("source"),
+                "boxes": [
+                    {
+                        "id": box.get("id"),
+                        "label": box.get("label"),
+                        "normalized": {
+                            "x": box.get("x"),
+                            "y": box.get("y"),
+                            "width": box.get("width"),
+                            "height": box.get("height"),
+                        },
+                        "ideogramBbox": box.get("ideogramBbox"),
+                    }
+                    for box in boxes
+                    if isinstance(box, dict)
+                ],
+            }
+        )
+    return guides
+
+
 def build_codex_prompt(payload: dict, run_dir: Path, output_dir: Path, selected_images: list[Path]) -> str:
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
     prompt = first_text(
@@ -332,6 +393,12 @@ def build_codex_prompt(payload: dict, run_dir: Path, output_dir: Path, selected_
     )
 
     selected_image_lines = "\n".join(f"- {path}" for path in selected_images) or "- none"
+    composition_guides = selected_composition_guides(payload)
+    composition_guides_json = (
+        json.dumps(composition_guides, ensure_ascii=False, indent=2)
+        if composition_guides
+        else "[]"
+    )
     requested_image_count = infer_requested_image_count(prompt, params)
     count_requirement = (
         f"Create exactly {requested_image_count} separate final image files for this request."
@@ -359,9 +426,13 @@ Resolution:
 Selected image inputs available as --image attachments:
 {selected_image_lines}
 
+Selected composition guides from bbox cards:
+{composition_guides_json}
+
 Output requirements:
 - Use the imagegen skill's default built-in image generation/editing path.
 - If image attachments are present, treat them as local filesystem inputs from selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
+- If selected composition guides are present, treat them as the authoritative JSON layout contract. Use box labels mentioned in the user request, such as "box1" or "Box 1", to assign the described subjects or background regions to the matching boxes. Preserve normalized box placement and relative scale as closely as the chosen image model allows.
 - {count_requirement}
 - For storyboards, sequences, numbered lists, asset packs, frames, variants, or options, save each item as its own separate image file. Do not combine separate requested items into a collage, contact sheet, grid, comic page, or single composite unless the user explicitly asks for one combined image.
 - {resolution_requirement}

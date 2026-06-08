@@ -1,6 +1,6 @@
-export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive" | "note";
+export type CardKind = "generic" | "image" | "video" | "audio" | "diagnostic" | "artifact" | "interactive" | "note" | "bbox";
 
-export type CardAspectRatio = "1:1" | "4:3" | "16:9" | "9:16" | "auto";
+export type CardAspectRatio = "1:1" | "3:2" | "4:3" | "16:9" | "21:9" | "2:3" | "3:4" | "9:16" | "auto";
 
 export type CardMetadata = {
   [key: string]: unknown;
@@ -259,6 +259,7 @@ export type SelectedCardSnapshot = {
   sourceSkillId?: string | null;
   sourceActionId?: string | null;
   metadata?: CardMetadata;
+  structuredData?: Record<string, unknown>;
 };
 
 export type AgentAttachmentKind = "image" | "video" | "audio" | "text" | "json" | "pdf" | "artifact";

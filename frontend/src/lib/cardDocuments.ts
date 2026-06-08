@@ -11,6 +11,16 @@ import type {
   SelectedCardSnapshot,
 } from "../types";
 import type { ImportedArtifact } from "../api/artifacts";
+import {
+  bboxCardHtml,
+  bboxDescription,
+  getBboxData,
+  IDEOGRAM_ASPECT_DIMENSIONS,
+  isBboxSourceDocument,
+  normalizeBboxData,
+  type BboxCardData,
+  type IdeogramAspectRatio,
+} from "./bboxCards";
 
 export const CARD_DEFAULT_WIDTH = 256;
 export const NOTE_DEFAULT_WIDTH = 300;
@@ -36,6 +46,7 @@ const DOWNLOAD_EXTENSION_BY_KIND: Partial<Record<CardKind, string>> = {
   audio: "wav",
   diagnostic: "txt",
   generic: "html",
+  bbox: "html",
   image: "png",
   interactive: "html",
   note: "html",
@@ -103,7 +114,7 @@ export function getCardPreviewAspectRatioCss(document?: CardDocument): string {
 }
 
 export function getCardHeight(width: number, document?: CardDocument, frame?: CanvasNodeFrame) {
-  if (document?.metadata?.kind === "note") {
+  if (document?.metadata?.kind === "note" || document?.metadata?.kind === "bbox") {
     return Math.max(NOTE_MIN_HEIGHT, frame?.height ?? width / getCardPreviewAspectRatioValue(document));
   }
 
@@ -519,6 +530,89 @@ export function createNoteCardDocument(text = ""): CardDocument {
   };
 }
 
+export function createBboxCardDocument({
+  aspectRatio = "1:1",
+  height,
+  sourceDocument,
+  width,
+}: {
+  aspectRatio?: IdeogramAspectRatio;
+  height?: number;
+  sourceDocument?: CardDocument;
+  width?: number;
+} = {}): CardDocument {
+  const id = `card_bbox_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`;
+  const title = "BBox";
+  const presetDimensions = IDEOGRAM_ASPECT_DIMENSIONS[aspectRatio];
+  const sourceMetadata = sourceDocument?.metadata;
+  const source = isBboxSourceDocument(sourceDocument) && sourceMetadata?.kind
+    ? {
+      cardId: sourceDocument.id,
+      title: getCardDisplayTitle(sourceDocument),
+      kind: sourceMetadata.kind,
+      artifactUrl: typeof sourceMetadata.artifactUrl === "string" ? sourceMetadata.artifactUrl : undefined,
+      width: sourceMetadata.width,
+      height: sourceMetadata.height,
+    }
+    : null;
+  const bboxData = normalizeBboxData({
+    version: 1,
+    canvas: {
+      aspectRatio,
+      width: width ?? presetDimensions.width,
+      height: height ?? presetDimensions.height,
+    },
+    source,
+    boxes: [],
+  });
+
+  return {
+    id,
+    name: title,
+    prompt: bboxDescription(bboxData),
+    html: bboxCardHtml(bboxData, title),
+    sourceSkillId: "bbox",
+    sourceActionId: "canvas-bbox",
+    metadata: {
+      kind: "bbox",
+      title,
+      description: bboxDescription(bboxData),
+      createdAt: new Date().toISOString(),
+      tags: ["bbox", "ideogram"],
+      capabilities: ["bbox", "ideogram"],
+      preferredAspectRatio: bboxData.canvas.aspectRatio,
+      width: bboxData.canvas.width,
+      height: bboxData.canvas.height,
+      playableMedia: false,
+      bboxData,
+      sourceCardId: source?.cardId,
+      sourceArtifactUrl: source?.artifactUrl,
+    },
+  };
+}
+
+export function updateBboxCardDocument(document: CardDocument, nextBboxData: BboxCardData): CardDocument {
+  const bboxData = normalizeBboxData(nextBboxData);
+  const title = getCardEditableTitle(document) || "BBox";
+  const description = bboxDescription(bboxData);
+
+  return {
+    ...document,
+    prompt: description,
+    html: bboxCardHtml(bboxData, title),
+    metadata: {
+      ...document.metadata,
+      kind: "bbox",
+      title,
+      description,
+      preferredAspectRatio: bboxData.canvas.aspectRatio,
+      width: bboxData.canvas.width,
+      height: bboxData.canvas.height,
+      bboxData,
+    },
+  };
+}
+
 export function updateNoteCardDocumentText(document: CardDocument, text: string): CardDocument {
   const title = getCardEditableTitle(document);
 
@@ -596,7 +690,11 @@ export function assignUniqueDisplayTitles(
 
 export function renameCardDocument(document: CardDocument, title: string): CardDocument {
   const htmlTitle = title.trim() || "Nota";
-  const html = document.metadata?.kind === "note" ? noteCardHtml(htmlTitle, document.prompt) : document.html;
+  const html = document.metadata?.kind === "note"
+    ? noteCardHtml(htmlTitle, document.prompt)
+    : document.metadata?.kind === "bbox"
+      ? bboxCardHtml(getBboxData(document), title.trim() || "BBox")
+      : document.html;
 
   return {
     ...document,
@@ -884,6 +982,34 @@ function createUnavailablePreview(reason: Extract<SelectedCardPreview, { omitted
   };
 }
 
+function createSelectedCardStructuredData(document: CardDocument): SelectedCardSnapshot["structuredData"] | undefined {
+  if (document.metadata?.kind !== "bbox") return undefined;
+
+  const bboxData = getBboxData(document);
+
+  return {
+    kind: "bbox",
+    title: getCardDisplayTitle(document),
+    bboxData,
+    compositionGuide: {
+      version: 1,
+      canvas: bboxData.canvas,
+      source: bboxData.source,
+      boxes: bboxData.boxes.map((box) => ({
+        id: box.id,
+        label: box.label,
+        normalized: {
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height,
+        },
+        ideogramBbox: box.ideogramBbox,
+      })),
+    },
+  };
+}
+
 export async function createSelectedCardSnapshots(
   documents: CardDocument[],
   selectedCardIds: string[],
@@ -912,12 +1038,13 @@ export async function createSelectedCardSnapshots(
       name: document.name,
       displayTitle: getCardDisplayTitle(document),
       prompt: document.prompt,
-      html: document.html,
-      preview,
-      mediaAssets: extractSelectedCardMediaAssets(document.html),
+      html: document.metadata?.kind === "bbox" ? "" : document.html,
+      preview: document.metadata?.kind === "bbox" ? createUnavailablePreview("capture-unavailable") : preview,
+      mediaAssets: document.metadata?.kind === "bbox" ? [] : extractSelectedCardMediaAssets(document.html),
       sourceSkillId: document.sourceSkillId,
       sourceActionId: document.sourceActionId,
       metadata: document.metadata,
+      structuredData: createSelectedCardStructuredData(document),
     });
   }
 
@@ -950,13 +1077,14 @@ export function clampCanvasNodeFrame(
   const maxWidth = Math.min(CARD_MAX_WIDTH, Math.max(CARD_MIN_WIDTH, canvasWidth - CANVAS_PADDING * 2));
   const width = Math.min(Math.max(frame.width, CARD_MIN_WIDTH), maxWidth);
   const isNote = document?.metadata?.kind === "note";
-  const maxHeight = isNote ? NOTE_MAX_HEIGHT : Math.max(NOTE_MIN_HEIGHT, canvasHeight - CANVAS_PADDING * 2);
+  const isBbox = document?.metadata?.kind === "bbox";
+  const maxHeight = isNote || isBbox ? NOTE_MAX_HEIGHT : Math.max(NOTE_MIN_HEIGHT, canvasHeight - CANVAS_PADDING * 2);
   const unclampedHeight = getCardHeight(width, document, frame);
-  const height = isNote
+  const height = isNote || isBbox
     ? Math.min(Math.max(unclampedHeight, NOTE_MIN_HEIGHT), maxHeight)
     : unclampedHeight;
   const maxX = Math.max(0, canvasWidth - width - CANVAS_PADDING);
-  const maxY = isNote && height > canvasHeight - CANVAS_PADDING
+  const maxY = (isNote || isBbox) && height > canvasHeight - CANVAS_PADDING
     ? Math.max(0, frame.y)
     : Math.max(0, canvasHeight - height - CANVAS_PADDING);
 
@@ -966,7 +1094,7 @@ export function clampCanvasNodeFrame(
     width,
   };
 
-  if (isNote) {
+  if (isNote || isBbox) {
     return {
       ...clampedFrame,
       height,

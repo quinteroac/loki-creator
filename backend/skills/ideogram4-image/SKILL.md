@@ -117,6 +117,16 @@ Pass these fields in `paramsJson`:
 
 Optional fields include `styleColors`, `seed`, `cfg`, `steps`, `mu`, and `std`.
 
+`styleColors` is strict:
+
+- Use only concrete hex colors in `#RRGGBB` format, for example `#0B0F14`.
+- Do not use CSS color names, natural-language color descriptions, `rgb()`,
+  `rgba()`, shorthand hex such as `#FFF`, or alpha hex values.
+- If the user gives named colors, convert them to concrete `#RRGGBB` values
+  before invoking the action.
+- If you cannot choose concrete hex values confidently, omit `styleColors`
+  entirely rather than passing invalid values.
+
 Object element:
 
 ```json
