@@ -6,6 +6,7 @@ import {
   buildAgentPrompt,
   directPiToolForSkill,
   findNextSkillQuestion,
+  formatAvailableAgentModels,
   mergeRequestAnswers,
   parseSkillParamsJson,
   selectSkillsForAgent,
@@ -82,6 +83,27 @@ describe("agent bridge contracts", () => {
   test("direct Pi tool routing is explicit", () => {
     expect(directPiToolForSkill(makeSkill({ id: "imagegen" }))).toBeUndefined();
     expect(directPiToolForSkill(makeSkill({ id: "comfy-image-generate" }))).toBeUndefined();
+  });
+
+  test("agent model list hides providers reserved for direct generation flows", () => {
+    expect(formatAvailableAgentModels([
+      { id: "bytedance/seedance-2.0-fast", provider: "openrouter", name: "Seedance 2.0 Fast" },
+      { id: "gpt-5.4-mini", provider: "openai-codex", name: "GPT-5.4 mini" },
+      { id: "grok-build", provider: "pi-grok-build", name: "Grok Build" },
+    ])).toEqual([
+      {
+        id: "gpt-5.4-mini",
+        provider: "openai-codex",
+        name: "GPT-5.4 mini",
+        label: "GPT-5.4 mini (openai-codex)",
+      },
+      {
+        id: "grok-build",
+        provider: "pi-grok-build",
+        name: "Grok Build",
+        label: "Grok Build (pi-grok-build)",
+      },
+    ]);
   });
 
   test("merges request answers without dropping explicit collected args", () => {
@@ -173,6 +195,35 @@ describe("agent bridge contracts", () => {
           source: "selected-card-media-asset",
         },
       ]);
+      const prompt = buildAgentPrompt({
+        prompt: "edit",
+        model: "GPT-5.4 mini (openai-codex)",
+        skills: ["imagegen"],
+        selectedCards: ["card_1"],
+        context: {
+          localMediaReferences: [
+            {
+              kind: "image",
+              artifactUrl,
+              path: artifactPath,
+              source: "selected-card-media-asset",
+              cardId: "card_1",
+            },
+          ],
+        },
+        selectedCardSnapshots: [
+          {
+            id: "card_1",
+            name: "input",
+            displayTitle: "Input",
+            prompt: "",
+            html: "<img />",
+            mediaAssets: [{ kind: "image", src: artifactUrl }],
+          },
+        ],
+      }, [makeSkill({ id: "imagegen", name: "imagegen" })], "pi-tools");
+      expect(prompt).toContain(`path=${artifactPath}`);
+      expect(prompt).toContain(`artifactUrl=${artifactUrl}`);
       expect(() => resolveLocalArtifactPath("data:image/png;base64,Zm9v")).toThrow("must be a Loki artifact URL");
     } finally {
       await rm(resolve(repoRoot, ".loki/test-agent-bridge-media"), { recursive: true, force: true });
