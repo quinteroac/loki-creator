@@ -1,8 +1,15 @@
 import { ArrowUp, Check, Cpu, Layers, Paperclip, Search, Sparkles, Square, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent, KeyboardEvent, RefObject } from "react";
 import { formatFileSize } from "../lib/attachments";
 import { getCardDisplaySubtitle, getCardDisplayTitle } from "../lib/cardDocuments";
+import {
+  filterCardMentionOptions,
+  getActiveCardMention,
+  insertCardMention,
+  resolveMentionedCardIds,
+  type ActiveCardMention,
+} from "../lib/cardMentions";
 import type {
   AgentAttachment,
   AgentModel,
@@ -73,6 +80,7 @@ type AgentComposerProps = {
   onInstructionKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onQuestionOption: (answer: string) => void;
   onRemoveAttachment: (attachmentId: string) => void;
+  onReferencedCardsChange: (cardIds: string[]) => void;
   onGrokImageAspectRatioChange: (aspectRatio: GrokImageAspectRatio) => void;
   onGrokImageResolutionChange: (resolution: GrokImageResolution) => void;
   onGrokToolChange: (tool: GrokTool) => void;
@@ -148,6 +156,7 @@ export function AgentComposer({
   onInstructionKeyDown,
   onQuestionOption,
   onRemoveAttachment,
+  onReferencedCardsChange,
   onGrokImageAspectRatioChange,
   onGrokImageResolutionChange,
   onGrokToolChange,
@@ -181,6 +190,12 @@ export function AgentComposer({
 }: AgentComposerProps) {
   const [modelSearch, setModelSearch] = useState("");
   const [isPromptFocused, setIsPromptFocused] = useState(false);
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [activeMention, setActiveMention] = useState<ActiveCardMention | null>(null);
+  const [activeMentionOptionIndex, setActiveMentionOptionIndex] = useState(0);
+  const composerWrapRef = useRef<HTMLElement | null>(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const mentionOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const filteredModels = useMemo(() => {
     const query = modelSearch.trim().toLowerCase();
 
@@ -190,6 +205,11 @@ export function AgentComposer({
       [model.label, model.name, model.provider, model.id].some((value) => value.toLowerCase().includes(query)),
     );
   }, [availableModels, modelSearch]);
+  const mentionOptions = useMemo(
+    () => activeMention ? filterCardMentionOptions(canvasNodes, activeMention.query) : [],
+    [activeMention, canvasNodes],
+  );
+  const isMentionPickerOpen = activeMention !== null;
 
   useEffect(() => {
     if (openMenu !== "model-picker") {
@@ -197,8 +217,126 @@ export function AgentComposer({
     }
   }, [openMenu]);
 
+  useEffect(() => {
+    setActiveMentionOptionIndex(0);
+  }, [activeMention?.query]);
+
+  useEffect(() => {
+    if (activeMentionOptionIndex < mentionOptions.length) return;
+
+    setActiveMentionOptionIndex(Math.max(0, mentionOptions.length - 1));
+  }, [activeMentionOptionIndex, mentionOptions.length]);
+
+  useEffect(() => {
+    mentionOptionRefs.current = mentionOptionRefs.current.slice(0, mentionOptions.length);
+  }, [mentionOptions.length]);
+
+  useEffect(() => {
+    if (!isMentionPickerOpen) return;
+
+    mentionOptionRefs.current[activeMentionOptionIndex]?.scrollIntoView({
+      block: "nearest",
+    });
+  }, [activeMentionOptionIndex, isMentionPickerOpen]);
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+
+      if (!(target instanceof Node) || composerWrapRef.current?.contains(target)) return;
+
+      promptRef.current?.blur();
+      setIsPromptFocused(false);
+      setIsPromptExpanded(false);
+      setActiveMention(null);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, []);
+
+  function syncActiveMention(nextInstruction: string, cursorIndex: number) {
+    const mention = getActiveCardMention(nextInstruction, cursorIndex);
+
+    setActiveMention(mention);
+    if (mention) {
+      setIsPromptExpanded(true);
+      setOpenMenu(null);
+    }
+  }
+
+  function changeInstruction(nextInstruction: string, cursorIndex: number) {
+    setIsPromptExpanded(true);
+    onInstructionChange(nextInstruction);
+    onReferencedCardsChange(resolveMentionedCards(nextInstruction));
+    syncActiveMention(nextInstruction, cursorIndex);
+  }
+
+  function resolveMentionedCards(nextInstruction: string) {
+    return resolveMentionedCardIds(canvasNodes, nextInstruction);
+  }
+
+  function getNormalizedCardTitle(card: GeneratedCard) {
+    return getCardDisplayTitle(card).trim().replace(/\s+/g, " ").toLowerCase();
+  }
+
+  function selectMentionOption(optionIndex: number) {
+    if (!activeMention || mentionOptions.length === 0) return;
+
+    const option = mentionOptions[Math.max(0, Math.min(optionIndex, mentionOptions.length - 1))];
+    const nextInstruction = insertCardMention(instruction, activeMention, option.title);
+    const selectedTitle = getNormalizedCardTitle(option.card);
+    const resolvedCardIds = resolveMentionedCards(nextInstruction.text).filter((cardId) => {
+      const card = canvasNodes.find((candidate) => candidate.id === cardId);
+
+      return !card || getNormalizedCardTitle(card) !== selectedTitle;
+    });
+
+    onInstructionChange(nextInstruction.text);
+    onReferencedCardsChange([option.card.id, ...resolvedCardIds]);
+    setActiveMention(null);
+    window.requestAnimationFrame(() => {
+      const prompt = promptRef.current;
+
+      prompt?.focus();
+      prompt?.setSelectionRange(nextInstruction.cursorIndex, nextInstruction.cursorIndex);
+      setIsPromptExpanded(true);
+    });
+  }
+
+  function handlePromptKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (isMentionPickerOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveMentionOptionIndex((currentIndex) =>
+          mentionOptions.length === 0 ? 0 : (currentIndex + 1) % mentionOptions.length,
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveMentionOptionIndex((currentIndex) =>
+          mentionOptions.length === 0 ? 0 : (currentIndex - 1 + mentionOptions.length) % mentionOptions.length,
+        );
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && mentionOptions.length > 0) {
+        event.preventDefault();
+        selectMentionOption(activeMentionOptionIndex);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setActiveMention(null);
+        return;
+      }
+    }
+
+    onInstructionKeyDown(event);
+  }
+
   return (
-    <section className="composer-wrap" aria-label="Agent instructions">
+    <section ref={composerWrapRef} className="composer-wrap" aria-label="Agent instructions">
       {openMenu === "agents" && (
         <div className="popover" data-popover aria-label="Agent options">
           <button type="button" onClick={onCreateAgent}>
@@ -327,7 +465,10 @@ export function AgentComposer({
         </div>
       )}
 
-      <form className={`composer ${isPromptFocused ? "composer-prompt-focused" : ""}`} onSubmit={onSubmit}>
+      <form
+        className={`composer ${isPromptFocused ? "composer-prompt-active" : ""} ${isPromptExpanded ? "composer-prompt-expanded" : ""}`}
+        onSubmit={onSubmit}
+      >
         <div className="composer-main">
           {attachments.length > 0 && (
             <div className="attachment-tray" aria-label="Attached files">
@@ -352,17 +493,66 @@ export function AgentComposer({
           )}
 
           <textarea
+            ref={promptRef}
             className="composer-prompt"
             name="instruction"
             rows={1}
             value={instruction}
-            onChange={(event) => onInstructionChange(event.target.value)}
-            onFocus={() => setIsPromptFocused(true)}
-            onBlur={() => setIsPromptFocused(false)}
-            onKeyDown={onInstructionKeyDown}
+            onChange={(event) => changeInstruction(event.target.value, event.target.selectionStart)}
+            onClick={(event) => syncActiveMention(event.currentTarget.value, event.currentTarget.selectionStart)}
+            onFocus={(event) => {
+              setIsPromptFocused(true);
+              setIsPromptExpanded(true);
+              syncActiveMention(event.currentTarget.value, event.currentTarget.selectionStart);
+            }}
+            onBlur={() => {
+              setIsPromptFocused(false);
+              setIsPromptExpanded(false);
+              setActiveMention(null);
+            }}
+            onKeyDown={handlePromptKeyDown}
             placeholder={pendingQuestion ? "Answer the agent..." : "Write to imagine"}
             aria-label={pendingQuestion ? "Answer for the agent" : "Instruction for the agent"}
+            aria-expanded={isMentionPickerOpen}
+            aria-controls={isMentionPickerOpen ? "card-mention-picker" : undefined}
           />
+
+          {isMentionPickerOpen && (
+            <div
+              id="card-mention-picker"
+              className="popover cards-popover mention-popover"
+              aria-label="Card mentions"
+            >
+              <div className="picker-list">
+                {mentionOptions.map((option, index) => {
+                  const subtitle = getCardDisplaySubtitle(option.card);
+                  const isSelected = index === activeMentionOptionIndex;
+
+                  return (
+                    <button
+                      ref={(element) => {
+                        mentionOptionRefs.current[index] = element;
+                      }}
+                      className={`picker-option card-option ${isSelected ? "selected" : ""}`}
+                      key={option.card.id}
+                      type="button"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        selectMentionOption(index);
+                      }}
+                    >
+                      <span>
+                        <strong>{option.title}</strong>
+                        {subtitle && <small>{subtitle}</small>}
+                      </span>
+                      {isSelected && <Check size={14} strokeWidth={2} />}
+                    </button>
+                  );
+                })}
+                {mentionOptions.length === 0 && <p className="picker-empty">No matching cards</p>}
+              </div>
+            </div>
+          )}
 
           <div className="composer-actions">
             <input ref={fileInputRef} type="file" hidden multiple onChange={onAttachFiles} />

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
+    "test:mentions": "bun run src/lib/cardMentions.test.ts",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

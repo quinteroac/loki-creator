@@ -37,6 +37,7 @@ import {
   toggleExclusiveAutoSelection,
   toggleMultiSelection,
 } from "./lib/selection";
+import { mergeSelectedCardIds, resolveMentionedCardIds } from "./lib/cardMentions";
 import type {
   AgentAttachment,
   AgentChatMessage,
@@ -144,6 +145,7 @@ export function App() {
   const [geminiImageResolution, setGeminiImageResolution] = useState<GeminiImageResolution>("1024x1024");
   const [geminiImageModel, setGeminiImageModel] = useState<GeminiImageModel>("Gemini 3.5 Flash (Medium)");
   const [selectedCards, setSelectedCards] = useState<string[]>([]);
+  const [mentionedCardIds, setMentionedCardIds] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AgentAttachment[]>([]);
   const [latestAgentResponse, setLatestAgentResponse] = useState<AgentRunResponse | null>(null);
   const [agentChatMessages, setAgentChatMessages] = useState<AgentChatMessage[]>([]);
@@ -378,10 +380,37 @@ export function App() {
     [cardDocuments, canvasNodes],
   );
   const hasUnsavedProjectChanges = currentWorkspaceSnapshot !== savedWorkspaceSnapshot;
-  const selectedDocument = cardDocuments.find((document) => document.id === selectedCards[0]);
   const filteredSkills = filterBySearch(availableSkills, skillSearch);
   const skillButtonLabel = selectedSkills[0] ?? "Auto";
   const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
+
+  const syncReferencedCards = useCallback((cardIds: string[]) => {
+    const nextMentionedCardIds = cardIds.filter((cardId, index) => cardIds.indexOf(cardId) === index);
+
+    setMentionedCardIds((currentMentionedCardIds) => {
+      setSelectedCards((currentSelectedCards) =>
+        mergeSelectedCardIds(
+          currentSelectedCards.filter((cardId) => !currentMentionedCardIds.includes(cardId)),
+          nextMentionedCardIds,
+        ),
+      );
+
+      return nextMentionedCardIds;
+    });
+  }, []);
+
+  useEffect(() => {
+    syncReferencedCards(resolveMentionedCardIds(cardDocuments, instruction));
+  }, [cardDocuments, syncReferencedCards]);
+
+  function setComposerInstruction(nextInstruction: string) {
+    setInstruction(nextInstruction);
+    syncReferencedCards(resolveMentionedCardIds(cardDocuments, nextInstruction));
+  }
+
+  function getEffectiveSelectedCardIds(prompt: string) {
+    return mergeSelectedCardIds(selectedCards, resolveMentionedCardIds(cardDocuments, prompt));
+  }
 
   useEffect(() => {
     if (!hasUnsavedProjectChanges) return;
@@ -657,7 +686,7 @@ export function App() {
       setPendingConversationId(agentRun.conversationId);
       setPendingCollectedArgs(agentRun.collectedArgs ?? {});
       setPendingAgentRequest(baseRequest);
-      setInstruction("");
+      setComposerInstruction("");
       setStatus("Answer the agent question to continue.");
       return;
     }
@@ -690,7 +719,7 @@ export function App() {
       addCardsFromRun(completedRun);
     }
 
-    setInstruction("");
+    setComposerInstruction("");
     setAttachments([]);
     appendAgentStreamEvent({
       type: "done",
@@ -701,25 +730,27 @@ export function App() {
   }
 
   async function buildAgentRequest(prompt: string): Promise<AgentRunRequest> {
+    const effectiveSelectedCards = getEffectiveSelectedCardIds(prompt);
     const selectedCardSnapshots = await createSelectedCardSnapshots(
       cardDocuments,
-      selectedCards,
+      effectiveSelectedCards,
       previewCapturesRef.current,
     );
+    const effectiveSelectedDocument = cardDocuments.find((document) => document.id === effectiveSelectedCards[0]);
 
     return {
       agentId: "base-agent",
       prompt,
       model: selectedModel,
       skills: selectedSkills,
-      selectedCards,
+      selectedCards: effectiveSelectedCards,
       selectedCardSnapshots,
       attachments,
       context: {
         skills: selectedSkills,
         model: selectedModel,
         agentId: "base-agent",
-        selectedElement: selectedDocument ? getCardDisplayTitle(selectedDocument) : null,
+        selectedElement: effectiveSelectedDocument ? getCardDisplayTitle(effectiveSelectedDocument) : null,
         attachments,
       },
     };
@@ -749,7 +780,7 @@ export function App() {
 
     try {
       setPendingQuestion(null);
-      setInstruction("");
+      setComposerInstruction("");
       setStatus("Continuing agent...");
       startAgentRunStream(streamId);
       const agentRun = await createAgentRun(request);
@@ -824,9 +855,10 @@ export function App() {
           toolName: activity.title,
           message: "Resolving selected card artifacts.",
         });
+        const effectiveSelectedCards = getEffectiveSelectedCardIds(text);
         const selectedCardSnapshots = await createSelectedCardSnapshots(
           cardDocuments,
-          selectedCards,
+          effectiveSelectedCards,
           previewCapturesRef.current,
         );
         appendAgentStreamEvent({
@@ -891,7 +923,7 @@ export function App() {
                     attachments,
                   });
         addGeneratedCards(result.cards);
-        setInstruction("");
+        setComposerInstruction("");
         setAttachments([]);
         appendAgentStreamEvent({
           type: "tool_end",
@@ -1021,7 +1053,11 @@ export function App() {
   }
 
   function toggleCard(cardId: string) {
-    setSelectedCards((currentCards) => toggleMultiSelection(currentCards, cardId));
+    setSelectedCards((currentCards) =>
+      mentionedCardIds.includes(cardId) && currentCards.includes(cardId)
+        ? currentCards
+        : toggleMultiSelection(currentCards, cardId),
+    );
   }
 
   function toggleCanvasNode(nodeId: string) {
@@ -1134,7 +1170,7 @@ export function App() {
       return;
     }
 
-    setInstruction(prompt);
+    setComposerInstruction(prompt);
     setPendingQuestion(null);
     setPendingConversationId(null);
     setPendingCollectedArgs({});
@@ -1512,9 +1548,10 @@ export function App() {
         onComfyVideoProfileChange={setComfyVideoProfile}
         onGeminiImageModelChange={setGeminiImageModel}
         onGeminiImageResolutionChange={setGeminiImageResolution}
-        onInstructionChange={setInstruction}
+        onInstructionChange={setComposerInstruction}
         onInstructionKeyDown={handleInstructionKeyDown}
         onQuestionOption={answerPendingQuestion}
+        onReferencedCardsChange={syncReferencedCards}
         onRemoveAttachment={removeAttachment}
         grokImageAspectRatio={grokImageAspectRatio}
         grokImageResolution={grokImageResolution}
