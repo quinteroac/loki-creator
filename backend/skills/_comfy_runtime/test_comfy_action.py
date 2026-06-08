@@ -12,6 +12,295 @@ import comfy_action
 
 
 class ComfyActionTest(unittest.TestCase):
+    def test_ideogram4_builds_structured_generate_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "ideogram4-image",
+                    "prompt": "Premium cinematic poster for a translucent amber cassette player",
+                    "params": {
+                        "mode": "t2i",
+                        "qualityProfile": "Quality",
+                        "aspectRatio": "21:9",
+                        "styleAesthetics": "premium cinematic advertising, high detail",
+                        "styleLighting": "soft studio key light with warm rim light",
+                        "styleMedium": "photograph",
+                        "stylePhoto": "commercial product photography",
+                        "styleColors": ["#0B0F14", "#F4D06F"],
+                        "background": "dark glossy studio surface",
+                        "objects": [
+                            {
+                                "bbox": [180, 300, 850, 760],
+                                "description": "translucent amber cassette player, centered hero object",
+                            }
+                        ],
+                        "texts": [
+                            {
+                                "bbox": [70, 180, 180, 820],
+                                "text": "RETRO WAVE",
+                                "description": "large readable condensed headline above product",
+                            }
+                        ],
+                        "seed": 123,
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "ideogram4-generate"])
+        self.assertEqual(command[command.index("--width") + 1], "1344")
+        self.assertEqual(command[command.index("--height") + 1], "576")
+        self.assertEqual(command[command.index("--steps") + 1], "48")
+        self.assertEqual(command[command.index("--mu") + 1], "0.0")
+        self.assertEqual(command[command.index("--std") + 1], "1.5")
+        self.assertEqual(command[command.index("--style-photo") + 1], "commercial product photography")
+        self.assertEqual(command[command.index("--output-json") + 1], str(Path(tmpdir) / "outputs" / "ideogram-prompt.json"))
+        self.assertIn("--style-color", command)
+        self.assertEqual(command[command.index("--object") + 1], "180,300,850,760|translucent amber cassette player, centered hero object")
+        self.assertEqual(command[command.index("--text") + 1], "70,180,180,820|RETRO WAVE|large readable condensed headline above product")
+        self.assertEqual(command[command.index("--seed") + 1], "123")
+        self.assertIn('"imagegen.ideogram4-generate": "ideogram4-fp8"', config)
+
+    def test_ideogram4_turbo_profile_uses_turbo_params(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "ideogram4-image",
+                    "prompt": "Graphic badge logo",
+                    "params": {
+                        "mode": "t2i",
+                        "qualityProfile": "Turbo",
+                        "aspectRatio": "1:1",
+                        "styleAesthetics": "bold clean graphic design",
+                        "styleLighting": "flat even lighting",
+                        "styleMedium": "illustration",
+                        "styleArtStyle": "vector poster art",
+                        "background": "solid red field",
+                        "objects": [{"bbox": "180,180,820,820", "description": "centered circular badge emblem"}],
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[command.index("--steps") + 1], "12")
+        self.assertEqual(command[command.index("--mu") + 1], "0.5")
+        self.assertEqual(command[command.index("--std") + 1], "1.75")
+        self.assertEqual(command[command.index("--style-art-style") + 1], "vector poster art")
+
+    def test_ideogram4_supports_requested_aspect_ratios(self) -> None:
+        expected = {
+            "1:1": ("1024", "1024"),
+            "3:2": ("1248", "832"),
+            "4:3": ("1152", "864"),
+            "16:9": ("1360", "768"),
+            "21:9": ("1344", "576"),
+            "2:3": ("832", "1248"),
+            "3:4": ("864", "1152"),
+            "9:16": ("768", "1360"),
+        }
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            for ratio, dimensions in expected.items():
+                with self.subTest(ratio=ratio):
+                    command, _cwd = comfy_action.build_cli_command(
+                        {
+                            "skillId": "ideogram4-image",
+                            "prompt": "Graphic poster",
+                            "params": {
+                                "mode": "t2i",
+                                "qualityProfile": "Default",
+                                "aspectRatio": ratio,
+                                "styleAesthetics": "bold clean graphic design",
+                                "styleLighting": "flat even lighting",
+                                "styleMedium": "illustration",
+                                "styleArtStyle": "poster art",
+                                "background": "plain background",
+                                "objects": [{"bbox": [180, 180, 820, 820], "description": "centered poster subject"}],
+                            },
+                        },
+                        Path(tmpdir) / ratio.replace(":", "-"),
+                        media={"image": [], "audio": [], "video": []},
+                    )
+                    self.assertEqual(command[command.index("--width") + 1], dimensions[0])
+                    self.assertEqual(command[command.index("--height") + 1], dimensions[1])
+
+    def test_ideogram4_does_not_apply_runtime_nsfw_filter(self) -> None:
+        prompt = "Adult erotic editorial portrait in a private studio"
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "ideogram4-image",
+                    "prompt": prompt,
+                    "params": {
+                        "mode": "t2i",
+                        "qualityProfile": "Default",
+                        "aspectRatio": "1:1",
+                        "styleAesthetics": "intimate editorial photography, high detail",
+                        "styleLighting": "soft warm studio lighting",
+                        "styleMedium": "photograph",
+                        "stylePhoto": "editorial portrait photography",
+                        "background": "minimal private studio set",
+                        "objects": [{"bbox": [120, 180, 940, 820], "description": "adult portrait subject, centered editorial composition"}],
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[command.index("--prompt") + 1], prompt)
+
+    def test_ideogram4_r2i_requires_local_image_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "r2i requires"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "ideogram4-image",
+                        "prompt": "Use the selected reference style",
+                        "params": {
+                            "mode": "r2i",
+                            "qualityProfile": "Default",
+                            "aspectRatio": "3:2",
+                            "styleAesthetics": "reference-informed style",
+                            "styleLighting": "soft light",
+                            "styleMedium": "photograph",
+                            "stylePhoto": "editorial photograph",
+                            "background": "studio background",
+                            "objects": [{"bbox": [100, 100, 900, 900], "description": "main referenced subject"}],
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
+    def test_ideogram4_rejects_invalid_bbox(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "y_min < y_max"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "ideogram4-image",
+                        "prompt": "Broken bbox",
+                        "params": {
+                            "mode": "t2i",
+                            "qualityProfile": "Default",
+                            "aspectRatio": "1:1",
+                            "styleAesthetics": "clean",
+                            "styleLighting": "soft",
+                            "styleMedium": "illustration",
+                            "styleArtStyle": "poster art",
+                            "background": "plain background",
+                            "objects": [{"bbox": [900, 100, 100, 900], "description": "invalid object"}],
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
+    def test_ideogram4_rejects_reference_language_in_model_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "standalone visual description"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "ideogram4-image",
+                        "prompt": "Crear una recreacion muy fiel de la imagen de referencia interpretada",
+                        "params": {
+                            "mode": "r2i",
+                            "qualityProfile": "Default",
+                            "aspectRatio": "3:4",
+                            "styleAesthetics": "faithful portrait, high detail",
+                            "styleLighting": "warm direct light",
+                            "styleMedium": "digital painting",
+                            "styleArtStyle": "semi-realistic fashion portrait",
+                            "background": "plain warm beige studio background",
+                            "objects": [{"bbox": [0, 0, 965, 1000], "description": "adult female fashion portrait face filling the frame"}],
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "input.png"], "audio": [], "video": []},
+                )
+
+    def test_ideogram4_rejects_reference_language_in_object_description(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "Remove reference-language phrase"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "ideogram4-image",
+                        "prompt": "Ultra close cropped warm glamour portrait",
+                        "params": {
+                            "mode": "r2i",
+                            "qualityProfile": "Default",
+                            "aspectRatio": "3:4",
+                            "styleAesthetics": "faithful portrait, high detail",
+                            "styleLighting": "warm direct light",
+                            "styleMedium": "digital painting",
+                            "styleArtStyle": "semi-realistic fashion portrait",
+                            "background": "plain warm beige studio background",
+                            "objects": [{"bbox": [0, 0, 965, 1000], "description": "mantener la referencia with adult female fashion portrait face filling the frame"}],
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "input.png"], "audio": [], "video": []},
+                )
+
+    def test_raw_result_uses_ideogram_prompt_json_file_as_card_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "image.png"
+            output.write_bytes(b"png")
+            prompt_json = Path(tmpdir) / "ideogram-prompt.json"
+            structured_prompt = '{"high_level_description":"Structured Ideogram prompt"}'
+            prompt_json.write_text(structured_prompt, encoding="utf-8")
+
+            raw = comfy_action.raw_result_from_cli(
+                {
+                    "kind": "image",
+                    "mode": "ideogram4-generate",
+                    "artifacts": [str(output)],
+                    "prompt_json": str(prompt_json),
+                },
+                ["comfy-imagegen", "ideogram4-generate"],
+                "High level prompt",
+            )
+
+        self.assertEqual(raw["artifacts"][0]["prompt"], structured_prompt)
+
+    def test_raw_result_reads_ideogram_prompt_json_from_command_option(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "image.png"
+            output.write_bytes(b"png")
+            prompt_json = Path(tmpdir) / "ideogram-prompt.json"
+            structured_prompt = '{"high_level_description":"Prompt from output json option"}'
+            prompt_json.write_text(structured_prompt, encoding="utf-8")
+
+            raw = comfy_action.raw_result_from_cli(
+                {
+                    "kind": "image",
+                    "mode": "ideogram4-generate",
+                    "artifacts": [str(output)],
+                },
+                ["comfy-imagegen", "ideogram4-generate", "--output-json", str(prompt_json)],
+                "High level prompt",
+            )
+
+        self.assertEqual(raw["artifacts"][0]["prompt"], structured_prompt)
+
+    def test_raw_result_falls_back_to_command_prompt_without_prompt_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = Path(tmpdir) / "image.png"
+            output.write_bytes(b"png")
+
+            raw = comfy_action.raw_result_from_cli(
+                {
+                    "kind": "image",
+                    "mode": "generate",
+                    "artifacts": [str(output)],
+                },
+                ["comfy-imagegen", "generate"],
+                "Normal prompt",
+            )
+
+        self.assertEqual(raw["artifacts"][0]["prompt"], "Normal prompt")
+
     def test_anima_generation_preserves_natural_language_prompt(self) -> None:
         original_prompt = "Una chica samurai en un bosque lluvioso con luz cinematica"
 

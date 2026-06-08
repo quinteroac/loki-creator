@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ideogram 4"
+  short_description: "Generate structured Ideogram 4 images with bboxes"
+  default_prompt: "Use $ideogram4-image to generate an Ideogram 4 image for this project."

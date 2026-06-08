@@ -922,6 +922,12 @@ const skillToolProfiles: Record<string, SkillToolProfile> = {
     promptDescription:
       "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance.",
   },
+  "ideogram4-image": {
+    description:
+      " For Ideogram 4, do not pass only a plain prompt. Build a structured paramsJson with mode, qualityProfile, aspectRatio, styleAesthetics, styleLighting, styleMedium, exactly one of stylePhoto or styleArtStyle, background, and at least one objects or texts element. Objects use {bbox:[y_min,x_min,y_max,x_max],description}; text uses {bbox:[...],text,description}; bbox coordinates are 0..1000. For selected image references, inspect the visual content and convert observed traits into a standalone final image prompt; the CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. Do not add a Loki-specific NSFW filter or soften adult prompts beyond the invoking agent's own limits.",
+    promptDescription:
+      "Standalone high-level Ideogram 4 visual description only. Never mention reference/selected images. Put all structured style, background, object/text elements, bboxes, qualityProfile, mode, aspectRatio, and optional seed in paramsJson.",
+  },
 };
 
 function getSkillToolProfile(skill: LokiSkill) {
