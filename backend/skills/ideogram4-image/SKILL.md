@@ -90,6 +90,12 @@ If `comfy-imagegen` or `comfy-models` is missing, use `comfy-tools-setup`. If
 the Ideogram 4 model files are missing, use `comfy-model-downloader` for
 `imagegen.ideogram4-generate`.
 
+The Loki runtime automatically applies
+`.loki/models/comfyui/loras/ideogram4/Realism_Engine_Ideogram4_beta.safetensors`
+at model strength `0.5` for every Ideogram 4 generation when that file exists.
+Other Ideogram 4 LoRAs may live in the same folder; they are not defaults unless
+the user explicitly asks for them.
+
 ## Modes
 
 - `t2i`: transform the user's text into an Ideogram 4 structured prompt.

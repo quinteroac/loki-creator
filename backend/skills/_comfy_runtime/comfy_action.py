@@ -99,6 +99,7 @@ VIDEO_RESOLUTION_DIMENSIONS = {
     },
 }
 WAN_FPS_VALUES = {16, 24}
+IDEOGRAM4_DEFAULT_LORA = "Realism_Engine_Ideogram4_beta.safetensors"
 MUSIC_QUALITY_DEFAULTS = {
     "steps": "64",
     "cfg": "7.0",
@@ -279,8 +280,8 @@ def normalize_video_mode(value: str) -> str:
         "txt2vid": "t2v",
         "image-to-video": "i2v",
         "img2vid": "i2v",
-        "reference-to-video": "i2v",
-        "reference-image-to-video": "i2v",
+        "reference-to-video": "r2v",
+        "reference-image-to-video": "r2v",
         "image-audio-to-video": "ia2av",
         "image-plus-audio-to-video": "ia2av",
         "image-and-audio-to-video": "ia2av",
@@ -581,6 +582,13 @@ def is_wan22_s2v_profile(model_profile: str) -> bool:
     }
 
 
+def is_ltx23_video_profile(model_profile: str) -> bool:
+    return model_profile in {
+        "ltx23-10eros",
+        "ltx23-dasiwa-golden-lace-v3",
+    }
+
+
 def is_wan22_profile(model_profile: str) -> bool:
     return model_profile in {
         "wan22-i2v",
@@ -590,6 +598,12 @@ def is_wan22_profile(model_profile: str) -> bool:
 
 
 def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[Path]]) -> str:
+    if mode == "r2v":
+        if is_ltx23_video_profile(model_profile):
+            return "i2v"
+        if is_wan22_profile(model_profile) and not is_wan22_s2v_profile(model_profile):
+            return "wan22-i2v"
+        raise RuntimeError("comfy-videogen r2v supports only LTX 2.3 and WAN 2.2 image-to-video modelProfile values.")
     if is_wan22_profile(model_profile):
         if mode == "wan22-s2v" or is_wan22_s2v_profile(model_profile):
             return "wan22-s2v"
@@ -799,6 +813,17 @@ def storyboard_commands(
     return commands
 
 
+def requested_video_mode_from_payload(payload: dict[str, Any]) -> str:
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    has_image = False
+    context = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+    for references in (params.get("localMediaReferences"), context.get("localMediaReferences")):
+        if isinstance(references, list) and any(isinstance(reference, dict) and first_text(reference.get("kind")) == "image" for reference in references):
+            has_image = True
+    default_mode = "i2v" if has_image else "t2v"
+    return normalize_video_mode(command_from_params(params, default_mode))
+
+
 def local_comfy_config() -> dict[str, Any]:
     config_path = repo_root() / ".comfy-agent-tools.json"
     if not config_path.is_file():
@@ -842,6 +867,8 @@ def is_anima_profile(model_profile: str) -> bool:
 def lora_architecture_for_profile(model_profile: str) -> str:
     if is_anima_profile(model_profile):
         return "anima"
+    if model_profile == "ideogram4-fp8":
+        return "ideogram4"
     if model_profile in {"ltx23-10eros", "ltx23-dasiwa-golden-lace-v3"}:
         return "ltx23"
     if is_wan22_profile(model_profile):
@@ -942,6 +969,20 @@ def append_extra_loras(command: list[str], params: dict[str, Any], model_profile
     architecture = lora_architecture_for_profile(model_profile)
     for value in extra_lora_values(params):
         command.extend(["--extra-lora", resolve_extra_lora(value, architecture)])
+
+
+def default_ideogram4_lora_value() -> str:
+    lora_path = models_dir() / "loras" / "ideogram4" / IDEOGRAM4_DEFAULT_LORA
+    if not lora_path.is_file():
+        return ""
+    return f"{lora_path}:0.5"
+
+
+def append_ideogram4_loras(command: list[str], params: dict[str, Any], model_profile: str) -> None:
+    default_lora = default_ideogram4_lora_value()
+    if default_lora:
+        command.extend(["--extra-lora", default_lora])
+    append_extra_loras(command, params, model_profile)
 
 
 def append_wan_video_loras(command: list[str], params: dict[str, Any], model_profile: str) -> None:
@@ -1218,6 +1259,7 @@ def build_ideogram4_command(
             command.extend([f"--{cli_key}", value])
     if params.get("disableCfgOverride") or params.get("disable_cfg_override"):
         command.append("--disable-cfg-override")
+    append_ideogram4_loras(command, params, model_profile)
 
     cwd = write_run_comfy_config(out_dir.parent, capability="imagegen.ideogram4-generate", model_profile=model_profile)
     return command, cwd
@@ -1401,8 +1443,11 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         if not model_profile and skill_id == "comfy-videogen":
             raise RuntimeError("comfy-videogen requires params.modelProfile. The agent must ask the user which video model to use.")
         requested_mode = normalize_video_mode(command_from_params(params, default_mode))
-        if skill_id == "comfy-videogen" and (requested_mode == "wan22-s2v" or is_wan22_s2v_profile(model_profile)):
+        if skill_id == "comfy-videogen" and (requested_mode == "wan22-s2v" or (is_wan22_s2v_profile(model_profile) and requested_mode != "r2v")):
             raise RuntimeError("WAN S2V generation has moved to comfy-s2vidgen.")
+        if skill_id == "comfy-videogen" and requested_mode == "r2v":
+            if not (first_text(params.get("inputPath")) or selected_input(media, "image")):
+                raise RuntimeError("comfy-videogen r2v requires one input image from params.inputPath or a selected card snapshot.")
         mode = requested_mode
         mode = video_mode_for_profile(mode, model_profile, media)
         cwd = write_run_comfy_config(
@@ -1693,6 +1738,20 @@ def annotate_storyboard_raw_result(
         }
 
 
+def annotate_requested_video_mode(raw: dict[str, Any], requested_mode: str) -> None:
+    if requested_mode != "r2v":
+        return
+    for artifact in raw.get("artifacts", []):
+        if not isinstance(artifact, dict):
+            continue
+        metadata = artifact.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            artifact["metadata"] = metadata
+        metadata["requestedVideoMode"] = "r2v"
+        metadata["videoMode"] = "r2v"
+
+
 def prompt_from_command(command: list[str], fallback: str) -> str:
     try:
         index = command.index("--prompt")
@@ -1708,6 +1767,7 @@ def main() -> None:
     run_dir = output_dir(payload)
     input_media = materialize_selected_media(payload, run_dir.parent / "inputs")
     command, cwd = build_cli_command(payload, run_dir, input_media)
+    requested_mode = requested_video_mode_from_payload(payload)
     commands = storyboard_commands(command, cwd, command[1] if len(command) > 1 else "", run_dir, input_media)
     if shutil.which(command[0]) is None:
         raise RuntimeError(
@@ -1719,6 +1779,7 @@ def main() -> None:
     for index, (segment_command, segment_cwd) in enumerate(commands, start=1):
         result = run_command(segment_command, segment_cwd)
         raw = raw_result_from_cli(result, segment_command, prompt_from_command(segment_command, base_prompt(payload)))
+        annotate_requested_video_mode(raw, requested_mode)
         if len(segments) == len(commands):
             annotate_storyboard_raw_result(
                 raw,

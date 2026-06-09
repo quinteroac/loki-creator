@@ -90,6 +90,63 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--std") + 1], "1.75")
         self.assertEqual(command[command.index("--style-art-style") + 1], "vector poster art")
 
+    def test_ideogram4_applies_single_default_lora_at_half_strength(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            lora_path = Path(tmpdir) / "loras" / "ideogram4" / "Realism_Engine_Ideogram4_beta.safetensors"
+            lora_path.parent.mkdir(parents=True)
+            lora_path.write_bytes(b"")
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "ideogram4-image",
+                    "prompt": "Premium cinematic portrait",
+                    "params": {
+                        "mode": "t2i",
+                        "qualityProfile": "Default",
+                        "aspectRatio": "1:1",
+                        "styleAesthetics": "premium realism, high detail",
+                        "styleLighting": "soft studio lighting",
+                        "styleMedium": "photograph",
+                        "stylePhoto": "editorial portrait photography",
+                        "background": "neutral studio backdrop",
+                        "objects": [{"bbox": "120,160,920,860", "description": "centered portrait subject"}],
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora_path}:0.5")
+
+    def test_ideogram4_uses_realism_default_lora_when_other_loras_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            lora_dir = Path(tmpdir) / "loras" / "ideogram4"
+            lora_dir.mkdir(parents=True)
+            default_lora = lora_dir / "Realism_Engine_Ideogram4_beta.safetensors"
+            default_lora.write_bytes(b"")
+            (lora_dir / "another-style.safetensors").write_bytes(b"")
+
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "ideogram4-image",
+                    "prompt": "Premium cinematic portrait",
+                    "params": {
+                        "mode": "t2i",
+                        "qualityProfile": "Default",
+                        "aspectRatio": "1:1",
+                        "styleAesthetics": "premium realism, high detail",
+                        "styleLighting": "soft studio lighting",
+                        "styleMedium": "photograph",
+                        "stylePhoto": "editorial portrait photography",
+                        "background": "neutral studio backdrop",
+                        "objects": [{"bbox": "120,160,920,860", "description": "centered portrait subject"}],
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[command.index("--extra-lora") + 1], f"{default_lora}:0.5")
+
     def test_ideogram4_normalizes_style_colors_to_rrggbb(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             command, _cwd = comfy_action.build_cli_command(
@@ -485,6 +542,96 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--length") + 1], "121")
         self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora_path}:0.75")
         self.assertIn('"videogen.wan22-i2v": "wan22-i2v"', config)
+
+    def test_ltx_r2v_maps_to_i2v_with_input_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            image = Path(tmpdir) / "reference.png"
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videogen",
+                    "prompt": "slow expressive camera drift from the reference",
+                    "params": {
+                        "modelProfile": "ltx23-10eros",
+                        "videoMode": "r2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "duration": "5",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-videogen", "i2v"])
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[command.index("--length") + 1], "120")
+        self.assertIn('"videogen.i2v": "ltx23-10eros"', config)
+
+    def test_wan_r2v_maps_to_wan_i2v_with_input_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            image = Path(tmpdir) / "reference.png"
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videogen",
+                    "prompt": "slow cinematic motion from the reference",
+                    "params": {
+                        "modelProfile": "wan22-i2v",
+                        "videoMode": "r2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "duration": "5",
+                        "fps": "24",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-videogen", "wan22-i2v"])
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[command.index("--fps") + 1], "24")
+        self.assertEqual(command[command.index("--length") + 1], "121")
+        self.assertIn('"videogen.wan22-i2v": "wan22-i2v"', config)
+
+    def test_r2v_requires_input_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "r2v requires one input image"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "comfy-videogen",
+                        "prompt": "slow motion",
+                        "params": {
+                            "modelProfile": "ltx23-10eros",
+                            "videoMode": "r2v",
+                            "aspectRatio": "16:9",
+                            "resolution": "480p",
+                            "duration": "5",
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
+    def test_seedance_r2v_is_not_supported_by_comfy_videogen_skill_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "r2v supports only LTX 2.3 and WAN 2.2"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "comfy-videogen",
+                        "prompt": "slow motion",
+                        "params": {
+                            "modelProfile": "seedance2-api",
+                            "videoMode": "r2v",
+                            "aspectRatio": "16:9",
+                            "resolution": "480p",
+                            "duration": "5",
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "reference.png"], "audio": [], "video": []},
+                )
 
     def test_wan_i2v_defaults_to_16_fps(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):

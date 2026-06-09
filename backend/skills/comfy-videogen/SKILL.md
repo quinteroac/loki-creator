@@ -79,6 +79,9 @@ metadata:
           - value: i2v
             label: Image to video
             description: Create one video per selected image.
+          - value: r2v
+            label: Reference to video
+            description: Create one video from a selected reference image with LTX 2.3 or WAN 2.2 image-to-video profiles.
           - value: flf2v
             label: First/last frame
             description: Use selected images as storyboard pairs. One image duplicates as first and last; two images create one transition; three or four images create two transitions.
@@ -197,22 +200,22 @@ target duration before the agent invokes this skill.
 Available model profiles:
 
 - `ltx23-10eros`: local GPU-backed LTX 2.3 10Eros workflows. Use this for local
-  text-to-video, image-to-video, image+audio-to-video, first/last-frame, and
-  motion-track workflows.
+  text-to-video, reference-to-video, image-to-video, image+audio-to-video,
+  first/last-frame, and motion-track workflows.
 - `ltx23-dasiwa-golden-lace-v3`: local GPU-backed Dasiwa Golden Lace v3 profile
   for LTX 2.3 workflows. Use this when the user asks for Dasiwa/Golden Lace with
-  local LTX text-to-video, image-to-video, image+audio-to-video, or
+  local LTX text-to-video, reference-to-video, image-to-video, image+audio-to-video, or
   first/last-frame generation.
 - `wan22-i2v`: local GPU-backed WAN 2.2 workflows. Use this for image-to-video
-  and first/last-frame video when the user explicitly asks for WAN/Wan 2.2 or
-  wants the standard WAN local model. Defaults: `highNoiseSteps=10`,
+  reference-to-video, and first/last-frame video when the user explicitly asks
+  for WAN/Wan 2.2 or wants the standard WAN local model. Defaults: `highNoiseSteps=10`,
   `lowNoiseSteps=10`.
 - `wan22-dasiwa-tastysin-i2v`: local Dasiwa WAN 2.2 TastySin profile. Use when
-  the user asks for Dasiwa/TastySin. Defaults: `highNoiseSteps=2`,
-  `lowNoiseSteps=2`.
+  the user asks for Dasiwa/TastySin reference-to-video, image-to-video, or
+  first/last-frame generation. Defaults: `highNoiseSteps=2`, `lowNoiseSteps=2`.
 - `wan22-dasiwa-boundbite-i2v`: local Dasiwa WAN 2.2 BoundBite profile. Use when
-  the user asks for Dasiwa/BoundBite. Defaults: `highNoiseSteps=2`,
-  `lowNoiseSteps=2`.
+  the user asks for Dasiwa/BoundBite reference-to-video, image-to-video, or
+  first/last-frame generation. Defaults: `highNoiseSteps=2`, `lowNoiseSteps=2`.
 - `seedance2-api`: remote ByteDance Seedance 2.0 API workflows. Use this for
   text-to-video, reference-image-to-video, and first/last-frame video when
   `COMFY_ORG_API_KEY` is configured.
@@ -236,6 +239,12 @@ Resolution choices:
 Video mode choices:
 
 - `i2v`: image-to-video. Each selected image becomes one video segment/card.
+- `r2v`: reference-to-video. Requires one selected or attached image and creates
+  one video from that reference image. Supported profiles are `ltx23-10eros`,
+  `ltx23-dasiwa-golden-lace-v3`, `wan22-i2v`,
+  `wan22-dasiwa-tastysin-i2v`, and `wan22-dasiwa-boundbite-i2v`. Seedance is
+  not part of this Loki skill mode; use the dedicated Seedance reference mode
+  only when explicitly requested.
 - `flf2v`: first/last-frame storyboard. Selected images are consumed in order as
   pairs: one image duplicates as both first and last frame for one video; two
   images create one transition; three images create two videos using `(1,2)` and
@@ -289,6 +298,9 @@ support ad hoc LoRA insertion.
 ## Modes
 
 - `t2v`: text prompt to MP4 with audio.
+- `r2v`: selected reference image plus prompt to MP4. This is a Loki semantic
+  mode for LTX 2.3 and WAN 2.2 profiles; the runtime maps it to the matching
+  image-to-video CLI workflow.
 - `i2v`: input image plus prompt to MP4 with audio.
 - `ia2av`: input image plus input audio plus prompt to MP4 with audio. Use this
   to animate a still image in relation to an existing WAV/MP3/FLAC, including
