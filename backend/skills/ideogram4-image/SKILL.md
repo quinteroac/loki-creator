@@ -143,6 +143,15 @@ Bboxes use Ideogram coordinates `y_min,x_min,y_max,x_max` from `0` to `1000`.
 Make boxes large enough for text and leave margins. Do not overlap text boxes
 with key faces or important objects unless the user asks for overlay design.
 
+## Selected bbox card guides
+
+If the selected Loki cards include `structuredData.compositionGuide`, treat that
+guide as the authoritative layout contract. Copy each selected box's
+`ideogramBbox` exactly into `objects[].bbox` or `texts[].bbox`; do not invent
+replacement coordinates. Use each box's `prompt` as the element
+`description`. If a box has no prompt, use its `label` only as a region
+identifier and preserve the user's requested content in the surrounding prompt.
+
 ## Prompt guidance
 
 Set the action `prompt` to the high-level Ideogram description, not UI text or a

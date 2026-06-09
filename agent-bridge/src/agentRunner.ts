@@ -937,9 +937,9 @@ const skillToolProfiles: Record<string, SkillToolProfile> = {
   },
   "ideogram4-image": {
     description:
-      " For Ideogram 4, do not pass only a plain prompt. Build a structured paramsJson with mode, qualityProfile, aspectRatio, styleAesthetics, styleLighting, styleMedium, exactly one of stylePhoto or styleArtStyle, background, and at least one objects or texts element. Objects use {bbox:[y_min,x_min,y_max,x_max],description}; text uses {bbox:[...],text,description}; bbox coordinates are 0..1000. For selected image references, inspect the visual content and convert observed traits into a standalone final image prompt; the CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. Do not add a Loki-specific NSFW filter or soften adult prompts beyond the invoking agent's own limits.",
+      " For Ideogram 4, do not pass only a plain prompt. Build a structured paramsJson with mode, qualityProfile, aspectRatio, styleAesthetics, styleLighting, styleMedium, exactly one of stylePhoto or styleArtStyle, background, and at least one objects or texts element. Objects use {bbox:[y_min,x_min,y_max,x_max],description}; text uses {bbox:[...],text,description}; bbox coordinates are 0..1000. If selected bbox composition guides exist, use their ideogramBbox values exactly for objects/texts and use each box prompt as the description; do not invent replacement bboxes. For selected image references, inspect the visual content and convert observed traits into a standalone final image prompt; the CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. Do not add a Loki-specific NSFW filter or soften adult prompts beyond the invoking agent's own limits.",
     promptDescription:
-      "Standalone high-level Ideogram 4 visual description only. Never mention reference/selected images. Put all structured style, background, object/text elements, bboxes, qualityProfile, mode, aspectRatio, and optional seed in paramsJson.",
+      "Standalone high-level Ideogram 4 visual description only. Never mention reference/selected images. Put all structured style, background, object/text elements, bboxes, qualityProfile, mode, aspectRatio, and optional seed in paramsJson. When bbox composition guides are selected, copy their ideogramBbox and prompt values into paramsJson objects/texts exactly.",
   },
 };
 
@@ -993,6 +993,26 @@ function createLokiSkillPiTool(
       ),
     }),
     async execute(_toolCallId, params) {
+      const bboxErrors = validateSelectedBboxGuidePropagation(request, params);
+      if (bboxErrors.length > 0) {
+        const error = bboxErrors.join(" ");
+        runState.skillErrors.push(`${skill.name}: ${error}`);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Loki skill ${skill.name} was not invoked because selected bbox cards were not passed through: ${error}`,
+            },
+          ],
+          details: {
+            skillRunId: null as string | null,
+            status: "failed",
+            cardIds: [] as string[],
+            error,
+          },
+        };
+      }
+
       const existingSkillCall = runState.skillCalls.get(skill.id);
       if (existingSkillCall) {
         const existingResult = await existingSkillCall;
@@ -1223,9 +1243,120 @@ function summarizeSelectedCards(cards: SelectedCardSnapshot[]) {
       reason: asset.reason,
     })),
     metadata: card.metadata ?? {},
+    structuredData: card.structuredData ?? null,
     htmlLength: card.html.length,
     htmlTextExcerpt: extractHtmlTextExcerpt(card.html),
   }));
+}
+
+function selectedBboxCompositionGuides(cards: SelectedCardSnapshot[]) {
+  return cards.flatMap((card) => {
+    const structuredData = asRecord(card.structuredData);
+    const compositionGuide = asRecord(structuredData?.compositionGuide);
+    if (compositionGuide) {
+      return [{
+        cardId: card.id,
+        title: card.displayTitle,
+        compositionGuide,
+      }];
+    }
+
+    const metadata = asRecord(card.metadata);
+    if (metadata?.kind !== "bbox") return [];
+    const bboxData = asRecord(metadata.bboxData);
+    const canvas = asRecord(bboxData?.canvas);
+    const boxes = Array.isArray(bboxData?.boxes) ? bboxData.boxes : [];
+    if (!canvas || boxes.length === 0) return [];
+
+    return [{
+      cardId: card.id,
+      title: card.displayTitle,
+      compositionGuide: {
+        version: 1,
+        canvas,
+        source: bboxData?.source ?? null,
+        boxes: boxes.flatMap((box) => {
+          const record = asRecord(box);
+          if (!record) return [];
+
+          return [{
+            id: record.id,
+            label: record.label,
+            prompt: record.prompt,
+            normalized: {
+              x: record.x,
+              y: record.y,
+              width: record.width,
+              height: record.height,
+            },
+            ideogramBbox: record.ideogramBbox,
+          }];
+        }),
+      },
+    }];
+  });
+}
+
+function compactForContractSearch(value: string) {
+  return value.replace(/\s+/g, "");
+}
+
+function bboxContractSearchText(skillParams: LokiSkillParams) {
+  return `${skillParams.prompt ?? ""}\n${skillParams.paramsJson ?? ""}`;
+}
+
+export function validateSelectedBboxGuidePropagation(request: AgentRunRequest, skillParams: LokiSkillParams) {
+  const guides = selectedBboxCompositionGuides(request.selectedCardSnapshots ?? []);
+  if (guides.length === 0) return [];
+
+  const rawSearchText = bboxContractSearchText(skillParams);
+  const compactSearchText = compactForContractSearch(rawSearchText);
+  const errors: string[] = [];
+
+  for (const guide of guides) {
+    const boxes = Array.isArray(guide.compositionGuide.boxes) ? guide.compositionGuide.boxes : [];
+    for (const box of boxes) {
+      const record = asRecord(box);
+      if (!record) continue;
+      const boxId = firstString(record.id, record.label, "bbox");
+      const ideogramBbox = Array.isArray(record.ideogramBbox) ? record.ideogramBbox : [];
+      if (ideogramBbox.length === 4) {
+        const bboxToken = compactForContractSearch(JSON.stringify(ideogramBbox));
+        if (!compactSearchText.includes(bboxToken)) {
+          errors.push(`${guide.title} ${boxId} ideogramBbox ${JSON.stringify(ideogramBbox)} was not passed to the skill prompt or paramsJson.`);
+        }
+      }
+
+      const boxPrompt = firstString(record.prompt);
+      if (boxPrompt && !rawSearchText.includes(boxPrompt)) {
+        errors.push(`${guide.title} ${boxId} prompt was not passed to the skill prompt or paramsJson.`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+function formatBboxCompositionGuideContract(cards: SelectedCardSnapshot[]) {
+  const guides = selectedBboxCompositionGuides(cards);
+  if (guides.length === 0) return "";
+
+  const guideText = JSON.stringify(guides, null, 2);
+  const fence = createMarkdownFence(guideText);
+
+  return `
+Selected bbox composition guide contract:
+- One or more selected bbox cards include structuredData.compositionGuide.
+- Treat each compositionGuide as an authoritative layout contract for generation, regardless of which image/video/model skill is used.
+- Preserve every box's ideogramBbox, normalized coordinates, label, and prompt exactly in the downstream inference prompt or paramsJson.
+- If the target skill/model accepts structured bbox params, pass the compositionGuide data in those params. If it accepts only text, include the compositionGuide JSON verbatim in the operational prompt plus concise natural-language placement instructions derived from the same boxes.
+- Do not invent replacement boxes, drop boxes, or silently ignore selected bbox cards. If the selected bbox guide cannot be passed through to the target generation path, fail or ask_user instead of generating without it.
+- If a box has prompt, that prompt is the requested content for that region; if prompt is empty, use label only as a region identifier.
+
+Selected bbox composition guides:
+${fence}json
+${guideText}
+${fence}`;
 }
 
 function localMediaReferencesFromRequest(request: AgentRunRequest): LocalMediaReference[] {
@@ -1418,7 +1549,9 @@ function formatSelectedCardInputs(cards: SelectedCardSnapshot[], localMediaRefer
 
   const renderedCards = cards.map((card, index) => {
     const metadata = JSON.stringify(card.metadata ?? {}, null, 2);
+    const structuredData = card.structuredData ? JSON.stringify(card.structuredData, null, 2) : "";
     const metadataFence = createMarkdownFence(metadata);
+    const structuredDataFence = createMarkdownFence(structuredData);
     const previewStatus = card.preview
       ? card.preview.omitted
         ? `omitted (${card.preview.reason ?? "unknown"})`
@@ -1451,7 +1584,11 @@ ${formatLocalMediaReferenceLines(cardLocalMediaReferences)}
 ${metadataFence}json
 ${metadata}
 ${metadataFence}
-- html: available in skill context (${card.html.length} characters)`;
+${structuredData ? `- structuredData:
+${structuredDataFence}json
+${structuredData}
+${structuredDataFence}
+` : ""}- html: available in skill context (${card.html.length} characters)`;
   });
 
   return `
@@ -1625,6 +1762,7 @@ Loki context:
 - local filesystem media references:
 ${formatLocalMediaReferenceLines(localMediaReferences)}
 ${selectedCardInputs}
+${formatBboxCompositionGuideContract(request.selectedCardSnapshots ?? [])}
 ${attachmentInputs}
 ${formatCollectedArgs(request.collectedArgs)}
 ${formatExplicitSkillSelection(request, exposedSkills, runtimeMode)}

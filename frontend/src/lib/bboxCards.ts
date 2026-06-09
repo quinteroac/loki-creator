@@ -16,6 +16,7 @@ export type NormalizedBbox = {
   id: string;
   ideogramBbox: [number, number, number, number];
   label: string;
+  prompt: string;
   width: number;
   x: number;
   y: number;
@@ -131,6 +132,7 @@ export function normalizeBboxData(value: unknown): BboxCardData {
       const normalizedBox = clampNormalizedBbox({
         id: typeof box.id === "string" && box.id ? box.id : `bbox_${index + 1}`,
         label: typeof box.label === "string" && box.label ? box.label : `Box ${index + 1}`,
+        prompt: typeof box.prompt === "string" ? box.prompt : "",
         x: Number(box.x),
         y: Number(box.y),
         width: Number(box.width),
@@ -180,7 +182,10 @@ export function bboxCardHtml(data: BboxCardData, title: string): string {
     : "";
   const boxes = data.boxes.map((box) => {
     const style = `left:${box.x * 100}%;top:${box.y * 100}%;width:${box.width * 100}%;height:${box.height * 100}%;`;
-    return `<span class="bbox" style="${style}"><small>${escapeHtml(box.label)}</small></span>`;
+    const promptAttributes = box.prompt
+      ? ` title="${escapeHtml(box.prompt)}" data-prompt="${escapeHtml(box.prompt)}"`
+      : ` data-prompt=""`;
+    return `<span class="bbox" style="${style}"${promptAttributes}><small>${escapeHtml(box.label)}</small></span>`;
   }).join("");
 
   return `<!doctype html>
@@ -203,5 +208,7 @@ export function bboxCardHtml(data: BboxCardData, title: string): string {
 
 export function bboxDescription(data: BboxCardData): string {
   const source = data.source ? `${data.source.kind} ${data.source.title}` : "white canvas";
-  return `${data.boxes.length} bbox${data.boxes.length === 1 ? "" : "es"} on ${source}`;
+  const promptedBoxes = data.boxes.filter((box) => box.prompt.trim()).length;
+  const promptSummary = promptedBoxes ? `, ${promptedBoxes} with prompt${promptedBoxes === 1 ? "" : "s"}` : "";
+  return `${data.boxes.length} bbox${data.boxes.length === 1 ? "" : "es"}${promptSummary} on ${source}`;
 }

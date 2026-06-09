@@ -354,6 +354,7 @@ def selected_composition_guides(payload: dict) -> list[dict]:
                     {
                         "id": box.get("id"),
                         "label": box.get("label"),
+                        "prompt": box.get("prompt"),
                         "normalized": {
                             "x": box.get("x"),
                             "y": box.get("y"),

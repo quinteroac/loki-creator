@@ -998,6 +998,7 @@ function createSelectedCardStructuredData(document: CardDocument): SelectedCardS
       boxes: bboxData.boxes.map((box) => ({
         id: box.id,
         label: box.label,
+        prompt: box.prompt,
         normalized: {
           x: box.x,
           y: box.y,

@@ -105,6 +105,7 @@ export type SelectedCardSnapshot = {
   sourceSkillId?: string | null;
   sourceActionId?: string | null;
   metadata?: Record<string, unknown> | null;
+  structuredData?: Record<string, unknown>;
 };
 
 export type AgentAttachment = {

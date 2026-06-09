@@ -89,6 +89,15 @@ export function BboxCardEditor({
     onDocumentSizeChange(data.canvas.width, nextHeight);
   }
 
+  function handleSelectedPromptChange(event: ChangeEvent<HTMLInputElement>) {
+    if (!selectedBox) return;
+
+    updateBox({
+      ...selectedBox,
+      prompt: event.target.value,
+    });
+  }
+
   function handleStagePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0 || !stageRef.current) return;
 
@@ -99,6 +108,7 @@ export function BboxCardEditor({
     const box = clampNormalizedBbox({
       id: createClientBboxId(),
       label: `Box ${data.boxes.length + 1}`,
+      prompt: "",
       x: start.x,
       y: start.y,
       width: 0.01,
@@ -235,6 +245,17 @@ export function BboxCardEditor({
           <Trash2 size={14} aria-hidden="true" />
         </button>
       </div>
+      <div className="bbox-card-prompt-row" onPointerDown={(event) => event.stopPropagation()}>
+        <input
+          type="text"
+          value={selectedBox?.prompt ?? ""}
+          placeholder="Prompt"
+          aria-label="Selected bbox prompt"
+          disabled={!selectedBox}
+          onChange={handleSelectedPromptChange}
+          onKeyDown={(event) => event.stopPropagation()}
+        />
+      </div>
       <div
         className="bbox-card-stage"
         ref={stageRef}
@@ -262,6 +283,7 @@ export function BboxCardEditor({
                 width: `${box.width * 100}%`,
                 height: `${box.height * 100}%`,
               }}
+              title={box.prompt || box.label}
               onPointerDown={(event) => handleBoxPointerDown("move", box, event)}
             >
               <small>{box.label}</small>

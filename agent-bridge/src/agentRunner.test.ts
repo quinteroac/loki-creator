@@ -10,6 +10,7 @@ import {
   mergeRequestAnswers,
   parseSkillParamsJson,
   selectSkillsForAgent,
+  validateSelectedBboxGuidePropagation,
 } from "./agentRunner";
 import { collectLocalMediaReferences, resolveLocalArtifactPath } from "./mediaReferences";
 import { repoRoot } from "./config";
@@ -25,6 +26,63 @@ function makeSkill(overrides: Partial<LokiSkill>): LokiSkill {
     capabilities: [],
     arguments: [],
     ...overrides,
+  };
+}
+
+function bboxRequest(): AgentRunRequest {
+  return {
+    prompt: "generate the scene using the selected boxes",
+    agentId: "base-agent",
+    model: "GPT-5.4 mini (openai-codex)",
+    skills: ["ideogram4-image"],
+    selectedCards: ["card_bbox"],
+    selectedCardSnapshots: [
+      {
+        id: "card_bbox",
+        name: "BBox",
+        displayTitle: "BBox",
+        prompt: "1 bbox, 1 with prompt on white canvas",
+        html: "",
+        metadata: {
+          kind: "bbox",
+          bboxData: {
+            version: 1,
+            canvas: { width: 1024, height: 1024, aspectRatio: "1:1" },
+            source: null,
+            boxes: [
+              {
+                id: "bbox_1",
+                label: "Box 1",
+                prompt: "black cat sitting on roof tiles",
+                x: 0.1,
+                y: 0.2,
+                width: 0.3,
+                height: 0.4,
+                ideogramBbox: [200, 100, 600, 400],
+              },
+            ],
+          },
+        },
+        structuredData: {
+          kind: "bbox",
+          compositionGuide: {
+            version: 1,
+            canvas: { width: 1024, height: 1024, aspectRatio: "1:1" },
+            source: null,
+            boxes: [
+              {
+                id: "bbox_1",
+                label: "Box 1",
+                prompt: "black cat sitting on roof tiles",
+                normalized: { x: 0.1, y: 0.2, width: 0.3, height: 0.4 },
+                ideogramBbox: [200, 100, 600, 400],
+              },
+            ],
+          },
+        },
+      },
+    ],
+    context: {},
   };
 }
 
@@ -161,6 +219,64 @@ describe("agent bridge contracts", () => {
     expect(prompt).toContain("selected local artifact path as the edit target");
     expect(prompt).toContain("Do not generate a fresh unrelated image");
     expect(prompt).toContain("Do not downgrade an edit request into reference generation");
+  });
+
+  test("agent prompt exposes selected bbox composition guides as generation contracts", () => {
+    const request = bboxRequest();
+
+    const prompt = buildAgentPrompt(
+      request,
+      [makeSkill({ id: "ideogram4-image", name: "Ideogram 4 Image", description: "Generate Ideogram images" })],
+      "pi-tools",
+    );
+
+    expect(prompt).toContain("Selected bbox composition guide contract");
+    expect(prompt).toContain("authoritative layout contract");
+    expect(prompt).toContain("structuredData");
+    expect(prompt).toContain('"prompt": "black cat sitting on roof tiles"');
+    expect(prompt).toContain('"ideogramBbox": [');
+    expect(prompt).toContain("Do not invent replacement boxes");
+    expect(prompt).toContain("silently ignore selected bbox cards");
+    expect(prompt).toContain("fail or ask_user instead of generating without it");
+    expect(prompt).toContain("Preserve every box's ideogramBbox");
+  });
+
+  test("bbox guide validation rejects skill calls that omit selected bbox contracts", () => {
+    const errors = validateSelectedBboxGuidePropagation(bboxRequest(), {
+      prompt: "draw a cat on a roof",
+      paramsJson: JSON.stringify({ objects: [] }),
+    });
+
+    expect(errors.join("\n")).toContain("ideogramBbox [200,100,600,400] was not passed");
+    expect(errors.join("\n")).toContain("prompt was not passed");
+  });
+
+  test("bbox guide validation accepts exact bbox coordinates and prompt in skill params", () => {
+    const errors = validateSelectedBboxGuidePropagation(bboxRequest(), {
+      prompt: "draw a black cat sitting on roof tiles in the selected box",
+      paramsJson: JSON.stringify({
+        objects: [
+          {
+            bbox: [200, 100, 600, 400],
+            description: "black cat sitting on roof tiles",
+          },
+        ],
+      }),
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  test("bbox guide validation reads bbox metadata when structuredData is absent", () => {
+    const request = bboxRequest();
+    delete request.selectedCardSnapshots?.[0]?.structuredData;
+
+    const errors = validateSelectedBboxGuidePropagation(request, {
+      prompt: "draw a black cat sitting on roof tiles",
+      paramsJson: JSON.stringify({ objects: [{ bbox: [200, 100, 600, 400] }] }),
+    });
+
+    expect(errors).toEqual([]);
   });
 
   test("local media references resolve only Loki artifacts", async () => {

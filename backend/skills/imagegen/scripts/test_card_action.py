@@ -131,6 +131,7 @@ class ImagegenCardActionTest(unittest.TestCase):
                                 {
                                     "id": "bbox_1",
                                     "label": "Box 1",
+                                    "prompt": "black cat sitting on roof tiles",
                                     "normalized": {"x": 0.1, "y": 0.2, "width": 0.3, "height": 0.4},
                                     "ideogramBbox": [200, 100, 600, 400],
                                 }
@@ -148,6 +149,7 @@ class ImagegenCardActionTest(unittest.TestCase):
         self.assertIn("Selected composition guides from bbox cards:", prompt)
         self.assertIn('"cardId": "card_bbox"', prompt)
         self.assertIn('"label": "Box 1"', prompt)
+        self.assertIn('"prompt": "black cat sitting on roof tiles"', prompt)
         self.assertIn('"ideogramBbox": [', prompt)
         self.assertIn("authoritative JSON layout contract", prompt)
 
