@@ -102,7 +102,7 @@ class ImagegenCardActionTest(unittest.TestCase):
         self.assertIn("accept the generated image and report its real dimensions", calls[1]["input"])
         self.assertEqual(event_lines[0], '{"type":"turn.started"}')
 
-    def test_build_codex_prompt_defaults_ambiguous_multi_image_request_to_four(self) -> None:
+    def test_build_codex_prompt_defaults_ambiguous_multi_image_request_to_one(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             prompt = card_action.build_codex_prompt(
                 {"prompt": "create storyboard options for the scene", "params": {"resolution": "1024x1024"}},
@@ -111,7 +111,7 @@ class ImagegenCardActionTest(unittest.TestCase):
                 [],
             )
 
-        self.assertIn("Create exactly 4 separate final image files", prompt)
+        self.assertIn("Create exactly 1 final image file", prompt)
 
     def test_build_codex_prompt_includes_bbox_composition_guide_json(self) -> None:
         payload = {

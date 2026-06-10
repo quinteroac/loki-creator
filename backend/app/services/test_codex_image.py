@@ -71,6 +71,8 @@ class CodexImageGenerationServiceTest(unittest.TestCase):
                 response = service.generate(self.image_request())
 
         invoke_action.assert_called_once()
+        action_params = invoke_action.call_args.args[1]
+        self.assertEqual(action_params["imageCount"], 1)
         self.assertEqual(len(response.cards), 1)
         self.assertEqual(response.cards[0].source_skill_id, "codex-image-direct")
         self.assertEqual(response.cards[0].metadata.kind, "image")
@@ -123,6 +125,8 @@ class CodexImageGenerationServiceTest(unittest.TestCase):
         self.assertEqual(result["artifacts"][0]["kind"], "image")
         self.assertIn("Selected composition guides from bbox cards", captured_prompt)
         self.assertIn('"ideogramBbox": [', captured_prompt)
+        self.assertIn("Do not read, load, or invoke any Codex skill instructions.", captured_prompt)
+        self.assertNotIn("Use the Codex imagegen skill", captured_prompt)
         self.assertEqual(captured_images, [source.resolve()])
 
     def test_rejects_preview_only_image_media(self) -> None:
@@ -161,6 +165,54 @@ class CodexImageGenerationServiceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_CODEX_SDK_MODEL": " gpt-test "}, clear=False):
             service = CodexImageGenerationService(Path(tmpdir))
             self.assertEqual(service.codex_sdk_model(), "gpt-test")
+
+    def test_codex_sdk_sandbox_defaults_to_full_access(self) -> None:
+        class FakeSandbox:
+            full_access = "full"
+            workspace_write = "workspace"
+            read_only = "read"
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("LOKI_CODEX_SDK_SANDBOX", None)
+            service = CodexImageGenerationService(Path(tmpdir))
+            self.assertEqual(service.codex_sdk_sandbox(FakeSandbox), "full")
+
+    def test_codex_sdk_sandbox_accepts_workspace_write_override(self) -> None:
+        class FakeSandbox:
+            full_access = "full"
+            workspace_write = "workspace"
+            read_only = "read"
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_CODEX_SDK_SANDBOX": "workspace_write"}):
+            service = CodexImageGenerationService(Path(tmpdir))
+            self.assertEqual(service.codex_sdk_sandbox(FakeSandbox), "workspace")
+
+    def test_codex_sdk_sandbox_rejects_invalid_env(self) -> None:
+        class FakeSandbox:
+            full_access = "full"
+            workspace_write = "workspace"
+            read_only = "read"
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"LOKI_CODEX_SDK_SANDBOX": "bubblewrap"}):
+            service = CodexImageGenerationService(Path(tmpdir))
+            with self.assertRaisesRegex(CodexImageGenerationError, "LOKI_CODEX_SDK_SANDBOX"):
+                service.codex_sdk_sandbox(FakeSandbox)
+
+    def test_codex_sdk_sandbox_name_uses_enum_value(self) -> None:
+        class FakeSandboxValue:
+            value = "full-access"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = CodexImageGenerationService(Path(tmpdir))
+            self.assertEqual(service.codex_sdk_sandbox_name(FakeSandboxValue()), "full-access")
+
+    def test_codex_sdk_materialization_override_stops_after_first_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = CodexImageGenerationService(Path(tmpdir))
+            override = service.codex_sdk_materialization_override()
+
+        self.assertIn("exactly one final image", override)
+        self.assertIn("After the first imageGeneration item reports a saved_path", override)
 
     def test_codex_reasoning_summary_defaults_to_auto(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {}, clear=False):

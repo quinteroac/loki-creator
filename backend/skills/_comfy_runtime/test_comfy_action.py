@@ -523,7 +523,7 @@ class ComfyActionTest(unittest.TestCase):
                     "skillId": "comfy-videogen",
                     "prompt": "slow camera drift",
                     "params": {
-                        "modelProfile": "wan22-i2v",
+                        "modelProfile": "wan22-dasiwa-boundbite-i2v",
                         "videoMode": "i2v",
                         "aspectRatio": "16:9",
                         "resolution": "480p",
@@ -541,15 +541,15 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--fps") + 1], "24")
         self.assertEqual(command[command.index("--length") + 1], "121")
         self.assertEqual(command[command.index("--extra-lora") + 1], f"{lora_path}:0.75")
-        self.assertIn('"videogen.wan22-i2v": "wan22-i2v"', config)
+        self.assertIn('"videogen.wan22-i2v": "wan22-dasiwa-boundbite-i2v"', config)
 
-    def test_ltx_r2v_maps_to_i2v_with_input_image(self) -> None:
+    def test_ltx_r2v_maps_to_t2v_without_input_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             image = Path(tmpdir) / "reference.png"
             command, cwd = comfy_action.build_cli_command(
                 {
                     "skillId": "comfy-videogen",
-                    "prompt": "slow expressive camera drift from the reference",
+                    "prompt": "A red-haired woman in a lace dress stands in a candlelit room while the camera slowly drifts forward.",
                     "params": {
                         "modelProfile": "ltx23-10eros",
                         "videoMode": "r2v",
@@ -563,20 +563,20 @@ class ComfyActionTest(unittest.TestCase):
             )
             config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
 
-        self.assertEqual(command[:2], ["comfy-videogen", "i2v"])
-        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[:2], ["comfy-videogen", "t2v"])
+        self.assertNotIn("--input", command)
         self.assertEqual(command[command.index("--length") + 1], "120")
-        self.assertIn('"videogen.i2v": "ltx23-10eros"', config)
+        self.assertIn('"videogen.t2v": "ltx23-10eros"', config)
 
-    def test_wan_r2v_maps_to_wan_i2v_with_input_image(self) -> None:
+    def test_wan_r2v_maps_to_wan_t2v_without_input_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             image = Path(tmpdir) / "reference.png"
             command, cwd = comfy_action.build_cli_command(
                 {
                     "skillId": "comfy-videogen",
-                    "prompt": "slow cinematic motion from the reference",
+                    "prompt": "A moonlit armored figure crosses a shallow reflective pool while mist curls around the scene.",
                     "params": {
-                        "modelProfile": "wan22-i2v",
+                        "modelProfile": "wan22-dasiwa-boundbite-i2v",
                         "videoMode": "r2v",
                         "aspectRatio": "16:9",
                         "resolution": "480p",
@@ -589,11 +589,11 @@ class ComfyActionTest(unittest.TestCase):
             )
             config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
 
-        self.assertEqual(command[:2], ["comfy-videogen", "wan22-i2v"])
-        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[:2], ["comfy-videogen", "wan22-t2v"])
+        self.assertNotIn("--input", command)
         self.assertEqual(command[command.index("--fps") + 1], "24")
         self.assertEqual(command[command.index("--length") + 1], "121")
-        self.assertIn('"videogen.wan22-i2v": "wan22-i2v"', config)
+        self.assertIn('"videogen.wan22-t2v": "wan22-dasiwa-boundbite-t2v"', config)
 
     def test_r2v_requires_input_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):

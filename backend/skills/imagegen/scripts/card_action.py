@@ -287,7 +287,7 @@ def infer_requested_image_count(prompt: str, params: dict) -> int:
         ):
             return count
 
-    return 4 if MULTI_IMAGE_HINT_RE.search(prompt) else 1
+    return 1
 
 
 def extract_json_object(text: str) -> dict:

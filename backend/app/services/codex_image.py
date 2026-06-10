@@ -70,6 +70,7 @@ class CodexImageGenerationService:
             "prompt": prompt,
             "skillPrompt": prompt,
             "resolution": payload.resolution,
+            "imageCount": 1,
         }
         raw = self.invoke_action(prompt, params, payload.selected_card_snapshots, payload.attachments, payload.context)
         raw_result = self.validated_raw_result(raw)
@@ -142,7 +143,7 @@ class CodexImageGenerationService:
                 "Codex image inputs must be local Loki artifacts; preview-only media is not executable."
             )
 
-        codex_prompt = imagegen_action.build_codex_prompt(action_payload, run_dir, output_dir, selected_images)
+        codex_prompt = self.build_codex_sdk_prompt(imagegen_action, action_payload, run_dir, output_dir, selected_images)
         codex_prompt = f"{codex_prompt}\n{self.codex_sdk_materialization_override()}"
         sdk_response = self.run_codex_sdk(codex_prompt, run_dir, selected_images)
         (run_dir / "codex-final-response.txt").write_text(sdk_response, encoding="utf-8")
@@ -199,6 +200,83 @@ class CodexImageGenerationService:
 
         return {"artifacts": artifacts, "diagnostics": diagnostics}
 
+    def build_codex_sdk_prompt(
+        self,
+        imagegen_action: Any,
+        action_payload: dict[str, Any],
+        run_dir: Path,
+        output_dir: Path,
+        selected_images: list[Path],
+    ) -> str:
+        params = action_payload.get("params") if isinstance(action_payload.get("params"), dict) else {}
+        prompt = first_text(
+            params.get("prompt"),
+            params.get("skillPrompt"),
+            action_payload.get("prompt"),
+        )
+        title_hint = first_text(params.get("title"), params.get("name"), "Generated image")
+        resolution = imagegen_action.normalize_resolution(params.get("resolution"))
+        dimensions = imagegen_action.RESOLUTION_VALUES[resolution]
+        resolution_requirement = (
+            f"Prefer an output near {dimensions[0]}x{dimensions[1]} pixels when the built-in image generator supports it."
+            if dimensions
+            else "Let Codex choose the output dimensions that best fit the request."
+        )
+        retry_requirement = (
+            "If the built-in image generator returns a different pixel size, accept the generated image and report its real dimensions."
+            if dimensions
+            else "Do not force a specific pixel size when resolution is auto."
+        )
+        selected_image_lines = "\n".join(f"- attached local image {index}" for index, _ in enumerate(selected_images, start=1)) or "- none"
+        composition_guides = imagegen_action.selected_composition_guides(action_payload)
+        composition_guides_json = (
+            json.dumps(composition_guides, ensure_ascii=False, indent=2)
+            if composition_guides
+            else "[]"
+        )
+
+        return f"""Create the requested raster image artifact for Loki Creator using Codex's built-in image generation capability directly.
+
+Execution boundary:
+- Do not read, load, or invoke any Codex skill instructions.
+- Do not execute shell commands.
+- Do not inspect, find, list, copy, or move filesystem files.
+- If the built-in image generation capability is unavailable, fail explicitly instead of using another workflow.
+
+User request:
+{prompt}
+
+Title hint:
+{title_hint}
+
+Resolution:
+{resolution}
+
+Selected image inputs attached to this turn:
+{selected_image_lines}
+
+Selected composition guides from bbox cards:
+{composition_guides_json}
+
+Output requirements:
+- Generate exactly 1 final image.
+- If image attachments are present, treat them as selected Loki canvas cards and edit or derive from them when the user request asks to modify selected content.
+- If selected composition guides are present, treat them as the authoritative JSON layout contract. Use box labels mentioned in the user request, such as "box1" or "Box 1", to assign the described subjects or background regions to the matching boxes. Preserve normalized box placement and relative scale as closely as the chosen image model allows.
+- {resolution_requirement}
+- {retry_requirement}
+- Do not crop, pad, stretch, upscale, downscale, or post-process the output just to fake a requested resolution.
+- After image generation returns a saved_path, use that exact saved_path as imagePath in the final JSON.
+- Always include diagnostics. Use an empty array when there are no issues. Each diagnostic must include level, title, and message; use an empty title string if there is no concise title.
+- Return only JSON matching this schema:
+  {{"images":[{{"title":"short card title","prompt":"final generation/edit prompt","imagePath":"absolute path to final image","mimeType":"image/png or image/jpeg or image/webp","width":1024,"height":1024}}],"diagnostics":[]}}
+
+Loki run directory:
+{run_dir}
+
+Loki output directory that the backend will populate after validation:
+{output_dir}
+"""
+
     def run_codex_sdk(self, prompt: str, run_dir: Path, selected_images: list[Path]) -> str:
         try:
             from openai_codex import ApprovalMode, Codex, CodexConfig, LocalImageInput, Sandbox, TextInput
@@ -208,6 +286,8 @@ class CodexImageGenerationService:
             raise CodexImageGenerationError("Codex SDK dependency openai-codex is not installed.") from exc
 
         model = self.codex_sdk_model()
+        sandbox = self.codex_sdk_sandbox(Sandbox)
+        sandbox_name = self.codex_sdk_sandbox_name(sandbox)
         summary = ReasoningSummary(self.codex_reasoning_summary())
         timeout_seconds = int(os.environ.get("LOKI_CODEX_DIRECT_TIMEOUT_SECONDS", "930"))
         codex_holder: dict[str, Any] = {}
@@ -218,13 +298,16 @@ class CodexImageGenerationService:
             config = CodexConfig(cwd=str(run_dir), env=env)
             stream_path = run_dir / "codex-sdk-events.jsonl"
             status_path = run_dir / "codex-sdk-status.json"
-            self.write_codex_sdk_status(status_path, {"status": "starting", "runDir": str(run_dir)})
+            self.write_codex_sdk_status(
+                status_path,
+                {"status": "starting", "runDir": str(run_dir), "sandbox": sandbox_name},
+            )
             with Codex(config) as codex:
                 codex_holder["codex"] = codex
                 thread = codex.thread_start(
                     approval_mode=ApprovalMode.deny_all,
                     cwd=str(run_dir),
-                    sandbox=Sandbox.workspace_write,
+                    sandbox=sandbox,
                     **model_kwargs,
                 )
                 self.write_codex_sdk_status(
@@ -234,6 +317,7 @@ class CodexImageGenerationService:
                         "threadId": getattr(thread, "id", None),
                         "runDir": str(run_dir),
                         "streamPath": str(stream_path),
+                        "sandbox": sandbox_name,
                     },
                 )
                 run_input: list[Any] = [TextInput(prompt)]
@@ -241,7 +325,7 @@ class CodexImageGenerationService:
                 turn = thread.turn(
                     run_input,
                     cwd=str(run_dir),
-                    sandbox=Sandbox.workspace_write,
+                    sandbox=sandbox,
                     summary=summary,
                     **model_kwargs,
                 )
@@ -253,6 +337,7 @@ class CodexImageGenerationService:
                         "turnId": getattr(turn, "id", None),
                         "runDir": str(run_dir),
                         "streamPath": str(stream_path),
+                        "sandbox": sandbox_name,
                     },
                 )
                 try:
@@ -268,6 +353,7 @@ class CodexImageGenerationService:
                             "error": str(exc),
                             "runDir": str(run_dir),
                             "streamPath": str(stream_path),
+                            "sandbox": sandbox_name,
                         },
                     )
                     raise
@@ -280,6 +366,7 @@ class CodexImageGenerationService:
                         "runDir": str(run_dir),
                         "streamPath": str(stream_path),
                         "durationMs": getattr(result, "duration_ms", None),
+                        "sandbox": sandbox_name,
                     },
                 )
             return self.final_response_text(result)
@@ -311,6 +398,28 @@ class CodexImageGenerationService:
             return model.strip()
         return None
 
+    def codex_sdk_sandbox(self, sandbox_enum: Any) -> Any:
+        sandbox = os.environ.get("LOKI_CODEX_SDK_SANDBOX", "full-access").strip().lower()
+        sandbox = sandbox.replace("_", "-")
+        if sandbox == "full-access":
+            return sandbox_enum.full_access
+        if sandbox == "workspace-write":
+            return sandbox_enum.workspace_write
+        if sandbox == "read-only":
+            return sandbox_enum.read_only
+        raise CodexImageGenerationError(
+            "LOKI_CODEX_SDK_SANDBOX must be one of: full-access, workspace-write, read-only."
+        )
+
+    def codex_sdk_sandbox_name(self, sandbox: Any) -> str:
+        value = getattr(sandbox, "value", None)
+        if isinstance(value, str) and value:
+            return value
+        name = getattr(sandbox, "name", None)
+        if isinstance(name, str) and name:
+            return name
+        return str(sandbox)
+
     def codex_reasoning_summary(self) -> str:
         summary = os.environ.get("LOKI_CODEX_REASONING_SUMMARY", "auto").strip().lower()
         if summary in {"auto", "concise", "detailed", "none"}:
@@ -323,6 +432,8 @@ class CodexImageGenerationService:
         return f"""
 Direct Codex SDK materialization override:
 - First invoke Codex's built-in image generation/editing path. Do not begin the final JSON response until an image was generated or the image tool failed.
+- Direct Loki Codex mode expects exactly one final image unless the request explicitly says imageCount is greater than 1.
+- After the first imageGeneration item reports a saved_path, stop generating additional variants/options and return the final JSON for that saved_path immediately.
 - Do not stream partial JSON while waiting for image generation.
 - Do not run shell commands to inspect, find, list, copy, or move files from CODEX_HOME or ~/.codex/generated_images.
 - If the built-in image generation tool returns a saved_path, use that exact saved_path as imagePath in the final JSON.

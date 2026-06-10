@@ -295,10 +295,13 @@ def normalize_video_mode(value: str) -> str:
         "seedance2-reference-image-to-video": "seedance2-r2v",
         "seedance2-first-last-frame": "seedance2-flf2v",
         "seedance2-first-last-frame-to-video": "seedance2-flf2v",
+        "wan-text-to-video": "wan22-t2v",
+        "wan22-text-to-video": "wan22-t2v",
+        "wan2.2-text-to-video": "wan22-t2v",
         "wan-image-to-video": "wan22-i2v",
-        "wan-reference-to-video": "wan22-i2v",
+        "wan-reference-to-video": "r2v",
         "wan22-image-to-video": "wan22-i2v",
-        "wan22-reference-to-video": "wan22-i2v",
+        "wan22-reference-to-video": "r2v",
         "wan-first-last-frame": "wan22-flf2v",
         "wan22-first-last-frame": "wan22-flf2v",
         "wan22-first-last-frame-to-video": "wan22-flf2v",
@@ -550,6 +553,11 @@ def normalize_video_model_profile(value: str) -> str:
         "seedance2": "seedance2-api",
         "seedance-2": "seedance2-api",
         "seedance-2.0": "seedance2-api",
+        "wan-t2v": "wan22-t2v",
+        "wan2.2-t2v": "wan22-t2v",
+        "wan22-t2v": "wan22-t2v",
+        "wan-text-to-video": "wan22-t2v",
+        "wan22-text-to-video": "wan22-t2v",
         "wan": "wan22-i2v",
         "wan2.2": "wan22-i2v",
         "wan-2.2": "wan22-i2v",
@@ -564,8 +572,12 @@ def normalize_video_model_profile(value: str) -> str:
         "dasiwa": "wan22-dasiwa-tastysin-i2v",
         "dasiwa-tastysin": "wan22-dasiwa-tastysin-i2v",
         "tastysin": "wan22-dasiwa-tastysin-i2v",
+        "dasiwa-tastysin-t2v": "wan22-dasiwa-tastysin-t2v",
+        "tastysin-t2v": "wan22-dasiwa-tastysin-t2v",
         "dasiwa-boundbite": "wan22-dasiwa-boundbite-i2v",
         "boundbite": "wan22-dasiwa-boundbite-i2v",
+        "dasiwa-boundbite-t2v": "wan22-dasiwa-boundbite-t2v",
+        "boundbite-t2v": "wan22-dasiwa-boundbite-t2v",
         "dasiwa-s2v": "wan22-dasiwa-littledemon-v2-s2v",
         "dasiwa-littledemon": "wan22-dasiwa-littledemon-v2-s2v",
         "dasiwa-littledemon-v2": "wan22-dasiwa-littledemon-v2-s2v",
@@ -591,19 +603,22 @@ def is_ltx23_video_profile(model_profile: str) -> bool:
 
 def is_wan22_profile(model_profile: str) -> bool:
     return model_profile in {
+        "wan22-t2v",
         "wan22-i2v",
         "wan22-dasiwa-tastysin-i2v",
+        "wan22-dasiwa-tastysin-t2v",
         "wan22-dasiwa-boundbite-i2v",
+        "wan22-dasiwa-boundbite-t2v",
     } or is_wan22_s2v_profile(model_profile)
 
 
 def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[Path]]) -> str:
     if mode == "r2v":
         if is_ltx23_video_profile(model_profile):
-            return "i2v"
+            return "t2v"
         if is_wan22_profile(model_profile) and not is_wan22_s2v_profile(model_profile):
-            return "wan22-i2v"
-        raise RuntimeError("comfy-videogen r2v supports only LTX 2.3 and WAN 2.2 image-to-video modelProfile values.")
+            return "wan22-t2v"
+        raise RuntimeError("comfy-videogen r2v supports only LTX 2.3 and WAN 2.2 text-to-video modelProfile values.")
     if is_wan22_profile(model_profile):
         if mode == "wan22-s2v" or is_wan22_s2v_profile(model_profile):
             return "wan22-s2v"
@@ -623,6 +638,16 @@ def video_mode_for_profile(mode: str, model_profile: str, media: dict[str, list[
     if mode in {"i2v", "ia2av", "motion-track"} or selected_input(media, "image"):
         return "seedance2-r2v"
     return "seedance2-t2v"
+
+
+def effective_video_model_profile(requested_mode: str, mode: str, model_profile: str) -> str:
+    if requested_mode == "r2v" and mode == "wan22-t2v":
+        return {
+            "wan22-i2v": "wan22-t2v",
+            "wan22-dasiwa-tastysin-i2v": "wan22-dasiwa-tastysin-t2v",
+            "wan22-dasiwa-boundbite-i2v": "wan22-dasiwa-boundbite-t2v",
+        }.get(model_profile, model_profile)
+    return model_profile
 
 
 def default_video_fps(mode: str) -> int:
@@ -1450,10 +1475,11 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
                 raise RuntimeError("comfy-videogen r2v requires one input image from params.inputPath or a selected card snapshot.")
         mode = requested_mode
         mode = video_mode_for_profile(mode, model_profile, media)
+        effective_model_profile = effective_video_model_profile(requested_mode, mode, model_profile)
         cwd = write_run_comfy_config(
             out_dir.parent,
             capability=videogen_capability(mode),
-            model_profile=model_profile,
+            model_profile=effective_model_profile,
         ) if model_profile else repo_root()
         command = ["comfy-videogen", mode, "--out", str(out_dir)]
         if not mode.startswith("seedance2-"):
@@ -1500,17 +1526,17 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
                 fps = video_fps_for_params(mode, params)
                 length = video_length_from_duration(mode, duration, fps)
                 command.extend(["--length", str(length)])
-        if mode in {"wan22-i2v", "wan22-flf2v"}:
+        if mode in {"wan22-t2v", "wan22-i2v", "wan22-flf2v"}:
             command.extend(["--fps", str(wan_fps(params.get("fps")))])
         for key in ("length", "fps", "duration", "seed"):
             value = as_int(params.get(key))
             if key == "duration" and duration is not None:
                 continue
-            if key == "fps" and mode in {"wan22-i2v", "wan22-flf2v"}:
+            if key == "fps" and mode in {"wan22-t2v", "wan22-i2v", "wan22-flf2v"}:
                 continue
             if value is not None:
                 command.extend([f"--{key}", str(value)])
-        if mode in {"wan22-i2v", "wan22-flf2v"}:
+        if mode in {"wan22-t2v", "wan22-i2v", "wan22-flf2v"}:
             for key, cli_key in (
                 ("highNoiseSteps", "high-steps"),
                 ("highSteps", "high-steps"),
@@ -1522,7 +1548,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
                 value = as_int(params.get(key))
                 if value is not None:
                     command.extend([f"--{cli_key}", str(value)])
-            append_wan_video_loras(command, params, model_profile)
+            append_wan_video_loras(command, params, effective_model_profile)
         return command, cwd
 
     if skill_id == "comfy-musicgen":

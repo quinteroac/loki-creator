@@ -137,8 +137,8 @@ Execution strategy:
   artifacts in one skill invocation so Loki can package them as separate cards.
   Do not combine them into one collage/contact sheet/grid/comic page unless the
   user explicitly asks for a single combined image.
-- If the user asks for multiple images without an exact count, create 4 separate
-  images/cards. If the user gives an exact count, preserve that count and let the
+- If the user asks for multiple images without an exact count, create 1 image/card.
+  If the user gives an exact count, preserve that count and let the
   Loki runtime attempt the full request within the job timeout.
 
 Assume the user wants a new image unless they clearly ask to change an existing one.
