@@ -1,8 +1,11 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.instructions import GeneratedCard
+
+ProjectStatus = Literal["active", "archived", "trashed"]
 
 
 class ProjectCanvasNodeFrame(BaseModel):
@@ -21,10 +24,15 @@ class ProjectCanvasNode(BaseModel):
 
 
 class ProjectDocument(BaseModel):
+    schema_version: int = Field(default=2, alias="schemaVersion")
     id: str
     name: str
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
+    status: ProjectStatus = "active"
+    archived_at: datetime | None = Field(default=None, alias="archivedAt")
+    trashed_at: datetime | None = Field(default=None, alias="trashedAt")
+    imported_at: datetime | None = Field(default=None, alias="importedAt")
     card_documents: list[GeneratedCard] = Field(default_factory=list, alias="cardDocuments")
     canvas_nodes: list[ProjectCanvasNode] = Field(default_factory=list, alias="canvasNodes")
 
@@ -36,7 +44,12 @@ class ProjectSummary(BaseModel):
     name: str
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
+    status: ProjectStatus = "active"
+    archived_at: datetime | None = Field(default=None, alias="archivedAt")
+    trashed_at: datetime | None = Field(default=None, alias="trashedAt")
+    imported_at: datetime | None = Field(default=None, alias="importedAt")
     card_count: int = Field(alias="cardCount")
+    artifact_count: int = Field(alias="artifactCount")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -47,3 +60,7 @@ class ProjectSaveRequest(BaseModel):
     canvas_nodes: list[ProjectCanvasNode] = Field(default_factory=list, alias="canvasNodes")
 
     model_config = ConfigDict(populate_by_name=True)
+
+
+class ProjectCreateRequest(ProjectSaveRequest):
+    pass

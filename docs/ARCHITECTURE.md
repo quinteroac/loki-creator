@@ -146,12 +146,20 @@ selected card as a reproducible artifact input.
 
 Projects are named snapshots of the current canvas stored as local folders under
 `.loki/projects/<project-id>/`. Each project folder contains `project.json` with
-the visible project name, timestamps, card documents, and canvas nodes. Opening a
-project replaces the current frontend canvas rather than merging cards.
+schema version, visible project name, lifecycle status, timestamps, card
+documents, and canvas nodes. Opening a project replaces the current frontend
+canvas rather than merging cards.
 
 Generated artifacts referenced by card metadata remain in their original
 `.loki/skills/...` locations; project saves persist references and canvas state,
-not copies of artifact files.
+not copies of artifact files. Archiving and trashing projects change only the
+project lifecycle status and do not move referenced artifacts.
+
+Project export creates a portable `.loki-project.zip` containing a manifest,
+`project/project.json`, and copies of referenced `/api/artifacts/...` files under
+`artifacts/`. Import validates the archive, copies bundled artifacts into
+`.loki/project-imports/<project-id>/`, rewrites artifact URLs, and creates a new
+active project with a unique local id.
 
 ## Selected Cards
 
@@ -242,9 +250,17 @@ It is not a real skill.
 ## Current Endpoints
 
 - `GET /api/health`
-- `GET /api/projects`
+- `GET /api/projects?status=active|archived|trashed|all`
+- `POST /api/projects`
 - `GET /api/projects/{project_id}`
 - `PUT /api/projects/{project_id}`
+- `POST /api/projects/{project_id}/archive`
+- `POST /api/projects/{project_id}/trash`
+- `POST /api/projects/{project_id}/restore`
+- `DELETE /api/projects/{project_id}`
+- `POST /api/projects/{project_id}/duplicate`
+- `GET /api/projects/{project_id}/export`
+- `POST /api/projects/import`
 - `GET /api/skills`
 - `POST /api/skill-runs`
 - `GET /api/skill-runs`
@@ -270,4 +286,4 @@ It is not a real skill.
 - The model remains the creative agent; skills provide instructions and reliable execution surfaces.
 - Selected cards are artifact inputs, not system instructions.
 - Keep runtime modules focused: registry discovers, invoker executes, run service tracks state, routes expose contracts.
-- No marketplace, export/import, permissions UI, versioning, or multiple runtimes are implemented in this first cut.
+- No marketplace, permissions UI, project collaboration, cloud sync, or multiple runtimes are implemented in this first cut.

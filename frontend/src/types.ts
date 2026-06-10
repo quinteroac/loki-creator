@@ -290,20 +290,32 @@ export type CanvasNode = {
 };
 
 export type ProjectDocument = {
+  schemaVersion: number;
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
+  status: ProjectStatus;
+  archivedAt?: string | null;
+  trashedAt?: string | null;
+  importedAt?: string | null;
   cardDocuments: CardDocument[];
   canvasNodes: CanvasNode[];
 };
+
+export type ProjectStatus = "active" | "archived" | "trashed";
 
 export type ProjectSummary = {
   id: string;
   name: string;
   createdAt: string;
   updatedAt: string;
+  status: ProjectStatus;
+  archivedAt?: string | null;
+  trashedAt?: string | null;
+  importedAt?: string | null;
   cardCount: number;
+  artifactCount: number;
 };
 
 export type ProjectSaveRequest = {
@@ -311,6 +323,8 @@ export type ProjectSaveRequest = {
   cardDocuments: CardDocument[];
   canvasNodes: CanvasNode[];
 };
+
+export type ProjectCreateRequest = ProjectSaveRequest;
 
 export type SkillDefinition = {
   id: string;

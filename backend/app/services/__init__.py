@@ -7,7 +7,14 @@ from app.services.comfy_generation import ComfyGenerationError, ComfyGenerationS
 from app.services.gemini_image import GeminiImageGenerationError, GeminiImageGenerationService
 from app.services.grok_imagine import GrokImagineGenerationError, GrokImagineGenerationService
 from app.services.instructions import InstructionService
-from app.services.projects import ProjectNotFoundError, ProjectService
+from app.services.projects import (
+    ProjectArtifactMissingError,
+    ProjectImportError,
+    ProjectInvalidOperationError,
+    ProjectNotFoundError,
+    ProjectService,
+    ProjectStorageError,
+)
 from app.services.seedance_video import SeedanceVideoGenerationError, SeedanceVideoGenerationService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
@@ -30,8 +37,12 @@ __all__ = [
     "GrokImagineGenerationError",
     "GrokImagineGenerationService",
     "InstructionService",
+    "ProjectArtifactMissingError",
+    "ProjectImportError",
+    "ProjectInvalidOperationError",
     "ProjectNotFoundError",
     "ProjectService",
+    "ProjectStorageError",
     "SeedanceVideoGenerationError",
     "SeedanceVideoGenerationService",
     "SkillActionInvoker",

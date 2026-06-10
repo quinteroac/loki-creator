@@ -31,7 +31,15 @@ from app.models.generations import (
     SeedanceVideoGenerationRequest,
     SeedanceVideoGenerationResponse,
 )
-from app.models.projects import ProjectCanvasNode, ProjectCanvasNodeFrame, ProjectDocument, ProjectSaveRequest, ProjectSummary
+from app.models.projects import (
+    ProjectCanvasNode,
+    ProjectCanvasNodeFrame,
+    ProjectCreateRequest,
+    ProjectDocument,
+    ProjectSaveRequest,
+    ProjectStatus,
+    ProjectSummary,
+)
 from app.models.skills import (
     SkillArgumentDefinition,
     SkillArgumentOption,
@@ -85,8 +93,10 @@ __all__ = [
     "SeedanceVideoGenerationResponse",
     "ProjectCanvasNode",
     "ProjectCanvasNodeFrame",
+    "ProjectCreateRequest",
     "ProjectDocument",
     "ProjectSaveRequest",
+    "ProjectStatus",
     "ProjectSummary",
     "SkillArgumentDefinition",
     "SkillArgumentOption",

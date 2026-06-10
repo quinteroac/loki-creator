@@ -156,41 +156,6 @@ button {
   display: none;
 }
 
-.project-popover button {
-  display: grid;
-  gap: 2px;
-}
-
-.project-popover strong,
-.project-popover small {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-popover strong {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-
-.project-popover small {
-  color: var(--dark-text-soft);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.project-popover .picker-empty {
-  margin: 0;
-  padding: 10px 12px;
-  color: var(--dark-text-soft);
-  font-size: 14px;
-  line-height: 1.5;
-  text-align: left;
-  white-space: nowrap;
-}
-
 .modal-backdrop {
   position: fixed;
   z-index: 60;
@@ -255,6 +220,265 @@ button {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 6px;
+}
+
+.project-manager {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 16px;
+  width: min(960px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  padding: 24px;
+  color: var(--dark-text);
+  background: var(--panel-bg);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 16px;
+  box-shadow: rgba(36, 36, 36, 0.08) 0 12px 16px -4px;
+}
+
+.project-manager-header,
+.project-manager-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.project-manager-header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-manager-header h2 {
+  margin: 0;
+  color: var(--dark-text);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.project-manager-header p {
+  margin: 0;
+  color: var(--dark-text-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.project-icon-button {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  color: var(--dark-text);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+}
+
+.project-icon-button svg,
+.project-manager-toolbar svg,
+.project-row-actions svg {
+  width: 16px;
+  height: 16px;
+}
+
+.project-manager-toolbar {
+  flex-wrap: wrap;
+}
+
+.project-import-input {
+  display: none;
+}
+
+.project-search {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  width: min(280px, 100%);
+  height: 40px;
+  margin-left: auto;
+  padding: 0 14px;
+  color: var(--dark-text-soft);
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+}
+
+.project-search input {
+  width: 100%;
+  min-width: 0;
+  color: var(--dark-text);
+  background: transparent;
+  border: 0;
+  outline: 0;
+}
+
+.project-search input::placeholder {
+  color: var(--dark-text-soft);
+}
+
+.project-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+}
+
+.project-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 12px;
+  color: var(--dark-text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.project-tab.active {
+  color: var(--ink);
+  background: var(--canvas);
+}
+
+.project-tab span {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 6px;
+  color: inherit;
+  background: var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.project-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  padding: 12px;
+  background: var(--panel-soft);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 16px;
+}
+
+.project-row.current {
+  border-color: var(--brand-blue);
+}
+
+.project-row-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.project-row-main strong,
+.project-row-main span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-row-main strong {
+  color: var(--dark-text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.project-row-main span {
+  color: var(--dark-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.project-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.project-row-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 10px;
+  color: var(--dark-text);
+  background: transparent;
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.project-row-actions button.danger {
+  color: var(--brand-coral);
+}
+
+.project-row-actions button:disabled {
+  color: var(--dark-text-soft);
+  cursor: default;
+  opacity: 0.58;
+}
+
+.project-rename-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-rename-form input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  color: var(--dark-text);
+  background: var(--panel-bg);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 8px;
+  outline: 0;
+}
+
+.project-rename-form input:focus {
+  border-color: var(--brand-blue-deep);
+  box-shadow: inset 0 0 0 1px var(--brand-blue-deep);
+}
+
+.project-empty {
+  margin: 0;
+  padding: 28px 12px;
+  color: var(--dark-text-soft);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .canvas-shell {
@@ -2090,15 +2314,6 @@ textarea::placeholder {
   outline: 0;
 }
 
-.topbar-actions .project-popover {
-  top: calc(100% + 12px);
-  right: 88px;
-  bottom: auto;
-  left: auto;
-  width: 240px;
-  max-width: calc(100vw - 32px);
-}
-
 .picker-search {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
@@ -2268,6 +2483,45 @@ textarea::placeholder {
 
   .chat-chip {
     padding: 7px 10px;
+  }
+
+  .project-manager {
+    width: 100%;
+    max-height: calc(100vh - 32px);
+    padding: 18px;
+  }
+
+  .project-manager-header,
+  .project-manager-toolbar {
+    align-items: stretch;
+  }
+
+  .project-manager-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .project-search {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .project-tabs {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .project-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-row-actions {
+    justify-content: flex-start;
+  }
+
+  .project-rename-form {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .popover,

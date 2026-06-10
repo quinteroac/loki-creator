@@ -6,16 +6,17 @@ import { generateCodexImage } from "./api/codexImage";
 import { generateComfy } from "./api/comfyGeneration";
 import { generateGeminiImage } from "./api/geminiImage";
 import { generateGrokImage, generateGrokVideo } from "./api/grokImagine";
-import { listProjects, loadProject, saveProject } from "./api/projects";
 import { generateSeedanceVideo } from "./api/seedanceVideo";
 import { listSkillRuns, waitForSkillRun } from "./api/skillRuns";
 import { listSkills } from "./api/skills";
 import { AgentComposer } from "./components/AgentComposer";
 import { AgentResponsePanel } from "./components/AgentResponsePanel";
 import { CanvasStage } from "./components/CanvasStage";
+import { ProjectManager } from "./components/ProjectManager";
 import { Topbar } from "./components/Topbar";
 import { initialCanvasNodes, initialCardDocuments } from "./data/workspace";
 import { useDismissablePopover } from "./hooks/useDismissablePopover";
+import { useProjects } from "./hooks/useProjects";
 import {
   assignUniqueDisplayTitles,
   createBboxCardDocument,
@@ -40,6 +41,7 @@ import {
   toggleMultiSelection,
 } from "./lib/selection";
 import { mergeSelectedCardIds, resolveMentionedCardIds } from "./lib/cardMentions";
+import { dedupeCanvasNodesByDocumentId } from "./lib/projects";
 import type { BboxCardData } from "./lib/bboxCards";
 import type {
   AgentAttachment,
@@ -72,7 +74,6 @@ import type {
   GrokVideoAspectRatio,
   GrokVideoDuration,
   GrokVideoResolution,
-  ProjectSummary,
   SeedanceAspectRatio,
   SeedanceDuration,
   SelectedCardPreview,
@@ -93,29 +94,6 @@ function createClientId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
     ?? `${Date.now().toString(36)}${Math.random().toString(16).slice(2)}`;
   return `${prefix}_${randomId}`;
-}
-
-function dedupeCanvasNodesByDocumentId(nodes: CanvasNode[]): CanvasNode[] {
-  const seenDocumentIds = new Set<string>();
-  let hasDuplicate = false;
-  const dedupedNodes = nodes.filter((node) => {
-    if (seenDocumentIds.has(node.cardDocumentId)) {
-      hasDuplicate = true;
-      return false;
-    }
-
-    seenDocumentIds.add(node.cardDocumentId);
-    return true;
-  });
-
-  return hasDuplicate ? dedupedNodes : nodes;
-}
-
-function createWorkspaceSnapshot(cardDocuments: CardDocument[], canvasNodes: CanvasNode[]) {
-  return JSON.stringify({
-    cardDocuments,
-    canvasNodes: dedupeCanvasNodesByDocumentId(canvasNodes),
-  });
 }
 
 export function App() {
@@ -163,18 +141,6 @@ export function App() {
   const [pendingCollectedArgs, setPendingCollectedArgs] = useState<Record<string, string>>({});
   const [pendingAgentRequest, setPendingAgentRequest] = useState<AgentRunRequest | null>(null);
   const [isAgentResponseOpen, setIsAgentResponseOpen] = useState(false);
-  const [isSaveProjectOpen, setIsSaveProjectOpen] = useState(false);
-  const [projectNameDraft, setProjectNameDraft] = useState("");
-  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
-  const [currentProjectName, setCurrentProjectName] = useState("Untitled project");
-  const [projects, setProjects] = useState<ProjectSummary[]>([]);
-  const [savedWorkspaceSnapshot, setSavedWorkspaceSnapshot] = useState(() =>
-    createWorkspaceSnapshot(initialCardDocuments, initialCanvasNodes),
-  );
-  const [pendingProjectToOpenId, setPendingProjectToOpenId] = useState<string | null>(null);
-  const [isNewProjectPending, setIsNewProjectPending] = useState(false);
-  const [isUnsavedProjectDialogOpen, setIsUnsavedProjectDialogOpen] = useState(false);
-  const [isProjectActionPending, setIsProjectActionPending] = useState(false);
   const [skillSearch, setSkillSearch] = useState("");
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -192,6 +158,29 @@ export function App() {
   useDismissablePopover(openMenu, closePopover);
   const closeAgentResponse = useCallback(() => setIsAgentResponseOpen(false), []);
   useDismissablePopover(isAgentResponseOpen ? "agent-response" : null, closeAgentResponse);
+
+  const projectsController = useProjects({
+    cardDocuments,
+    canvasNodes,
+    onBeforeWorkspaceReplace: async () => {
+      const [runningRuns, completedRuns] = await Promise.all([
+        listSkillRuns({ status: "running" }),
+        listSkillRuns({ status: "succeeded" }),
+      ]);
+      ignoreSkillRuns([...runningRuns, ...completedRuns]);
+      hasSeededIgnoredSkillRunsRef.current = true;
+    },
+    onCanvasNodesNormalized: setCanvasNodes,
+    onReplaceWorkspace: (projectDocuments, projectCanvasNodes) => {
+      processedCardIdsRef.current = new Set(projectDocuments.map((document) => document.id));
+      previewCapturesRef.current.clear();
+      setCardDocuments(projectDocuments);
+      setCanvasNodes(projectCanvasNodes);
+      setSelectedCards([]);
+      setOpenMenu(null);
+    },
+    onStatus: setStatus,
+  });
 
   useEffect(() => () => agentEventSourceRef.current?.close(), []);
 
@@ -231,29 +220,6 @@ export function App() {
     }
 
     loadSkills();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function loadSavedProjects() {
-      try {
-        const savedProjects = await listProjects();
-        if (isMounted) {
-          setProjects(savedProjects);
-        }
-      } catch {
-        if (isMounted) {
-          setProjects([]);
-        }
-      }
-    }
-
-    loadSavedProjects();
 
     return () => {
       isMounted = false;
@@ -378,11 +344,6 @@ export function App() {
     () => Object.fromEntries(cardDocuments.map((document) => [document.id, document])),
     [cardDocuments],
   );
-  const currentWorkspaceSnapshot = useMemo(
-    () => createWorkspaceSnapshot(cardDocuments, canvasNodes),
-    [cardDocuments, canvasNodes],
-  );
-  const hasUnsavedProjectChanges = currentWorkspaceSnapshot !== savedWorkspaceSnapshot;
   const filteredSkills = filterBySearch(availableSkills, skillSearch);
   const skillButtonLabel = selectedSkills[0] ?? "Auto";
   const selectedCardLabel = getFirstSelectedCardLabel(cardDocuments, selectedCards, "Selected cards");
@@ -414,19 +375,6 @@ export function App() {
   function getEffectiveSelectedCardIds(prompt: string) {
     return mergeSelectedCardIds(selectedCards, resolveMentionedCardIds(cardDocuments, prompt));
   }
-
-  useEffect(() => {
-    if (!hasUnsavedProjectChanges) return;
-
-    function handleBeforeUnload(event: BeforeUnloadEvent) {
-      event.preventDefault();
-      event.returnValue = "";
-    }
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [hasUnsavedProjectChanges]);
 
   function appendAgentStreamEvent(event: AgentRunStreamEvent) {
     setAgentLastActivityAt(Date.now());
@@ -1229,222 +1177,6 @@ export function App() {
     setStatus("Card removed from canvas.");
   }
 
-  function openSaveProjectDialog() {
-    setProjectNameDraft(currentProjectName === "Untitled project" ? "" : currentProjectName);
-    setIsSaveProjectOpen(true);
-    setIsUnsavedProjectDialogOpen(false);
-    setOpenMenu(null);
-  }
-
-  async function toggleProjectMenu() {
-    if (openMenu === "project-open") {
-      setOpenMenu(null);
-      return;
-    }
-
-    try {
-      setProjects(await listProjects());
-    } catch {
-      setProjects([]);
-      setStatus("Could not load projects.");
-    }
-    setOpenMenu("project-open");
-  }
-
-  function closeSaveProjectDialog() {
-    setIsSaveProjectOpen(false);
-    setPendingProjectToOpenId(null);
-    setIsNewProjectPending(false);
-  }
-
-  async function persistCurrentProject(name: string) {
-    if (!name) {
-      setStatus("Name the project before saving.");
-      return false;
-    }
-
-    try {
-      setIsProjectActionPending(true);
-      const cleanCanvasNodes = dedupeCanvasNodesByDocumentId(canvasNodes);
-      const project = await saveProject({
-        name,
-        cardDocuments,
-        canvasNodes: cleanCanvasNodes,
-      });
-      if (cleanCanvasNodes !== canvasNodes) {
-        setCanvasNodes(cleanCanvasNodes);
-      }
-      setCurrentProjectId(project.id);
-      setCurrentProjectName(project.name);
-      setSavedWorkspaceSnapshot(createWorkspaceSnapshot(cardDocuments, cleanCanvasNodes));
-      try {
-        setProjects(await listProjects());
-      } catch {
-        // Project list refresh is best-effort after a successful save.
-      }
-      setStatus("Project saved.");
-      return true;
-    } catch {
-      setStatus("Could not save project.");
-      return false;
-    } finally {
-      setIsProjectActionPending(false);
-    }
-  }
-
-  async function submitSaveProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = projectNameDraft.trim();
-    const saved = await persistCurrentProject(name);
-    if (!saved) return;
-
-    setIsSaveProjectOpen(false);
-
-    if (pendingProjectToOpenId) {
-      const projectId = pendingProjectToOpenId;
-      setPendingProjectToOpenId(null);
-      await openProjectNow(projectId);
-      return;
-    }
-
-    if (isNewProjectPending) {
-      setIsNewProjectPending(false);
-      createNewProjectNow();
-    }
-  }
-
-  async function openProjectNow(projectId: string) {
-    try {
-      setIsProjectActionPending(true);
-      const [project, runningRuns, completedRuns] = await Promise.all([
-        loadProject(projectId),
-        listSkillRuns({ status: "running" }),
-        listSkillRuns({ status: "succeeded" }),
-      ]);
-      ignoreSkillRuns([...runningRuns, ...completedRuns]);
-      hasSeededIgnoredSkillRunsRef.current = true;
-      const projectDocuments = project.cardDocuments.map(normalizeCardDocument);
-      const projectCanvasNodes = dedupeCanvasNodesByDocumentId(project.canvasNodes);
-      processedCardIdsRef.current = new Set(projectDocuments.map((document) => document.id));
-
-      setCardDocuments(projectDocuments);
-      setCanvasNodes(projectCanvasNodes);
-      setCurrentProjectId(project.id);
-      setCurrentProjectName(project.name);
-      setSavedWorkspaceSnapshot(createWorkspaceSnapshot(projectDocuments, projectCanvasNodes));
-      setSelectedCards([]);
-      setOpenMenu(null);
-      setStatus("Project opened.");
-    } catch {
-      setStatus("Could not open project.");
-    } finally {
-      setIsProjectActionPending(false);
-    }
-  }
-
-  async function openProject(projectId: string) {
-    if (projectId === currentProjectId && !hasUnsavedProjectChanges) {
-      setOpenMenu(null);
-      return;
-    }
-
-    if (hasUnsavedProjectChanges) {
-      setPendingProjectToOpenId(projectId);
-      setIsUnsavedProjectDialogOpen(true);
-      setOpenMenu(null);
-      return;
-    }
-
-    await openProjectNow(projectId);
-  }
-
-  function createNewProjectNow() {
-    const emptyCardDocuments: CardDocument[] = [];
-    const emptyCanvasNodes: CanvasNode[] = [];
-
-    processedCardIdsRef.current = new Set();
-    previewCapturesRef.current.clear();
-    setCardDocuments(emptyCardDocuments);
-    setCanvasNodes(emptyCanvasNodes);
-    setCurrentProjectId(null);
-    setCurrentProjectName("Untitled project");
-    setSavedWorkspaceSnapshot(createWorkspaceSnapshot(emptyCardDocuments, emptyCanvasNodes));
-    setSelectedCards([]);
-    setOpenMenu(null);
-    setStatus("New project created.");
-  }
-
-  function createNewProject() {
-    if (hasUnsavedProjectChanges) {
-      setPendingProjectToOpenId(null);
-      setIsNewProjectPending(true);
-      setIsUnsavedProjectDialogOpen(true);
-      setOpenMenu(null);
-      return;
-    }
-
-    createNewProjectNow();
-  }
-
-  function cancelPendingProjectOpen() {
-    setPendingProjectToOpenId(null);
-    setIsNewProjectPending(false);
-    setIsUnsavedProjectDialogOpen(false);
-  }
-
-  async function discardChangesAndOpenPendingProject() {
-    if (isNewProjectPending) {
-      setIsNewProjectPending(false);
-      setIsUnsavedProjectDialogOpen(false);
-      createNewProjectNow();
-      return;
-    }
-
-    if (!pendingProjectToOpenId) {
-      cancelPendingProjectOpen();
-      return;
-    }
-
-    const projectId = pendingProjectToOpenId;
-    setPendingProjectToOpenId(null);
-    setIsUnsavedProjectDialogOpen(false);
-    await openProjectNow(projectId);
-  }
-
-  async function saveChangesAndOpenPendingProject() {
-    if (!pendingProjectToOpenId && !isNewProjectPending) {
-      cancelPendingProjectOpen();
-      return;
-    }
-
-    if (currentProjectName === "Untitled project") {
-      setProjectNameDraft("");
-      setIsUnsavedProjectDialogOpen(false);
-      setIsSaveProjectOpen(true);
-      return;
-    }
-
-    const saved = await persistCurrentProject(currentProjectName);
-    if (!saved) return;
-
-    if (isNewProjectPending) {
-      setIsNewProjectPending(false);
-      setIsUnsavedProjectDialogOpen(false);
-      createNewProjectNow();
-      return;
-    }
-
-    const projectId = pendingProjectToOpenId;
-    if (!projectId) {
-      cancelPendingProjectOpen();
-      return;
-    }
-
-    setPendingProjectToOpenId(null);
-    setIsUnsavedProjectDialogOpen(false);
-    await openProjectNow(projectId);
-  }
-
   const registerPreviewCapture = useCallback((cardDocumentId: string, capturePreview: () => SelectedCardPreview) => {
     previewCapturesRef.current.set(cardDocumentId, capturePreview);
 
@@ -1463,39 +1195,61 @@ export function App() {
   return (
     <main className="workspace" aria-label="Loki workspace">
       <Topbar
-        hasUnsavedChanges={hasUnsavedProjectChanges}
-        isProjectMenuOpen={openMenu === "project-open"}
-        onNewProject={createNewProject}
-        onOpenProject={openProject}
-        onSaveProject={openSaveProjectDialog}
-        onToggleProjectMenu={toggleProjectMenu}
-        projectName={currentProjectName}
-        projects={projects}
+        hasUnsavedChanges={projectsController.hasUnsavedProjectChanges}
+        onNewProject={projectsController.createNewProject}
+        onOpenProjectManager={projectsController.openProjectManager}
+        onSaveProject={projectsController.openSaveProjectDialog}
+        projectName={projectsController.currentProjectName}
       />
-      {isSaveProjectOpen && (
+      {projectsController.isProjectManagerOpen && (
+        <ProjectManager
+          currentProjectId={projectsController.currentProjectId}
+          isPending={projectsController.isProjectActionPending}
+          onArchiveProject={projectsController.archiveProject}
+          onClose={projectsController.closeProjectManager}
+          onCreateNewProject={projectsController.createNewProject}
+          onDeleteProjectForever={projectsController.deleteProjectForever}
+          onDuplicateProject={projectsController.duplicateProject}
+          onExportProject={projectsController.exportProject}
+          onImportProject={projectsController.importProjectFile}
+          onOpenProject={projectsController.openProject}
+          onRenameProject={projectsController.renameProject}
+          onRestoreProject={projectsController.restoreProject}
+          onTrashProject={projectsController.trashProject}
+          projects={projectsController.projects}
+        />
+      )}
+      {projectsController.isSaveProjectOpen && (
         <div className="modal-backdrop" role="presentation">
-          <form className="project-modal" onSubmit={submitSaveProject} aria-label="Save project">
+          <form
+            className="project-modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void projectsController.submitSaveProject();
+            }}
+            aria-label="Save project"
+          >
             <h2>Save project</h2>
             <label htmlFor="projectNameInput">Project name</label>
             <input
               id="projectNameInput"
               className="project-name-input"
-              value={projectNameDraft}
-              onChange={(event) => setProjectNameDraft(event.target.value)}
+              value={projectsController.projectNameDraft}
+              onChange={(event) => projectsController.setProjectNameDraft(event.target.value)}
               autoFocus
             />
             <div className="project-modal-actions">
-              <button className="button-tertiary" type="button" onClick={closeSaveProjectDialog}>
+              <button className="button-tertiary" type="button" onClick={projectsController.closeSaveProjectDialog}>
                 Cancel
               </button>
-              <button className="button-primary" type="submit" disabled={isProjectActionPending}>
+              <button className="button-primary" type="submit" disabled={projectsController.isProjectActionPending}>
                 Save
               </button>
             </div>
           </form>
         </div>
       )}
-      {isUnsavedProjectDialogOpen && (
+      {projectsController.isUnsavedProjectDialogOpen && (
         <div className="modal-backdrop" role="presentation">
           <section className="project-modal" aria-label="Unsaved changes">
             <h2>Unsaved changes</h2>
@@ -1506,24 +1260,24 @@ export function App() {
               <button
                 className="button-tertiary"
                 type="button"
-                onClick={cancelPendingProjectOpen}
-                disabled={isProjectActionPending}
+                onClick={projectsController.cancelPendingProjectAction}
+                disabled={projectsController.isProjectActionPending}
               >
                 Cancel
               </button>
               <button
                 className="button-secondary"
                 type="button"
-                onClick={discardChangesAndOpenPendingProject}
-                disabled={isProjectActionPending}
+                onClick={() => void projectsController.discardChangesAndRunPendingProjectAction()}
+                disabled={projectsController.isProjectActionPending}
               >
                 Discard
               </button>
               <button
                 className="button-primary"
                 type="button"
-                onClick={saveChangesAndOpenPendingProject}
-                disabled={isProjectActionPending}
+                onClick={() => void projectsController.saveChangesAndRunPendingProjectAction()}
+                disabled={projectsController.isProjectActionPending}
               >
                 Save
               </button>

@@ -1,8 +1,10 @@
 import os
+from io import BytesIO
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from app.models import (
     AudioTimelineRequest,
@@ -22,6 +24,7 @@ from app.models import (
     ImportedArtifact,
     InstructionRequest,
     InstructionResponse,
+    ProjectCreateRequest,
     ProjectDocument,
     ProjectSaveRequest,
     ProjectSummary,
@@ -51,8 +54,12 @@ from app.services import (
     GrokImagineGenerationError,
     GrokImagineGenerationService,
     InstructionService,
+    ProjectArtifactMissingError,
+    ProjectImportError,
+    ProjectInvalidOperationError,
     ProjectNotFoundError,
     ProjectService,
+    ProjectStorageError,
     SeedanceVideoGenerationError,
     SeedanceVideoGenerationService,
     SkillRegistry,
@@ -82,7 +89,7 @@ def get_skill_run_service() -> SkillRunService:
 
 
 def get_project_service() -> ProjectService:
-    return ProjectService(projects_root)
+    return ProjectService(projects_root, artifacts_root)
 
 
 def get_artifact_archive_service() -> ArtifactArchiveService:
@@ -205,9 +212,21 @@ def generate_gemini_image(
 
 @router.get("/projects", response_model=list[ProjectSummary])
 def list_projects(
+    status: Literal["active", "archived", "trashed", "all"] = "active",
     service: ProjectService = Depends(get_project_service),
 ) -> list[ProjectSummary]:
-    return service.list_projects()
+    try:
+        return service.list_projects(status=status)
+    except ProjectStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/projects", response_model=ProjectDocument)
+def create_project(
+    payload: ProjectCreateRequest,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    return service.create_project(payload)
 
 
 @router.get("/projects/{project_id}", response_model=ProjectDocument)
@@ -219,6 +238,8 @@ def get_project(
         return service.get_project(project_id)
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.put("/projects/{project_id}", response_model=ProjectDocument)
@@ -227,7 +248,106 @@ def save_project(
     payload: ProjectSaveRequest,
     service: ProjectService = Depends(get_project_service),
 ) -> ProjectDocument:
-    return service.save_project(project_id, payload)
+    try:
+        return service.save_project(project_id, payload)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectInvalidOperationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProjectStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/projects/{project_id}/archive", response_model=ProjectDocument)
+def archive_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    try:
+        return service.archive_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectInvalidOperationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/projects/{project_id}/trash", response_model=ProjectDocument)
+def trash_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    try:
+        return service.trash_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@router.post("/projects/{project_id}/restore", response_model=ProjectDocument)
+def restore_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    try:
+        return service.restore_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@router.delete("/projects/{project_id}")
+def delete_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> dict[str, str]:
+    try:
+        service.delete_project(project_id)
+        return {"status": "deleted"}
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectInvalidOperationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/projects/{project_id}/duplicate", response_model=ProjectDocument)
+def duplicate_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    try:
+        return service.duplicate_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+
+
+@router.get("/projects/{project_id}/export")
+def export_project(
+    project_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> StreamingResponse:
+    try:
+        project_export = service.export_project(project_id)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectArtifactMissingError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ProjectInvalidOperationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return StreamingResponse(
+        BytesIO(project_export.data),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{project_export.filename}"'},
+    )
+
+
+@router.post("/projects/import", response_model=ProjectDocument)
+def import_project(
+    file: UploadFile = File(...),
+    service: ProjectService = Depends(get_project_service),
+) -> ProjectDocument:
+    try:
+        return service.import_project(file.file.read())
+    except ProjectImportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/skill-runs", response_model=SkillRun)

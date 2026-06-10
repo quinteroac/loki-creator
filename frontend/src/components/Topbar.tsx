@@ -1,25 +1,17 @@
-import type { ProjectSummary } from "../types";
-
 type TopbarProps = {
   hasUnsavedChanges: boolean;
-  isProjectMenuOpen: boolean;
   onNewProject: () => void;
-  onOpenProject: (projectId: string) => void;
+  onOpenProjectManager: () => void;
   onSaveProject: () => void;
-  onToggleProjectMenu: () => void;
   projectName: string;
-  projects: ProjectSummary[];
 };
 
 export function Topbar({
   hasUnsavedChanges,
-  isProjectMenuOpen,
   onNewProject,
-  onOpenProject,
+  onOpenProjectManager,
   onSaveProject,
-  onToggleProjectMenu,
   projectName,
-  projects,
 }: TopbarProps) {
   return (
     <header className="topbar">
@@ -49,25 +41,10 @@ export function Topbar({
         <button
           className="button-secondary compact"
           type="button"
-          data-popover-trigger
-          aria-expanded={isProjectMenuOpen}
-          onClick={onToggleProjectMenu}
+          onClick={onOpenProjectManager}
         >
-          Open
+          Projects
         </button>
-        {isProjectMenuOpen && (
-          <div className="popover project-popover" data-popover aria-label="Open project">
-            {projects.map((project) => (
-              <button type="button" key={project.id} onClick={() => onOpenProject(project.id)}>
-                <strong>{project.name}</strong>
-                <small>
-                  {project.cardCount === 1 ? "1 card" : `${project.cardCount} cards`}
-                </small>
-              </button>
-            ))}
-            {projects.length === 0 && <p className="picker-empty">No saved projects</p>}
-          </div>
-        )}
         <button className="button-secondary compact" type="button" onClick={onSaveProject}>
           Save
         </button>

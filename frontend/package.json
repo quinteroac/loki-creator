@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "test:bbox": "bun run src/lib/bboxCards.test.ts",
     "test:mentions": "bun run src/lib/cardMentions.test.ts",
+    "test:projects": "bun run src/api/projects.test.ts && bun run src/lib/projects.test.ts",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
