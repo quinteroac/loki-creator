@@ -706,7 +706,7 @@ export function CanvasCard({
             ref={noteTitleRef}
             className="canvas-note-title"
             value={editableTitle}
-            placeholder="Título"
+            placeholder="Title"
             aria-label={`${accessibleTitle} title`}
             onChange={handleNoteTitleChange}
             onClick={stopCardInteraction}
@@ -719,7 +719,7 @@ export function CanvasCard({
             ref={noteTextRef}
             className="canvas-note-text"
             contentEditable
-            data-placeholder="Escribe una nota..."
+            data-placeholder="Write a note..."
             aria-label={`${accessibleTitle} text`}
             onClick={stopCardInteraction}
             onContextMenu={stopCardInteraction}
@@ -819,7 +819,7 @@ export function CanvasCard({
             value={editableTitle}
             onChange={handleNoteTitleChange}
             aria-label={`${accessibleTitle} title`}
-            placeholder="Título"
+            placeholder="Title"
           />
           <textarea
             className="canvas-card-metadata-prompt"

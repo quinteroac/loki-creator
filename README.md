@@ -1,14 +1,14 @@
 # Loki Creator
 
-Workspace creativo con frontend React sobre Bun y backend Python sobre uv.
+Creative workspace with a React frontend on Bun and a Python backend on uv.
 
-## Desarrollo
+## Development
 
 ```bash
 bun run dev
 ```
 
-Este comando levanta el frontend y el backend al mismo tiempo.
+This command starts the frontend and backend at the same time.
 
 ## Frontend
 
@@ -26,4 +26,4 @@ uv sync
 uv run uvicorn app.main:app --reload --port 8001
 ```
 
-El frontend espera la API en `http://localhost:8001`. Puedes cambiarlo con `VITE_API_URL`.
+The frontend expects the API at `http://localhost:8001`. You can change it with `VITE_API_URL`.

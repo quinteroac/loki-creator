@@ -509,7 +509,7 @@ export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifac
 
 export function createNoteCardDocument(text = ""): CardDocument {
   const id = `card_note_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`;
-  const title = "Nota";
+  const title = "Note";
 
   return {
     id,
@@ -689,7 +689,7 @@ export function assignUniqueDisplayTitles(
 }
 
 export function renameCardDocument(document: CardDocument, title: string): CardDocument {
-  const htmlTitle = title.trim() || "Nota";
+  const htmlTitle = title.trim() || "Note";
   const html = document.metadata?.kind === "note"
     ? noteCardHtml(htmlTitle, document.prompt)
     : document.metadata?.kind === "bbox"

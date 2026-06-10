@@ -33,10 +33,10 @@ export function Topbar({
           className="button-secondary compact new-project-button"
           type="button"
           onClick={onNewProject}
-          aria-label="Nuevo Proyecto"
+          aria-label="New Project"
         >
-          <span className="new-project-label-full">Nuevo Proyecto</span>
-          <span className="new-project-label-short" aria-hidden="true">Nuevo</span>
+          <span className="new-project-label-full">New Project</span>
+          <span className="new-project-label-short" aria-hidden="true">New</span>
         </button>
         <button
           className="button-secondary compact"

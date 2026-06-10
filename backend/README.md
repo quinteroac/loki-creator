@@ -1,6 +1,6 @@
 # Loki Creator Backend
 
-API mínima para recibir instrucciones desde el workspace de React.
+Minimal API for receiving instructions from the React workspace.
 
 ```bash
 uv sync

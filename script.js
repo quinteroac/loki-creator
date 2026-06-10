@@ -10,7 +10,7 @@ const elementsMenu = document.querySelector("#elementsMenu");
 const selectionNote = document.querySelector("#selectionNote");
 const canvasNodes = Array.from(document.querySelectorAll(".canvas-node"));
 
-let activeTool = "Imagen";
+let activeTool = "Image";
 
 function autoResizeTextarea() {
   input.style.height = "auto";
@@ -33,7 +33,7 @@ function selectNode(nodeName) {
   canvasNodes.forEach((node) => {
     node.classList.toggle("selected", node.dataset.nodeName === nodeName);
   });
-  selectionNote.textContent = `${nodeName} seleccionado`;
+  selectionNote.textContent = `${nodeName} selected`;
 }
 
 input.addEventListener("input", autoResizeTextarea);
@@ -50,12 +50,12 @@ form.addEventListener("submit", (event) => {
   const instruction = input.value.trim();
 
   if (!instruction) {
-    statusLine.textContent = "Escribe una instrucción para enviarla al agente.";
+    statusLine.textContent = "Write an instruction before sending it to the agent.";
     input.focus();
     return;
   }
 
-  statusLine.textContent = `Instrucción enviada con ${activeTool}.`;
+  statusLine.textContent = `Instruction sent with ${activeTool}.`;
   input.value = "";
   autoResizeTextarea();
 });
@@ -67,7 +67,7 @@ attachButton.addEventListener("click", () => {
 fileInput.addEventListener("change", () => {
   const count = fileInput.files.length;
   if (count > 0) {
-    statusLine.textContent = count === 1 ? "1 archivo adjunto." : `${count} archivos adjuntos.`;
+    statusLine.textContent = count === 1 ? "1 file attached." : `${count} files attached.`;
   }
 });
 
@@ -91,7 +91,7 @@ toolsMenu.addEventListener("click", (event) => {
 
   activeTool = button.dataset.tool;
   toolsButton.textContent = activeTool;
-  statusLine.textContent = `Herramienta activa: ${activeTool}.`;
+  statusLine.textContent = `Active tool: ${activeTool}.`;
   closeMenus();
   input.focus();
 });

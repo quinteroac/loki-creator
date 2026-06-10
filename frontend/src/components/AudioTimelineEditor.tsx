@@ -294,7 +294,7 @@ export function AudioTimelineEditor({
               onClick={createTrimCard}
             >
               <Scissors size={15} aria-hidden="true" />
-              <span>{action === "trim" ? "Recortando..." : "Crear clip"}</span>
+              <span>{action === "trim" ? "Trimming..." : "Create clip"}</span>
             </button>
           </div>
         </>

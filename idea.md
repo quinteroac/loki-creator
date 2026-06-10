@@ -1,43 +1,43 @@
 Loki Agentic Creative Suite
 
-Interfaz para crear agentes especializados en creación de proyectos creativos.
+Interface for creating specialized agents focused on creative project production.
 
-¿Que es un agente? Un pack de skills y tools creados para realizar una tarea especifica.
+What is an agent? A package of skills and tools created to perform a specific task.
 
-Dirigida a creativos, diseñadores, desarrollador de videojuegos, diseñadores graficos, youtubers, musicos, etc.
+Designed for creatives, designers, game developers, graphic designers, YouTubers, musicians, and similar creative users.
 
-Diseño inspirado GPTs de OpenAI ordenar a los agentes en carpetas y listas.
+Design inspired by OpenAI GPTs, organizing agents into folders and lists.
 
-Chat + Canvas  
+Chat + Canvas
 
-Creación de agentes ad-hoc permitiendo exportarlos y compartirlos.
+Ad-hoc agent creation with export and sharing support.
 
-Tools creativas para agentes
+Creative tools for agents
 
-- Creación/Edición de imagenes.
-- Creación/Edición de video.
-- Creación de SFX.
-- Creación de voces.
-- Creación de música.
-- Creación de 3D.
-- Creación de gaussian splats.
-- Creación de worlds.
-- Analisis de imagenes.
-- Analisis de video.
-- Analisis de música.
-- Analisis de audio (SFX y voz)
-- Entrenamiento de loras.
+- Image creation/editing.
+- Video creation/editing.
+- SFX creation.
+- Voice creation.
+- Music creation.
+- 3D creation.
+- Gaussian splat creation.
+- World creation.
+- Image analysis.
+- Video analysis.
+- Music analysis.
+- Audio analysis for SFX and voice.
+- LoRA training.
 
-AI generativa local + cloud
+Local + cloud generative AI
 
-Integraciones.
+Integrations.
 
-* Integración con Blender.
-* Integración con Suno.
-* Integración con Niji/Midjourney.
-* Integración con Krita.
-* Integración con Asesprite.
-* Integración con Canva.
-* Integración con Figma.
-* Integración con Modal.
-* Integración con Runpod.
+* Blender integration.
+* Suno integration.
+* Niji/Midjourney integration.
+* Krita integration.
+* Aseprite integration.
+* Canva integration.
+* Figma integration.
+* Modal integration.
+* Runpod integration.

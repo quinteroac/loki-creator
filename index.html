@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -13,28 +13,28 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="workspace" aria-label="Interfaz de trabajo Loki">
+    <main class="workspace" aria-label="Loki workspace">
       <header class="topbar">
         <a class="brand" href="./index.html" aria-label="Loki Creator">
           <span class="brand-mark" aria-hidden="true">L</span>
           <span>Loki Creator</span>
         </a>
-        <div class="project-switcher" aria-label="Proyecto actual">
+        <div class="project-switcher" aria-label="Current project">
           <span class="project-dot" aria-hidden="true"></span>
-          <span>Proyecto sin título</span>
+          <span>Untitled project</span>
         </div>
-        <button class="button-secondary compact" type="button">Compartir</button>
+        <button class="button-secondary compact" type="button">Share</button>
       </header>
 
-      <section class="canvas-shell" aria-label="Canvas creativo">
-        <div class="canvas-toolbar" aria-label="Controles del canvas">
-          <button class="icon-button" type="button" aria-label="Alejar" title="Alejar">
+      <section class="canvas-shell" aria-label="Creative canvas">
+        <div class="canvas-toolbar" aria-label="Canvas controls">
+          <button class="icon-button" type="button" aria-label="Zoom out" title="Zoom out">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 12h14" />
             </svg>
           </button>
           <span class="zoom-label">100%</span>
-          <button class="icon-button" type="button" aria-label="Acercar" title="Acercar">
+          <button class="icon-button" type="button" aria-label="Zoom in" title="Zoom in">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
             </svg>
@@ -42,52 +42,52 @@
         </div>
 
         <div class="canvas" id="creativeCanvas" tabindex="0">
-          <article class="canvas-node node-image selected" data-node-name="Moodboard de personaje">
-            <span class="node-kicker">Imagen</span>
-            <h2>Moodboard de personaje</h2>
-            <p>Exploración visual para agente de concepto.</p>
+          <article class="canvas-node node-image selected" data-node-name="Character moodboard">
+            <span class="node-kicker">Image</span>
+            <h2>Character moodboard</h2>
+            <p>Visual exploration for the concept agent.</p>
           </article>
-          <article class="canvas-node node-video" data-node-name="Animatic escena 01">
+          <article class="canvas-node node-video" data-node-name="Scene 01 animatic">
             <span class="node-kicker">Video</span>
-            <h2>Animatic escena 01</h2>
-            <p>Ritmo, cámara y timing inicial.</p>
+            <h2>Scene 01 animatic</h2>
+            <p>Initial rhythm, camera, and timing.</p>
           </article>
           <article class="canvas-node node-audio" data-node-name="SFX portal">
             <span class="node-kicker">Audio</span>
             <h2>SFX portal</h2>
-            <p>Capas de impacto, aire y textura.</p>
+            <p>Layers of impact, air, and texture.</p>
           </article>
-          <div class="canvas-selection-note" id="selectionNote">1 elemento seleccionado</div>
+          <div class="canvas-selection-note" id="selectionNote">1 element selected</div>
         </div>
       </section>
 
-      <section class="composer-wrap" aria-label="Instrucciones para el agente">
-        <div class="popover" id="toolsMenu" aria-label="Seleccionar herramientas" hidden>
-          <button type="button" data-tool="Imagen">Imagen</button>
+      <section class="composer-wrap" aria-label="Agent instructions">
+        <div class="popover" id="toolsMenu" aria-label="Select tools" hidden>
+          <button type="button" data-tool="Image">Image</button>
           <button type="button" data-tool="Video">Video</button>
           <button type="button" data-tool="Audio">Audio</button>
           <button type="button" data-tool="3D">3D</button>
         </div>
 
-        <div class="popover elements-popover" id="elementsMenu" aria-label="Elementos del canvas" hidden>
-          <button type="button" data-target="Moodboard de personaje">Moodboard de personaje</button>
-          <button type="button" data-target="Animatic escena 01">Animatic escena 01</button>
+        <div class="popover elements-popover" id="elementsMenu" aria-label="Canvas elements" hidden>
+          <button type="button" data-target="Character moodboard">Character moodboard</button>
+          <button type="button" data-target="Scene 01 animatic">Scene 01 animatic</button>
           <button type="button" data-target="SFX portal">SFX portal</button>
         </div>
 
         <form class="composer" id="instructionForm">
           <div class="composer-actions">
             <input id="fileInput" type="file" hidden multiple />
-            <button class="icon-button" id="attachButton" type="button" aria-label="Adjuntar archivo" title="Adjuntar">
+            <button class="icon-button" id="attachButton" type="button" aria-label="Attach file" title="Attach">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.3-9.3a4 4 0 0 1 5.7 5.7l-9.3 9.3a2 2 0 1 1-2.8-2.8l8.8-8.8" />
               </svg>
             </button>
             <button class="button-tertiary tool-toggle" id="toolsButton" type="button" aria-expanded="false">
-              Herramientas
+              Tools
             </button>
             <button class="button-tertiary tool-toggle" id="elementsButton" type="button" aria-expanded="false">
-              Seleccionar
+              Select
             </button>
           </div>
 
@@ -95,12 +95,12 @@
             id="instructionInput"
             name="instruction"
             rows="1"
-            placeholder="Dale instrucciones al agente..."
-            aria-label="Instrucción para el agente"
+            placeholder="Give the agent instructions..."
+            aria-label="Agent instruction"
           ></textarea>
 
-          <button class="button-primary send-button" type="submit" aria-label="Enviar instrucción">
-            <span>Enviar</span>
+          <button class="button-primary send-button" type="submit" aria-label="Send instruction">
+            <span>Send</span>
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>

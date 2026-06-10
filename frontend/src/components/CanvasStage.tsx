@@ -424,11 +424,11 @@ export function CanvasStage({
           >
             <button className="context-menu-item" type="button" role="menuitem" onClick={createNoteFromContextMenu}>
               <StickyNote size={16} aria-hidden="true" />
-              <span>Crear nota</span>
+              <span>Create note</span>
             </button>
             <button className="context-menu-item" type="button" role="menuitem" onClick={createBboxFromContextMenu}>
               <Crosshair size={16} aria-hidden="true" />
-              <span>Crear bbox</span>
+              <span>Create bbox</span>
             </button>
           </div>
         )}

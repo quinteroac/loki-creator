@@ -253,7 +253,7 @@ export function VideoTimelineEditor({
       ]);
       onCreateArtifact(firstFrame, 0);
       onCreateArtifact(lastFrame, 1);
-      onStatus("Primer y ultimo frame agregados al canvas.");
+      onStatus("First and last frames added to canvas.");
     } catch (boundaryError) {
       setError(boundaryError instanceof Error ? boundaryError.message : "Could not export first and last frames.");
     } finally {
@@ -403,7 +403,7 @@ export function VideoTimelineEditor({
 
           <div className="video-editor-range-inputs" aria-label="Trim range in seconds">
             <label>
-              <span>Inicio (s)</span>
+              <span>Start (s)</span>
               <input
                 aria-label="Trim start seconds"
                 disabled={Boolean(action)}
@@ -417,7 +417,7 @@ export function VideoTimelineEditor({
               />
             </label>
             <label>
-              <span>Fin (s)</span>
+              <span>End (s)</span>
               <input
                 aria-label="Trim end seconds"
                 disabled={Boolean(action)}
@@ -441,7 +441,7 @@ export function VideoTimelineEditor({
               onClick={createFrameCard}
             >
               <ImagePlus size={15} aria-hidden="true" />
-              <span>{action === "frame" ? "Creando..." : "Crear frame"}</span>
+              <span>{action === "frame" ? "Creating..." : "Create frame"}</span>
             </button>
             <button
               className="video-editor-action-button"
@@ -450,7 +450,7 @@ export function VideoTimelineEditor({
               onClick={createBoundaryFrameCards}
             >
               <Images size={15} aria-hidden="true" />
-              <span>{action === "bounds" ? "Extrayendo..." : "Primer/ultimo"}</span>
+              <span>{action === "bounds" ? "Extracting..." : "First/last"}</span>
             </button>
             <button
               className="video-editor-action-button primary"
@@ -459,7 +459,7 @@ export function VideoTimelineEditor({
               onClick={createTrimCard}
             >
               <Scissors size={15} aria-hidden="true" />
-              <span>{action === "trim" ? "Recortando..." : "Crear clip"}</span>
+              <span>{action === "trim" ? "Trimming..." : "Create clip"}</span>
             </button>
           </div>
         </>
