@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+
+strict=0
+if [[ "${1:-}" == "--strict" ]]; then
+  strict=1
+fi
+
+bootstrap_persistent_paths
+load_runtime_secrets
+
+failures=0
+
+check_command() {
+  local command_name="$1"
+  if run_with_version "$command_name"; then
+    printf '\n'
+  else
+    warn "missing required CLI: ${command_name}"
+    failures=$((failures + 1))
+  fi
+}
+
+log "checking required CLIs"
+for command_name in pi codex grok agy comfy-imagegen comfy-videogen comfy-musicgen comfy-models runpodctl; do
+  check_command "$command_name"
+done
+
+log "checking GPU visibility"
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>/dev/null || warn "nvidia-smi is installed but no GPU is visible"
+else
+  warn "nvidia-smi is not installed"
+fi
+
+log "checking sshd"
+if pgrep -x sshd >/dev/null 2>&1; then
+  printf 'sshd: ok\n'
+else
+  warn "sshd is not running"
+  service_failures=1
+fi
+
+log "checking persistent auth/config stores"
+for store in /workspace/.pi /workspace/.codex /workspace/.grok /workspace/.gemini /workspace/.loki /workspace/.loki/models/comfyui; do
+  if [[ -d "$store" ]]; then
+    printf 'present: %s\n' "$store"
+  else
+    warn "missing store: ${store}"
+    failures=$((failures + 1))
+  fi
+done
+
+log "checking local services"
+service_failures="${service_failures:-0}"
+if http_ok http://127.0.0.1:8001/api/health; then
+  printf 'backend: ok\n'
+else
+  warn "backend health check failed at http://127.0.0.1:8001/api/health"
+  service_failures=$((service_failures + 1))
+fi
+
+if http_ok http://127.0.0.1:8787/api/health; then
+  printf 'agent bridge: ok\n'
+else
+  warn "agent bridge health check failed at http://127.0.0.1:8787/api/health"
+  service_failures=$((service_failures + 1))
+fi
+
+if http_ok http://127.0.0.1:3000/; then
+  printf 'frontend proxy: ok\n'
+else
+  warn "frontend proxy check failed at http://127.0.0.1:3000/"
+  service_failures=$((service_failures + 1))
+fi
+
+if [[ "$strict" -eq 1 ]]; then
+  failures=$((failures + service_failures))
+fi
+
+if [[ "$failures" -gt 0 ]]; then
+  die "doctor found ${failures} required check failure(s)"
+fi
+
+log "doctor finished"

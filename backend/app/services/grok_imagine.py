@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 from typing import Any, Callable
 from uuid import uuid4
@@ -79,6 +80,7 @@ class GrokImagineGenerationService:
             "aspectRatio": payload.aspect_ratio,
             "resolution": payload.resolution,
             "duration": payload.duration,
+            "pollTimeoutMs": 15 * 60 * 1000,
         }
         raw = self.invoke_runtime("grok-imagine-video", prompt, params, payload.selected_card_snapshots, payload.attachments, payload.context)
         raw_result = self.validated_raw_result(raw, expected_kind="video")
@@ -131,8 +133,11 @@ class GrokImagineGenerationService:
     ) -> dict[str, Any]:
         runtime = self.load_runtime()
         handler = self.runtime_handler(runtime, skill_id)
+        run_id = f"generation_{uuid4().hex}"
+        diagnostic_dir = self.artifacts_root / "skills" / skill_id / run_id
+        diagnostic_dir.mkdir(parents=True, exist_ok=True)
         payload = {
-            "runId": f"generation_{uuid4().hex}",
+            "runId": run_id,
             "skillId": skill_id,
             "prompt": prompt,
             "params": params,
@@ -140,13 +145,33 @@ class GrokImagineGenerationService:
             "selectedCardSnapshots": selected_card_snapshots,
             "attachments": attachments,
         }
+        self.write_diagnostic_json(diagnostic_dir / "request.json", payload)
         try:
             result = handler(payload)
         except Exception as exc:
+            self.write_diagnostic_json(
+                diagnostic_dir / "error.json",
+                {
+                    "error": str(exc),
+                    "type": type(exc).__name__,
+                },
+            )
             raise GrokImagineGenerationError(str(exc)) from exc
         if not isinstance(result, dict):
+            self.write_diagnostic_json(
+                diagnostic_dir / "error.json",
+                {
+                    "error": "Grok runtime did not return a JSON object.",
+                    "type": type(result).__name__,
+                },
+            )
             raise GrokImagineGenerationError("Grok runtime did not return a JSON object.")
+        self.write_diagnostic_json(diagnostic_dir / "raw-result.json", result)
         return result
+
+    def write_diagnostic_json(self, path: Path, data: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def load_runtime(self) -> Any:
         spec = importlib.util.spec_from_file_location("loki_grok_imagine_action", GROK_RUNTIME_PATH)

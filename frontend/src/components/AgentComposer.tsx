@@ -193,6 +193,7 @@ export function AgentComposer({
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [activeMention, setActiveMention] = useState<ActiveCardMention | null>(null);
   const [activeMentionOptionIndex, setActiveMentionOptionIndex] = useState(0);
+  const [showOnlySelectedCards, setShowOnlySelectedCards] = useState(false);
   const composerWrapRef = useRef<HTMLElement | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const mentionOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -208,6 +209,10 @@ export function AgentComposer({
   const mentionOptions = useMemo(
     () => activeMention ? filterCardMentionOptions(canvasNodes, activeMention.query) : [],
     [activeMention, canvasNodes],
+  );
+  const displayedCardOptions = useMemo(
+    () => showOnlySelectedCards ? canvasNodes.filter((node) => selectedCards.includes(node.id)) : canvasNodes,
+    [canvasNodes, selectedCards, showOnlySelectedCards],
   );
   const isMentionPickerOpen = activeMention !== null;
 
@@ -419,8 +424,20 @@ export function AgentComposer({
 
       {openMenu === "selected-cards" && (
         <div className="popover cards-popover" data-popover aria-label="Selected cards">
+          <div className="cards-popover-toolbar">
+            <span>{selectedCardCount} selected</span>
+            <button
+              className={`cards-filter-toggle ${showOnlySelectedCards ? "active" : ""}`}
+              type="button"
+              aria-pressed={showOnlySelectedCards}
+              onClick={() => setShowOnlySelectedCards((currentValue) => !currentValue)}
+            >
+              <Check size={13} strokeWidth={2} />
+              <span>Selected only</span>
+            </button>
+          </div>
           <div className="picker-list">
-            {canvasNodes.map((node) => {
+            {displayedCardOptions.map((node) => {
               const isSelected = selectedCards.includes(node.id);
               const title = getCardDisplayTitle(node);
               const subtitle = getCardDisplaySubtitle(node);
@@ -441,6 +458,9 @@ export function AgentComposer({
               );
             })}
             {canvasNodes.length === 0 && <p className="picker-empty">No cards in canvas</p>}
+            {canvasNodes.length > 0 && displayedCardOptions.length === 0 && (
+              <p className="picker-empty">No selected cards</p>
+            )}
           </div>
         </div>
       )}

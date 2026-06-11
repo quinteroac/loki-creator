@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+
+if [[ $# -gt 0 ]]; then
+  bootstrap_persistent_paths
+  load_runtime_secrets
+  exec "$@"
+fi
+
+bootstrap_persistent_paths
+load_runtime_secrets
+
+start_sshd() {
+  mkdir -p /run/sshd /root/.ssh
+  chmod 700 /root/.ssh
+  if [[ -n "${PUBLIC_KEY:-}" ]] && ! grep -qxF "$PUBLIC_KEY" /root/.ssh/authorized_keys 2>/dev/null; then
+    printf '%s\n' "$PUBLIC_KEY" >> /root/.ssh/authorized_keys
+  fi
+  if [[ -f /root/.ssh/authorized_keys ]]; then
+    chmod 600 /root/.ssh/authorized_keys
+  fi
+  /usr/sbin/sshd
+}
+
+if [[ -n "${LOKI_MODEL_CAPABILITIES:-}" ]]; then
+  IFS=',' read -r -a requested_capabilities <<< "$LOKI_MODEL_CAPABILITIES"
+  for capability in "${requested_capabilities[@]}"; do
+    capability="${capability//[[:space:]]/}"
+    if [[ -n "$capability" ]]; then
+      log "downloading requested model capability: ${capability}"
+      loki-models download "$capability"
+    fi
+  done
+fi
+
+log "starting sshd"
+start_sshd
+
+log "starting backend"
+(
+  cd "$LOKI_REPO_DIR/backend"
+  exec uvicorn app.main:app --host 0.0.0.0 --port 8001
+) &
+backend_pid=$!
+
+log "starting agent bridge"
+(
+  cd "$LOKI_REPO_DIR"
+  exec bun run agent-bridge/server.ts
+) &
+bridge_pid=$!
+
+log "starting nginx on port 3000"
+nginx -c /etc/nginx/nginx.conf -g 'daemon off;' &
+nginx_pid=$!
+
+shutdown() {
+  log "stopping services"
+  kill "$backend_pid" "$bridge_pid" "$nginx_pid" 2>/dev/null || true
+  wait "$backend_pid" "$bridge_pid" "$nginx_pid" 2>/dev/null || true
+}
+
+trap shutdown INT TERM
+
+wait -n "$backend_pid" "$bridge_pid" "$nginx_pid"
+exit_code=$?
+shutdown
+exit "$exit_code"

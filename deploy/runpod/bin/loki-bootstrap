@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+
+bootstrap_persistent_paths
+load_runtime_secrets
+
+log "persistent paths ready"

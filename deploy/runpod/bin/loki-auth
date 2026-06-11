@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  loki-auth codex [args...]
+  loki-auth pi [args...]
+  loki-auth grok [args...]
+  loki-auth agy [args...]
+  loki-auth provider <openrouter|comfy|hf|civitai|ENV_VAR_NAME>
+USAGE
+}
+
+provider_env_name() {
+  local provider="$1"
+  case "${provider,,}" in
+    openrouter) printf 'OPENROUTER_API_KEY' ;;
+    comfy|comfy-org|comfy_org) printf 'COMFY_ORG_API_KEY' ;;
+    hf|huggingface|hugging-face) printf 'HF_TOKEN' ;;
+    civitai) printf 'CIVITAI_API_TOKEN' ;;
+    *)
+      if [[ "$provider" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+        printf '%s' "$provider"
+      else
+        return 1
+      fi
+      ;;
+  esac
+}
+
+write_runtime_secret() {
+  local env_name="$1"
+  local secret="$2"
+  local secrets_dir
+  local temp_file
+
+  secrets_dir="$(dirname "$LOKI_RUNTIME_SECRETS_FILE")"
+  mkdir -p "$secrets_dir"
+  chmod 700 "$secrets_dir"
+  temp_file="$(mktemp "${secrets_dir}/runtime-secrets.XXXXXX")"
+  chmod 600 "$temp_file"
+
+  if [[ -f "$LOKI_RUNTIME_SECRETS_FILE" ]]; then
+    grep -v -E "^export ${env_name}=" "$LOKI_RUNTIME_SECRETS_FILE" > "$temp_file" || true
+  fi
+  printf 'export %s=%q\n' "$env_name" "$secret" >> "$temp_file"
+  mv "$temp_file" "$LOKI_RUNTIME_SECRETS_FILE"
+  chmod 600 "$LOKI_RUNTIME_SECRETS_FILE"
+}
+
+bootstrap_persistent_paths
+load_runtime_secrets
+
+target="${1:-}"
+if [[ -z "$target" ]]; then
+  usage
+  exit 1
+fi
+shift
+
+case "$target" in
+  codex)
+    log "starting Codex login flow"
+    exec codex login "$@"
+    ;;
+  pi)
+    log "starting Pi. Use /login inside Pi, then exit when authentication is complete."
+    exec pi "$@"
+    ;;
+  grok)
+    log "starting Grok Build authentication flow"
+    if grok login --help >/dev/null 2>&1; then
+      exec grok login "$@"
+    fi
+    exec grok "$@"
+    ;;
+  agy)
+    log "starting Antigravity CLI. In SSH, follow the printed authorization URL."
+    exec agy "$@"
+    ;;
+  provider)
+    provider="${1:-}"
+    if [[ -z "$provider" ]]; then
+      usage
+      exit 1
+    fi
+    env_name="$(provider_env_name "$provider")" || die "unknown provider '${provider}'. Use a known provider or an uppercase env var name."
+    printf 'Enter value for %s: ' "$env_name" >&2
+    IFS= read -r -s secret
+    printf '\n' >&2
+    if [[ -z "$secret" ]]; then
+      die "empty secret rejected"
+    fi
+    write_runtime_secret "$env_name" "$secret"
+    log "stored ${env_name} in ${LOKI_RUNTIME_SECRETS_FILE}"
+    log "restart the Pod for already-running Loki services to load this value"
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

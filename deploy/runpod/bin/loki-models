@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  loki-models list
+  loki-models show
+  loki-models validate
+  loki-models download <capability> [--dry-run]
+USAGE
+}
+
+bootstrap_persistent_paths
+load_runtime_secrets
+
+export LOKI_COMFY_MODELS_DIR
+
+if [[ ! -f "${LOKI_REPO_DIR}/.comfy-agent-tools.json" ]]; then
+  (
+    cd "$LOKI_REPO_DIR"
+    comfy-models init
+    comfy-models set-models-dir "$LOKI_COMFY_MODELS_DIR"
+  )
+fi
+
+command_name="${1:-}"
+if [[ -z "$command_name" ]]; then
+  usage
+  exit 1
+fi
+shift
+
+case "$command_name" in
+  list)
+    comfy-models list "$@"
+    ;;
+  show)
+    comfy-models show "$@"
+    ;;
+  validate)
+    comfy-models validate "$@"
+    ;;
+  download)
+    capability="${1:-}"
+    if [[ -z "$capability" ]]; then
+      usage
+      exit 1
+    fi
+    shift
+    dry_run=0
+    for arg in "$@"; do
+      if [[ "$arg" == "--dry-run" ]]; then
+        dry_run=1
+      fi
+    done
+    if [[ "$dry_run" -eq 1 ]]; then
+      comfy-models download "$capability" "$@"
+    else
+      comfy-models download "$capability" --yes "$@"
+    fi
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

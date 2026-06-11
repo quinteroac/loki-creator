@@ -1,0 +1,15 @@
+.agents
+.comfy-agent-tools.json
+.env
+.git
+.github
+.grok
+.loki
+.pi
+backend/.pytest_cache
+backend/.venv
+frontend/dist
+frontend/node_modules
+node_modules
+output
+outputs

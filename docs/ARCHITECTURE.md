@@ -161,6 +161,26 @@ Project export creates a portable `.loki-project.zip` containing a manifest,
 `.loki/project-imports/<project-id>/`, rewrites artifact URLs, and creates a new
 active project with a unique local id.
 
+## RunPod Deployment
+
+RunPod deployment is packaged as a single CLI-ready image under
+`deploy/runpod/`. The image runs Loki's frontend, backend, and agent bridge in
+one container because RunPod Pods use a custom image rather than Docker Compose.
+nginx exposes the production frontend on port `3000`, proxies `/api/*` to the
+FastAPI backend on `8001`, and proxies `/agent/*` to the agent bridge on `8787`.
+
+The image installs required CLIs during build (`pi`, `codex`, `grok`, `agy`,
+`comfy-agent-tools`, and `runpodctl`) but does not include provider credentials.
+Authentication is performed after deployment through SSH wrappers in
+`scripts/runpod/`, and auth state is persisted on the mounted `/workspace`
+volume.
+
+Persistent runtime paths are linked from the container into `/workspace`,
+including `.loki`, `.pi`, `.codex`, `.grok`, `.gemini`, and
+`.comfy-agent-tools.json`. Comfy model downloads are intentionally on demand and
+stored in `/workspace/.loki/models/comfyui`, not baked into the default image.
+Operational details are documented in `docs/RUNPOD.md`.
+
 ## Selected Cards
 
 Selected cards are treated as multimodal artifacts, not as trusted instructions. A selected card snapshot includes:
