@@ -8,6 +8,7 @@ import {
   listAvailableModelsAsync,
   port,
   runAgent,
+  startAgentRun,
   stopAgentRun,
 } from "./src/agentRunner";
 
@@ -109,7 +110,9 @@ const app = new Elysia()
   .get("/api/models", () => listAvailableModelsAsync())
   .get("/api/agent-runs/:id/events", ({ params }) => createAgentRunEventStream(params.id))
   .post("/api/agent-runs/:id/stop", ({ params }) => stopAgentRun(params.id))
-  .post("/api/agent-runs", async ({ body }) => runAgent(body), {
+  .post("/api/agent-runs", async ({ body }) => (
+    body.streamId ? startAgentRun(body) : runAgent(body)
+  ), {
     body: agentRunRequestSchema,
   })
   .listen(port);

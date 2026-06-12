@@ -351,6 +351,7 @@ class ComfyGenerationService:
     def run_command(self, command: list[str], cwd: Path) -> dict[str, Any]:
         env = {**os.environ, "PYTHONUNBUFFERED": "1"}
         env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+        self.validate_comfy_cuda(command, cwd, env)
         timeout_seconds = int(os.environ.get("LOKI_COMFY_DIRECT_TIMEOUT_SECONDS", "0"))
         process = subprocess.run(
             command,
@@ -371,6 +372,59 @@ class ComfyGenerationService:
         if not isinstance(parsed, dict):
             raise ComfyGenerationError("Comfy command returned non-object JSON.")
         return parsed
+
+    def validate_comfy_cuda(self, command: list[str], cwd: Path, env: dict[str, str]) -> None:
+        if not self.env_value_enabled(env.get("LOKI_REQUIRE_COMFY_CUDA")):
+            return
+        if not command or Path(command[0]).name not in {"comfy-imagegen", "comfy-videogen"}:
+            return
+
+        executable = shutil.which(command[0])
+        if not executable:
+            raise ComfyGenerationError(f"Comfy CLI not found while validating CUDA: {command[0]}")
+
+        python = self.python_from_cli_shebang(Path(executable))
+        if not python:
+            raise ComfyGenerationError(f"Could not determine Python runtime for {command[0]} to validate CUDA.")
+
+        check = subprocess.run(
+            [
+                python,
+                "-c",
+                (
+                    "import sys, torch; "
+                    "ok = torch.cuda.is_available(); "
+                    "print(f'torch={torch.__version__} torch_cuda={torch.version.cuda} cuda_available={ok} device_count={torch.cuda.device_count()}', file=sys.stderr); "
+                    "sys.exit(0 if ok else 42)"
+                ),
+            ],
+            cwd=cwd,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if check.returncode != 0:
+            detail = (check.stderr or check.stdout).strip()
+            raise ComfyGenerationError(
+                "Comfy CUDA validation failed. PyTorch cannot see a CUDA GPU, so Loki refused to run Comfy on CPU. "
+                f"{detail} Set LOKI_REQUIRE_COMFY_CUDA=0 only if CPU generation is intentional."
+            )
+
+    def env_value_enabled(self, value: str | None) -> bool:
+        return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+    def python_from_cli_shebang(self, executable: Path) -> str | None:
+        try:
+            first_line = executable.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+        except (OSError, IndexError):
+            return None
+        if not first_line.startswith("#!"):
+            return None
+        python = first_line[2:].strip().split()[0]
+        if "python" not in Path(python).name:
+            return None
+        return python
 
     def validated_raw_result(self, raw: dict[str, Any], *, expected_kind: Literal["image", "video"], prompt: str) -> SkillRawResult:
         if raw.get("ok") is False:

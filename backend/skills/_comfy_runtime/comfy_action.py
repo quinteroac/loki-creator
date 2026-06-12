@@ -1866,6 +1866,7 @@ def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
     if should_enable_loki_sage_attention(command):
         env["LOKI_COMFY_USE_SAGE_ATTENTION"] = "1"
         env["PYTHONPATH"] = prepend_pythonpath(Path(__file__).resolve().parent, env.get("PYTHONPATH"))
+    validate_comfy_cuda(command, cwd, env)
     timeout_seconds = int(os.environ.get("LOKI_COMFY_TIMEOUT_SECONDS", "0"))
     process = subprocess.run(
         command,
@@ -1886,6 +1887,62 @@ def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise RuntimeError("Comfy command returned non-object JSON")
     return parsed
+
+
+def validate_comfy_cuda(command: list[str], cwd: Path, env: dict[str, str]) -> None:
+    if not env_value_enabled(env.get("LOKI_REQUIRE_COMFY_CUDA")):
+        return
+    if not command or Path(command[0]).name not in {"comfy-imagegen", "comfy-videogen", "comfy-musicgen"}:
+        return
+
+    executable = shutil.which(command[0])
+    if not executable:
+        raise RuntimeError(f"Comfy CLI not found while validating CUDA: {command[0]}")
+
+    python = python_from_cli_shebang(Path(executable))
+    if not python:
+        raise RuntimeError(f"Could not determine Python runtime for {command[0]} to validate CUDA.")
+
+    check = subprocess.run(
+        [
+            python,
+            "-c",
+            (
+                "import sys, torch; "
+                "ok = torch.cuda.is_available(); "
+                "print(f'torch={torch.__version__} torch_cuda={torch.version.cuda} cuda_available={ok} device_count={torch.cuda.device_count()}', file=sys.stderr); "
+                "sys.exit(0 if ok else 42)"
+            ),
+        ],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if check.returncode != 0:
+        detail = (check.stderr or check.stdout).strip()
+        raise RuntimeError(
+            "Comfy CUDA validation failed. PyTorch cannot see a CUDA GPU, so Loki refused to run Comfy on CPU. "
+            f"{detail} Set LOKI_REQUIRE_COMFY_CUDA=0 only if CPU generation is intentional."
+        )
+
+
+def env_value_enabled(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def python_from_cli_shebang(executable: Path) -> str | None:
+    try:
+        first_line = executable.read_text(encoding="utf-8", errors="ignore").splitlines()[0]
+    except (OSError, IndexError):
+        return None
+    if not first_line.startswith("#!"):
+        return None
+    python = first_line[2:].strip().split()[0]
+    if "python" not in Path(python).name:
+        return None
+    return python
 
 
 def prepend_pythonpath(path: Path, existing: str | None) -> str:

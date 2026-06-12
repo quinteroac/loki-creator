@@ -25,20 +25,27 @@ command -v runpodctl >/dev/null 2>&1 || {
 }
 
 ssh_info="$(runpodctl ssh info "$pod_id")"
-ssh_command="$(printf '%s\n' "$ssh_info" | sed -nE 's/.*"sshCommand"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -1)"
-if [[ -z "$ssh_command" ]]; then
-  ssh_command="$(printf '%s\n' "$ssh_info" | grep -Eo 'ssh .+' | head -1 || true)"
+ssh_command=""
+if command -v jq >/dev/null 2>&1; then
+  ssh_command="$(printf '%s\n' "$ssh_info" | jq -r '.sshCommand // .ssh_command // empty' 2>/dev/null || true)"
 fi
 if [[ -z "$ssh_command" ]]; then
-  printf 'Could not find sshCommand in runpodctl output:\n%s\n' "$ssh_info" >&2
+  ssh_command="$(printf '%s\n' "$ssh_info" | sed -nE 's/.*"ssh(Command|_command)"[[:space:]]*:[[:space:]]*"([^"]+)".*/\2/p' | head -1)"
+fi
+if [[ -z "$ssh_command" ]]; then
+  ssh_command="$(printf '%s\n' "$ssh_info" | sed -nE 's/.*(ssh -i [^"]+).*/\1/p' | head -1 || true)"
+fi
+if [[ -z "$ssh_command" ]]; then
+  printf 'Could not find ssh command in runpodctl output:\n%s\n' "$ssh_info" >&2
   exit 1
 fi
 
 eval "ssh_parts=(${ssh_command})"
+ssh_options=(-o StrictHostKeyChecking=accept-new)
 
 if [[ $# -eq 0 ]]; then
-  exec "${ssh_parts[@]}"
+  exec "${ssh_parts[0]}" "${ssh_options[@]}" "${ssh_parts[@]:1}"
 fi
 
 remote_command="$(printf '%q ' "$@")"
-exec "${ssh_parts[@]}" -t -- "$remote_command"
+exec "${ssh_parts[0]}" "${ssh_options[@]}" "${ssh_parts[@]:1}" -t -- "$remote_command"

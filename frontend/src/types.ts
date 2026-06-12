@@ -432,7 +432,7 @@ export type AgentQuestion = {
 export type AgentRunResponse = {
   id: string;
   agentId: string;
-  status: "succeeded" | "failed" | "needs_input" | "cancelled";
+  status: "running" | "succeeded" | "failed" | "needs_input" | "cancelled";
   responseText: string;
   skillRunIds: string[];
   cardIds: string[];
@@ -457,7 +457,7 @@ export type AgentRunStreamEvent = {
     | "done"
     | "error";
   message?: string;
-  status?: AgentRunResponse["status"] | "running";
+  status?: AgentRunResponse["status"];
   skillName?: string;
   toolName?: string;
   toolCallId?: string;

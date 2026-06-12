@@ -6,6 +6,7 @@ ENV BUN_INSTALL=/root/.bun
 ENV PATH=/opt/loki-creator/backend/.venv/bin:/root/.local/bin:/root/.bun/bin:/usr/local/bin:${PATH}
 ENV LOKI_ARTIFACTS_ROOT=/workspace/.loki
 ENV LOKI_COMFY_MODELS_DIR=/workspace/.loki/models/comfyui
+ENV LOKI_REQUIRE_COMFY_CUDA=1
 ENV LOKI_BACKEND_URL=http://127.0.0.1:8001
 ENV LOKI_AGENT_BRIDGE_PORT=8787
 
@@ -35,7 +36,10 @@ RUN apt-get update \
 
 RUN curl -fsSL https://bun.sh/install | bash \
   && curl -LsSf https://astral.sh/uv/install.sh | sh \
-  && curl -sL https://cli.runpod.io | bash
+  && curl -sL https://cli.runpod.io | bash \
+  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package.json bun.lock ./
 COPY frontend/package.json frontend/bun.lock ./frontend/
@@ -51,6 +55,11 @@ RUN bun install --frozen-lockfile \
   && ln -sf "${CODEX_BIN}" /usr/local/bin/codex
 
 RUN uv tool install git+https://github.com/quinteroac/comfy-agent-tools \
+  && uv pip install --python /root/.local/share/uv/tools/comfy-agent-tools/bin/python \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+  && /root/.local/share/uv/tools/comfy-agent-tools/bin/python -c \
+    'import torch; raise SystemExit(0 if torch.version.cuda == "12.4" else "Expected PyTorch CUDA 12.4 wheels")' \
   && curl -fsSL https://x.ai/cli/install.sh | bash \
   && curl -fsSL https://antigravity.google/cli/install.sh | bash
 

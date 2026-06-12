@@ -139,6 +139,10 @@ function encodeSse(event: AgentRunStreamEvent) {
   return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function encodeSseComment(comment: string) {
+  return encoder.encode(`: ${comment}\n\n`);
+}
+
 function emitAgentRunEvent(streamId: string | undefined, event: AgentRunStreamEvent) {
   if (!streamId) return;
 
@@ -311,6 +315,23 @@ function summarizeToolEnd(toolName: string, result: unknown, isError: boolean) {
 
 export function createAgentRunEventStream(streamId: string) {
   let streamController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
+
+  function removeStreamClient() {
+    const clients = streamClients.get(streamId);
+    if (!clients) return;
+    if (streamController) {
+      clients.delete(streamController);
+    }
+    if (clients.size === 0) {
+      streamClients.delete(streamId);
+    }
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = undefined;
+    }
+  }
+
   return new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
@@ -319,23 +340,24 @@ export function createAgentRunEventStream(streamId: string) {
         clients.add(controller);
         streamClients.set(streamId, clients);
         controller.enqueue(encodeSse({ type: "status", status: "running", message: "Connected to agent stream." }));
+        heartbeatInterval = setInterval(() => {
+          try {
+            controller.enqueue(encodeSseComment("heartbeat"));
+          } catch {
+            removeStreamClient();
+          }
+        }, 15_000);
       },
       cancel() {
-        const clients = streamClients.get(streamId);
-        if (!clients) return;
-        if (streamController) {
-          clients.delete(streamController);
-        }
-        if (clients.size === 0) {
-          streamClients.delete(streamId);
-        }
+        removeStreamClient();
       },
     }),
     {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
       },
     },
   );
@@ -2136,4 +2158,22 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
     }
     requestedAgentRunStops.delete(id);
   }
+}
+
+export async function startAgentRun(request: AgentRunRequest): Promise<AgentRunResponse> {
+  const id = request.streamId || `agent_run_${crypto.randomUUID().replaceAll("-", "")}`;
+  const runPromise = runAgent({ ...request, streamId: id });
+  const runningResponse: AgentRunResponse = {
+    id,
+    agentId: request.agentId || "base-agent",
+    status: "running",
+    responseText: "Agent run started.",
+    skillRunIds: [],
+    cardIds: [],
+  };
+
+  return Promise.race([
+    runPromise,
+    sleep(1200).then(() => runningResponse),
+  ]);
 }

@@ -149,7 +149,7 @@ export type AgentQuestion = {
 export type AgentRunResponse = {
   id: string;
   agentId: string;
-  status: "succeeded" | "failed" | "needs_input" | "cancelled";
+  status: "running" | "succeeded" | "failed" | "needs_input" | "cancelled";
   responseText: string;
   skillRunIds: string[];
   cardIds: string[];

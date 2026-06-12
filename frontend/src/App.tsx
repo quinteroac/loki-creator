@@ -233,11 +233,20 @@ export function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let retryTimer: number | undefined;
+    let attempts = 0;
 
     async function loadModels() {
       try {
         const models = await listAgentModels();
-        if (!isMounted || models.length === 0) return;
+        if (!isMounted) return;
+        if (models.length === 0) {
+          if (attempts < 20) {
+            attempts += 1;
+            retryTimer = window.setTimeout(loadModels, 1500);
+          }
+          return;
+        }
 
         setAvailableModels(models);
         setSelectedModel((currentModel) => {
@@ -250,8 +259,13 @@ export function App() {
         });
       } catch {
         if (isMounted) {
-          setAvailableModels(fallbackModels);
-          setSelectedModel((currentModel) => currentModel || fallbackModels[0].label);
+          if (attempts < 20) {
+            attempts += 1;
+            retryTimer = window.setTimeout(loadModels, 1500);
+          } else {
+            setAvailableModels(fallbackModels);
+            setSelectedModel((currentModel) => currentModel || fallbackModels[0].label);
+          }
         }
       }
     }
@@ -260,6 +274,9 @@ export function App() {
 
     return () => {
       isMounted = false;
+      if (retryTimer) {
+        window.clearTimeout(retryTimer);
+      }
     };
   }, []);
 
@@ -538,15 +555,11 @@ export function App() {
       }
     };
     source.onerror = () => {
-      source.close();
-      if (agentEventSourceRef.current === source) {
-        agentEventSourceRef.current = null;
-      }
       if (agentRunStatusRef.current === "running") {
         appendAgentStreamEvent({
           type: "status",
           status: "running",
-          message: "Agent stream paused. Waiting for the final run response.",
+          message: "Agent stream is reconnecting.",
         });
       }
     };
@@ -623,6 +636,15 @@ export function App() {
     }
 
     setLatestAgentResponse(agentRun);
+    if (agentRun.status === "running") {
+      agentRunStatusRef.current = "running";
+      setAgentRunStatus("running");
+      setAgentLastActivityAt(Date.now());
+      activeAgentRunIdRef.current = agentRun.id;
+      setStatus("Agent is running...");
+      return;
+    }
+
     agentRunStatusRef.current = agentRun.status;
     setAgentRunStatus(agentRun.status);
     setAgentLastActivityAt(Date.now());
