@@ -1863,6 +1863,9 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
 def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    if should_enable_loki_sage_attention(command):
+        env["LOKI_COMFY_USE_SAGE_ATTENTION"] = "1"
+        env["PYTHONPATH"] = prepend_pythonpath(Path(__file__).resolve().parent, env.get("PYTHONPATH"))
     timeout_seconds = int(os.environ.get("LOKI_COMFY_TIMEOUT_SECONDS", "0"))
     process = subprocess.run(
         command,
@@ -1883,6 +1886,33 @@ def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise RuntimeError("Comfy command returned non-object JSON")
     return parsed
+
+
+def prepend_pythonpath(path: Path, existing: str | None) -> str:
+    value = str(path)
+    if not existing:
+        return value
+    parts = existing.split(os.pathsep)
+    if value in parts:
+        return existing
+    return os.pathsep.join([value, existing])
+
+
+def should_enable_loki_sage_attention(command: list[str]) -> bool:
+    override = os.environ.get("LOKI_COMFY_USE_SAGE_ATTENTION", "").strip().lower()
+    if override in {"0", "false", "no", "off"}:
+        return False
+    if override in {"1", "true", "yes", "on"}:
+        return True
+
+    if not command:
+        return False
+    if command[0] == "comfy-videogen":
+        mode = command[1] if len(command) > 1 else ""
+        return mode.startswith("wan22-")
+    if len(command) > 1 and Path(command[1]).name == "comfy_videoedit.py":
+        return True
+    return False
 
 
 def artifact_kind(payload: dict[str, Any]) -> str:

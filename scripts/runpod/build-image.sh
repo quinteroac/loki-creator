@@ -31,24 +31,36 @@ fi
 
 image_tag="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 image_ref="${image_repository}:${image_tag}"
-base_image="${RUNPOD_BASE_IMAGE:-nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04}"
+base_image="${RUNPOD_BASE_IMAGE:-docker.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04}"
+container_cli="${CONTAINER_CLI:-}"
 
-printf '[runpod] building %s\n' "$image_ref"
-docker build \
+if [[ -z "$container_cli" ]]; then
+  if command -v docker >/dev/null 2>&1; then
+    container_cli="docker"
+  elif command -v podman >/dev/null 2>&1; then
+    container_cli="podman"
+  else
+    printf 'Install Docker or Podman, or set CONTAINER_CLI to a compatible command.\n' >&2
+    exit 1
+  fi
+fi
+
+printf '[runpod] building %s with %s\n' "$image_ref" "$container_cli"
+"$container_cli" build \
   --build-arg "BASE_IMAGE=${base_image}" \
   -f deploy/runpod/Dockerfile \
   -t "$image_ref" \
   .
 
 if [[ "${TAG_LATEST:-0}" == "1" && "$image_tag" != "latest" ]]; then
-  docker tag "$image_ref" "${image_repository}:latest"
+  "$container_cli" tag "$image_ref" "${image_repository}:latest"
 fi
 
 if [[ "${PUSH:-1}" == "1" ]]; then
   printf '[runpod] pushing %s\n' "$image_ref"
-  docker push "$image_ref"
+  "$container_cli" push "$image_ref"
   if [[ "${TAG_LATEST:-0}" == "1" && "$image_tag" != "latest" ]]; then
-    docker push "${image_repository}:latest"
+    "$container_cli" push "${image_repository}:latest"
   fi
 fi
 

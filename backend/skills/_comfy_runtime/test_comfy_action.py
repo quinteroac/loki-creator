@@ -12,6 +12,46 @@ import comfy_action
 
 
 class ComfyActionTest(unittest.TestCase):
+    def test_sage_attention_patch_targets_wan_video_commands(self) -> None:
+        with patch.dict(comfy_action.os.environ, {}, clear=True):
+            self.assertTrue(comfy_action.should_enable_loki_sage_attention(["comfy-videogen", "wan22-i2v"]))
+            self.assertTrue(
+                comfy_action.should_enable_loki_sage_attention(
+                    [sys.executable, str(Path(comfy_action.__file__).with_name("comfy_videoedit.py")), "bernini"]
+                )
+            )
+            self.assertFalse(comfy_action.should_enable_loki_sage_attention(["comfy-videogen", "t2v"]))
+            self.assertFalse(comfy_action.should_enable_loki_sage_attention(["comfy-imagegen", "generate"]))
+
+    def test_sage_attention_patch_can_be_disabled_by_env(self) -> None:
+        with patch.dict(comfy_action.os.environ, {"LOKI_COMFY_USE_SAGE_ATTENTION": "0"}, clear=True):
+            self.assertFalse(comfy_action.should_enable_loki_sage_attention(["comfy-videogen", "wan22-i2v"]))
+
+    def test_run_command_injects_sage_attention_sitecustomize_for_wan(self) -> None:
+        seen: dict[str, object] = {}
+
+        class Result:
+            returncode = 0
+            stdout = '{"ok": true}'
+            stderr = ""
+
+        def fake_run(*args: object, **kwargs: object) -> Result:
+            seen["args"] = args
+            seen["kwargs"] = kwargs
+            return Result()
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.dict(comfy_action.os.environ, {}, clear=True),
+            patch("comfy_action.subprocess.run", fake_run),
+        ):
+            result = comfy_action.run_command(["comfy-videogen", "wan22-i2v"], Path(tmpdir))
+
+        env = seen["kwargs"]["env"]  # type: ignore[index]
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(env["LOKI_COMFY_USE_SAGE_ATTENTION"], "1")
+        self.assertIn(str(Path(comfy_action.__file__).resolve().parent), env["PYTHONPATH"])
+
     def test_ideogram4_builds_structured_generate_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             command, cwd = comfy_action.build_cli_command(
