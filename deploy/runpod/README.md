@@ -2,8 +2,9 @@
 
 This folder contains the RunPod image and deployment helpers for Loki Creator.
 The image is CLI-ready: it installs the Loki runtime plus `pi`, `codex`, `grok`,
-`agy`, `comfy-agent-tools`, and `runpodctl`. It does not bake provider
-credentials into the image.
+`agy`, lightweight Comfy wrappers, and `runpodctl`. The heavy Comfy/PyTorch CUDA
+runtime is installed on demand into `/workspace/.loki/runtime/comfy-agent-tools`.
+It does not bake provider credentials into the image.
 
 For the end-to-end operator guide, see `docs/RUNPOD.md`.
 
@@ -103,9 +104,9 @@ Run:
 scripts/runpod/doctor.sh <pod-id>
 ```
 
-Inside the Pod this calls `loki-doctor`, which verifies installed CLIs, GPU
-visibility, persistent stores, backend health, agent bridge health, and the
-frontend proxy.
+Inside the Pod this calls `loki-doctor`, which verifies installed CLIs, Comfy
+bootstrap wrappers, GPU visibility, persistent stores, backend health, agent
+bridge health, and the frontend proxy.
 
 ## Persistent Paths
 
@@ -117,6 +118,8 @@ The image links runtime state to the mounted `/workspace` volume:
 - `/root/.gemini -> /workspace/.gemini`
 - `/opt/loki-creator/.loki -> /workspace/.loki`
 - `/opt/loki-creator/.comfy-agent-tools.json -> /workspace/.comfy-agent-tools.json`
+- `/workspace/.loki/runtime/comfy-agent-tools` stores the on-demand Comfy CLI
+  environment.
 
 Stopping or restarting the Pod preserves auth, projects, artifacts, model
-config, and downloaded models.
+config, the Comfy runtime, and downloaded models.

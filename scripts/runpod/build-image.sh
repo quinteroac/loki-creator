@@ -31,7 +31,7 @@ fi
 
 image_tag="${IMAGE_TAG:-$(git rev-parse --short HEAD)}"
 image_ref="${image_repository}:${image_tag}"
-base_image="${RUNPOD_BASE_IMAGE:-docker.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04}"
+base_image="${RUNPOD_BASE_IMAGE:-docker.io/library/ubuntu:22.04}"
 container_cli="${CONTAINER_CLI:-}"
 
 if [[ -z "$container_cli" ]]; then

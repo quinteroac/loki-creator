@@ -1,14 +1,15 @@
-ARG BASE_IMAGE=docker.io/nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
+ARG BASE_IMAGE=docker.io/library/ubuntu:22.04
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV BUN_INSTALL=/root/.bun
-ENV PATH=/opt/loki-creator/backend/.venv/bin:/root/.local/bin:/root/.bun/bin:/usr/local/bin:${PATH}
 ENV LOKI_ARTIFACTS_ROOT=/workspace/.loki
 ENV LOKI_COMFY_MODELS_DIR=/workspace/.loki/models/comfyui
+ENV LOKI_COMFY_RUNTIME_DIR=/workspace/.loki/runtime/comfy-agent-tools
 ENV LOKI_REQUIRE_COMFY_CUDA=1
 ENV LOKI_BACKEND_URL=http://127.0.0.1:8001
 ENV LOKI_AGENT_BRIDGE_PORT=8787
+ENV PATH=/opt/loki-creator/backend/.venv/bin:/workspace/.loki/runtime/comfy-agent-tools/bin:/workspace/.loki/runtime/bin:/root/.local/bin:/root/.bun/bin:/usr/local/bin:${PATH}
 
 WORKDIR /opt/loki-creator
 
@@ -54,13 +55,7 @@ RUN bun install --frozen-lockfile \
   && chmod +x "${CODEX_BIN}" \
   && ln -sf "${CODEX_BIN}" /usr/local/bin/codex
 
-RUN uv tool install git+https://github.com/quinteroac/comfy-agent-tools \
-  && uv pip install --python /root/.local/share/uv/tools/comfy-agent-tools/bin/python \
-    --index-url https://download.pytorch.org/whl/cu124 \
-    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
-  && /root/.local/share/uv/tools/comfy-agent-tools/bin/python -c \
-    'import torch; raise SystemExit(0 if torch.version.cuda == "12.4" else "Expected PyTorch CUDA 12.4 wheels")' \
-  && curl -fsSL https://x.ai/cli/install.sh | bash \
+RUN curl -fsSL https://x.ai/cli/install.sh | bash \
   && curl -fsSL https://antigravity.google/cli/install.sh | bash
 
 COPY . .

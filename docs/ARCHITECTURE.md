@@ -169,16 +169,20 @@ one container because RunPod Pods use a custom image rather than Docker Compose.
 nginx exposes the production frontend on port `3000`, proxies `/api/*` to the
 FastAPI backend on `8001`, and proxies `/agent/*` to the agent bridge on `8787`.
 
-The image installs required CLIs during build (`pi`, `codex`, `grok`, `agy`,
-`comfy-agent-tools`, and `runpodctl`) but does not include provider credentials.
+The image installs core CLIs during build (`pi`, `codex`, `grok`, `agy`, and
+`runpodctl`) but does not include provider credentials. Comfy CLIs and their
+PyTorch CUDA runtime are installed on demand into
+`/workspace/.loki/runtime/comfy-agent-tools` by lightweight command wrappers,
+keeping the image small while preserving the heavy runtime across Pod restarts.
 Authentication is performed after deployment through SSH wrappers in
 `scripts/runpod/`, and auth state is persisted on the mounted `/workspace`
 volume.
 
 Persistent runtime paths are linked from the container into `/workspace`,
 including `.loki`, `.pi`, `.codex`, `.grok`, `.gemini`, and
-`.comfy-agent-tools.json`. Comfy model downloads are intentionally on demand and
-stored in `/workspace/.loki/models/comfyui`, not baked into the default image.
+`.comfy-agent-tools.json`. Comfy runtime installation and model downloads are
+intentionally on demand and stored under `/workspace/.loki`, not baked into the
+default image.
 Operational details are documented in `docs/RUNPOD.md`.
 
 ## Selected Cards

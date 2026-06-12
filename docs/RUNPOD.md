@@ -8,10 +8,11 @@ Creator RunPod image.
 The RunPod image is CLI-ready and credential-free:
 
 - It installs Loki, Bun, uv, the FastAPI backend, the agent bridge, nginx, SSH,
-  ffmpeg, CUDA runtime dependencies, and the production frontend build.
-- It installs the required CLIs during image build: `pi`, `codex`, `grok`,
-  `agy`, `comfy-imagegen`, `comfy-videogen`, `comfy-musicgen`,
-  `comfy-models`, and `runpodctl`.
+  ffmpeg, lightweight Comfy wrappers, and the production frontend build.
+- It installs the core CLIs during image build: `pi`, `codex`, `grok`, `agy`,
+  and `runpodctl`.
+- It installs `comfy-agent-tools` plus PyTorch CUDA 12.4 on demand into the
+  persistent `/workspace/.loki/runtime/comfy-agent-tools` directory.
 - It serves the frontend, backend, and agent bridge through one public HTTP
   port: `3000`.
 - It stores all durable state on the RunPod volume mounted at `/workspace`.
@@ -35,6 +36,8 @@ The container links runtime state into `/workspace`:
 - `/root/.gemini -> /workspace/.gemini`
 - `/opt/loki-creator/.loki -> /workspace/.loki`
 - `/opt/loki-creator/.comfy-agent-tools.json -> /workspace/.comfy-agent-tools.json`
+- `/workspace/.loki/runtime/comfy-agent-tools` stores the on-demand Comfy CLI
+  environment.
 
 This means projects, imports, generated artifacts, CLI auth state, model config,
 and downloaded models survive Pod restarts and stops as long as the RunPod

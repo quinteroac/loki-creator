@@ -6,10 +6,13 @@ export LOKI_REPO_DIR="${LOKI_REPO_DIR:-/opt/loki-creator}"
 export LOKI_WORKSPACE_DIR="${LOKI_WORKSPACE_DIR:-/workspace}"
 export LOKI_ARTIFACTS_ROOT="${LOKI_ARTIFACTS_ROOT:-${LOKI_WORKSPACE_DIR}/.loki}"
 export LOKI_COMFY_MODELS_DIR="${LOKI_COMFY_MODELS_DIR:-${LOKI_ARTIFACTS_ROOT}/models/comfyui}"
+export LOKI_COMFY_RUNTIME_DIR="${LOKI_COMFY_RUNTIME_DIR:-${LOKI_ARTIFACTS_ROOT}/runtime/comfy-agent-tools}"
+export LOKI_COMFY_TOOL_DIR="${LOKI_COMFY_TOOL_DIR:-${LOKI_COMFY_RUNTIME_DIR}/tools}"
+export LOKI_COMFY_TOOL_BIN_DIR="${LOKI_COMFY_TOOL_BIN_DIR:-${LOKI_COMFY_RUNTIME_DIR}/bin}"
 export LOKI_RUNTIME_SECRETS_FILE="${LOKI_RUNTIME_SECRETS_FILE:-${LOKI_ARTIFACTS_ROOT}/runpod/runtime-secrets.env}"
 export LOKI_BACKEND_URL="${LOKI_BACKEND_URL:-http://127.0.0.1:8001}"
 export LOKI_AGENT_BRIDGE_PORT="${LOKI_AGENT_BRIDGE_PORT:-8787}"
-export PATH="${LOKI_REPO_DIR}/backend/.venv/bin:/root/.local/bin:/root/.bun/bin:/usr/local/bin:${PATH}"
+export PATH="${LOKI_REPO_DIR}/backend/.venv/bin:${LOKI_COMFY_TOOL_BIN_DIR}:${LOKI_ARTIFACTS_ROOT}/runtime/bin:/root/.local/bin:/root/.bun/bin:/usr/local/bin:${PATH}"
 
 log() {
   printf '[loki-runpod] %s\n' "$*"
@@ -77,7 +80,14 @@ ensure_linked_file() {
 }
 
 bootstrap_persistent_paths() {
-  mkdir -p "$LOKI_WORKSPACE_DIR" "$LOKI_ARTIFACTS_ROOT" "$LOKI_COMFY_MODELS_DIR" "${LOKI_ARTIFACTS_ROOT}/runpod"
+  mkdir -p \
+    "$LOKI_WORKSPACE_DIR" \
+    "$LOKI_ARTIFACTS_ROOT" \
+    "$LOKI_COMFY_MODELS_DIR" \
+    "$LOKI_COMFY_TOOL_DIR" \
+    "$LOKI_COMFY_TOOL_BIN_DIR" \
+    "${LOKI_ARTIFACTS_ROOT}/runpod" \
+    "${LOKI_ARTIFACTS_ROOT}/runtime"
   ensure_linked_dir /root/.pi "${LOKI_WORKSPACE_DIR}/.pi"
   ensure_linked_dir /root/.codex "${LOKI_WORKSPACE_DIR}/.codex"
   ensure_linked_dir /root/.grok "${LOKI_WORKSPACE_DIR}/.grok"

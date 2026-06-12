@@ -42,10 +42,10 @@ The frontend expects the API at `http://localhost:8001`. You can change it with 
 ## RunPod Deployment
 
 Loki includes a RunPod-ready image and helper scripts. The image installs the
-required CLIs during build (`pi`, `codex`, `grok`, `agy`,
-`comfy-agent-tools`, and `runpodctl`) but does not include provider
-credentials. Authentication is performed after deployment through remote SSH
-commands.
+core CLIs during build (`pi`, `codex`, `grok`, `agy`, and `runpodctl`) but does
+not include provider credentials. Comfy tools and their PyTorch CUDA runtime are
+bootstrapped on demand into the persistent `/workspace` volume. Authentication
+is performed after deployment through remote SSH commands.
 
 Quick path:
 

@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+
+bootstrap_persistent_paths
+load_runtime_secrets
+
+package_ref="${LOKI_COMFY_PACKAGE_REF:-git+https://github.com/quinteroac/comfy-agent-tools}"
+tool_python="${LOKI_COMFY_TOOL_DIR}/comfy-agent-tools/bin/python"
+stamp_file="${LOKI_COMFY_RUNTIME_DIR}/.cuda124-ready"
+lock_file="${LOKI_COMFY_RUNTIME_DIR}/.bootstrap.lock"
+
+validate_cuda() {
+  "$tool_python" - <<'PY'
+import sys
+import torch
+
+if torch.version.cuda != "12.4":
+    raise SystemExit(f"Expected PyTorch CUDA 12.4 wheels, found {torch.version.cuda!r}.")
+if not torch.cuda.is_available():
+    raise SystemExit(
+        "PyTorch cannot see a CUDA GPU. Loki refused to prepare Comfy for CPU generation."
+    )
+print(f"torch={torch.__version__} cuda={torch.version.cuda} device={torch.cuda.get_device_name(0)}")
+PY
+}
+
+install_comfy_tools() {
+  log "installing comfy-agent-tools into ${LOKI_COMFY_RUNTIME_DIR}"
+  UV_TOOL_DIR="$LOKI_COMFY_TOOL_DIR" \
+  UV_TOOL_BIN_DIR="$LOKI_COMFY_TOOL_BIN_DIR" \
+    uv tool install \
+      --python 3.12 \
+      --force \
+      --index https://download.pytorch.org/whl/cu124 \
+      --with 'torch==2.6.0+cu124' \
+      --with 'torchvision==0.21.0+cu124' \
+      --with 'torchaudio==2.6.0+cu124' \
+      "$package_ref"
+
+  log "ensuring PyTorch CUDA 12.4 wheels are installed"
+  uv pip install \
+    --python "$tool_python" \
+    --index-url https://download.pytorch.org/whl/cu124 \
+    'torch==2.6.0+cu124' \
+    'torchvision==0.21.0+cu124' \
+    'torchaudio==2.6.0+cu124'
+}
+
+(
+  flock 9
+
+  if [[ -x "$tool_python" && -f "$stamp_file" ]]; then
+    validate_cuda >/dev/null
+    exit 0
+  fi
+
+  install_comfy_tools
+  validate_cuda
+  date -u +"%Y-%m-%dT%H:%M:%SZ" > "$stamp_file"
+) 9>"$lock_file"
