@@ -1122,7 +1122,22 @@ export function createCanvasNodeForDocument(
   document: CardDocument,
   index: number,
   canvasWidth: number,
+  viewportAnchor?: { x: number; y: number },
 ): CanvasNode {
+  if (viewportAnchor) {
+    const stackOffset = index * CARD_GAP;
+
+    return {
+      id: `node_${document.id}`,
+      cardDocumentId: document.id,
+      frame: {
+        x: Math.max(CANVAS_PADDING, viewportAnchor.x - CARD_DEFAULT_WIDTH / 2 + stackOffset),
+        y: Math.max(CANVAS_PADDING, viewportAnchor.y - getCardLayoutRowHeight(CARD_DEFAULT_WIDTH) / 2 + stackOffset),
+        width: CARD_DEFAULT_WIDTH,
+      },
+    };
+  }
+
   return {
     id: `node_${document.id}`,
     cardDocumentId: document.id,

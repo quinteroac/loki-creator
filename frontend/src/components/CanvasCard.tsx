@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { layout, prepare } from "@chenglou/pretext";
 import { Download, Info, RotateCcw, Scissors, Trash2 } from "lucide-react";
@@ -32,6 +32,7 @@ type CanvasCardProps = {
   onDeleteDocument: (cardDocumentId: string) => void;
   onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string, placementOffset?: number) => void;
   onCloseMediaEditor: () => void;
+  onContextMenuOpenChange: (nodeId: string, isOpen: boolean) => void;
   onOpenMediaEditor: (nodeId: string) => void;
   onRenameDocument: (cardDocumentId: string, title: string) => void;
   onRedoDocument: (cardDocumentId: string) => void;
@@ -243,13 +244,14 @@ function createOmittedPreview(
   };
 }
 
-export function CanvasCard({
+export const CanvasCard = memo(function CanvasCard({
   document,
   node,
   isSelected,
   onDeleteDocument,
   onCreateEditedMediaArtifact,
   onCloseMediaEditor,
+  onContextMenuOpenChange,
   onOpenMediaEditor,
   onRenameDocument,
   onRedoDocument,
@@ -291,6 +293,7 @@ export function CanvasCard({
   const isNote = document.metadata?.kind === "note";
   const isBbox = document.metadata?.kind === "bbox";
   const isAudio = document.metadata?.kind === "audio";
+  const canShowMetadataToggle = isSelected && !isNote && !isBbox;
   const videoArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "video"
     ? document.metadata.artifactUrl
     : "";
@@ -304,10 +307,19 @@ export function CanvasCard({
   const usesNativeAudioPreview = Boolean(audioPreviewSource);
   const frame = node.frame;
   const frameHeight = getCardHeight(frame.width, document, frame);
-  const metadataPanelHeight = isAudio
-    ? Math.min(Math.max(frameHeight * 0.3, 84), Math.max(72, frameHeight * 0.38))
-    : Math.min(Math.max(frameHeight * 0.22, 132), 204);
+  const metadataPanelHeight = isMetadataVisible
+    ? isAudio
+      ? Math.min(Math.max(frameHeight * 0.3, 84), Math.max(72, frameHeight * 0.38))
+      : Math.min(Math.max(frameHeight * 0.22, 132), 204)
+    : 0;
   const metadataTextMetrics = useMemo(() => {
+    if (!isMetadataVisible) {
+      return {
+        prompt: { fontSize: 16, lineHeight: 23.2 },
+        title: { fontSize: 18, lineHeight: 23.4 },
+      };
+    }
+
     const contentWidth = Math.max(1, frame.width - METADATA_HORIZONTAL_PADDING);
     const titleRowHeight = isAudio ? 42 : 48;
     const promptVerticalPadding = isAudio ? 12 : 20;
@@ -325,7 +337,7 @@ export function CanvasCard({
         weight: 700,
       }),
     };
-  }, [document.prompt, editableTitle, frame.width, isAudio, metadataPanelHeight]);
+  }, [document.prompt, editableTitle, frame.width, isAudio, isMetadataVisible, metadataPanelHeight]);
   const metadataPanelStyle = useMemo(
     () =>
       ({
@@ -348,6 +360,12 @@ export function CanvasCard({
   useEffect(() => {
     setIsMetadataVisible(false);
   }, [document.id]);
+
+  useEffect(() => {
+    if (!isSelected) {
+      setIsMetadataVisible(false);
+    }
+  }, [isSelected]);
 
   useEffect(() => {
     const textElement = noteTextRef.current;
@@ -485,6 +503,10 @@ export function CanvasCard({
       window.document.removeEventListener("keydown", closeContextMenuWithKeyboard);
     };
   }, [contextMenuPosition]);
+
+  useEffect(() => {
+    onContextMenuOpenChange(node.id, Boolean(contextMenuPosition));
+  }, [contextMenuPosition, node.id, onContextMenuOpenChange]);
 
   function handlePointerDown(event: PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
@@ -791,7 +813,7 @@ export function CanvasCard({
           )}
         </button>
       )}
-      {!isNote && !isBbox && (
+      {canShowMetadataToggle && (
         <button
           className={`canvas-card-info-toggle ${isMetadataVisible ? "active" : ""}`}
           type="button"
@@ -908,4 +930,4 @@ export function CanvasCard({
       )}
     </article>
   );
-}
+});

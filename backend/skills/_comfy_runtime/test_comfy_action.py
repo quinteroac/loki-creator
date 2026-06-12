@@ -869,6 +869,188 @@ class ComfyActionTest(unittest.TestCase):
                     media={"image": [Path(tmpdir) / "input.png"], "audio": [Path(tmpdir) / "song.wav"], "video": []},
                 )
 
+    def test_videoedit_audio_driven_builds_wrapper_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            video = Path(tmpdir) / "input.mp4"
+            audio = Path(tmpdir) / "voice.wav"
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videoedit",
+                    "prompt": "Preserve the original framing while syncing the performance to the new vocal.",
+                    "params": {
+                        "editMode": "audio-driven",
+                        "modelProfile": "wan22-dasiwa-littledemon-v2-video-audio",
+                        "steps": "12",
+                        "denoise": "0.45",
+                        "seed": "123",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [audio], "video": [video]},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(Path(command[1]).name, "comfy_videoedit.py")
+        self.assertEqual(command[2], "video-audio")
+        self.assertEqual(command[command.index("--mode") + 1], "audio-driven")
+        self.assertEqual(command[command.index("--input-video") + 1], str(video))
+        self.assertEqual(command[command.index("--audio") + 1], str(audio))
+        self.assertEqual(command[command.index("--prompt") + 1], "Preserve the original framing while syncing the performance to the new vocal.")
+        self.assertEqual(command[command.index("--steps") + 1], "12")
+        self.assertEqual(command[command.index("--denoise") + 1], "0.45")
+        self.assertEqual(command[command.index("--seed") + 1], "123")
+        self.assertIn('"videogen.wan22-video-audio": "wan22-dasiwa-littledemon-v2-video-audio"', config)
+
+    def test_videoedit_lipsync_requires_video_and_audio(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            payload = {
+                "skillId": "comfy-videoedit",
+                "prompt": "Lip sync the subject.",
+                "params": {"editMode": "lipsync"},
+            }
+            with self.assertRaisesRegex(RuntimeError, "requires one input video"):
+                comfy_action.build_cli_command(
+                    payload,
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [Path(tmpdir) / "voice.wav"], "video": []},
+                )
+            with self.assertRaisesRegex(RuntimeError, "requires one input audio"):
+                comfy_action.build_cli_command(
+                    payload,
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": [Path(tmpdir) / "input.mp4"]},
+                )
+
+    def test_videoedit_bernini_builds_reference_guided_command(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.models_dir", return_value=Path(tmpdir)),
+            patch("comfy_action.video_file_dimensions", return_value=(1280, 720)),
+        ):
+            video = Path(tmpdir) / "input.mp4"
+            reference = Path(tmpdir) / "reference.png"
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videoedit",
+                    "prompt": "A cinematic reference-guided edit preserves the actor identity while changing the scene to a rainy neon street.",
+                    "params": {
+                        "editMode": "bernini",
+                        "berniniMode": "rv2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "duration": "5",
+                        "fps": "16",
+                        "highLoraStrength": "0.7",
+                        "lowLoraStrength": "0.5",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [reference], "audio": [], "video": [video]},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(Path(command[1]).name, "comfy_videoedit.py")
+        self.assertEqual(command[2], "bernini")
+        self.assertEqual(command[command.index("--input-video") + 1], str(video))
+        self.assertEqual(command[command.index("--reference-image") + 1], str(reference))
+        self.assertEqual(command[command.index("--width") + 1], "1280")
+        self.assertEqual(command[command.index("--height") + 1], "720")
+        self.assertEqual(command[command.index("--length") + 1], "81")
+        self.assertEqual(command[command.index("--fps") + 1], "16")
+        self.assertEqual(command[command.index("--unet-high") + 1], str(Path(tmpdir) / "diffusion_models" / "Wan22_Bernini_HIGH_mxfp8.safetensors"))
+        self.assertEqual(command[command.index("--unet-low") + 1], str(Path(tmpdir) / "diffusion_models" / "Wan22_Bernini_LOW_mxfp8.safetensors"))
+        self.assertEqual(command[command.index("--lora") + 1], str(Path(tmpdir) / "loras" / "wan22" / "lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16_.safetensors"))
+        self.assertEqual(command[command.index("--text-encoder") + 1], str(Path(tmpdir) / "clip" / "nsfw_wan_umt5-xxl_fp8_scaled.safetensors"))
+        self.assertEqual(command[command.index("--vae") + 1], str(Path(tmpdir) / "vae" / "wan_2.1_vae.safetensors"))
+        self.assertEqual(command[command.index("--high-lora-strength") + 1], "0.7")
+        self.assertEqual(command[command.index("--low-lora-strength") + 1], "0.5")
+        self.assertIn('"videogen.wan22-bernini": "wan22-bernini"', config)
+
+    def test_videoedit_bernini_r2v_uses_loki_resolution_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            reference = Path(tmpdir) / "reference.png"
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videoedit",
+                    "prompt": "A reference-guided Bernini video shows the character walking through a neon hallway.",
+                    "params": {
+                        "editMode": "bernini",
+                        "berniniMode": "r2v",
+                        "aspectRatio": "9:16",
+                        "resolution": "720p",
+                        "duration": "10",
+                        "fps": "24",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [reference], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[:3], [sys.executable, str(Path(comfy_action.__file__).with_name("comfy_videoedit.py")), "bernini"])
+        self.assertNotIn("--input-video", command)
+        self.assertEqual(command[command.index("--reference-image") + 1], str(reference))
+        self.assertEqual(command[command.index("--width") + 1], "720")
+        self.assertEqual(command[command.index("--height") + 1], "1280")
+        self.assertEqual(command[command.index("--fps") + 1], "24")
+        self.assertEqual(command[command.index("--length") + 1], "241")
+
+    def test_videoedit_bernini_r2v_requires_frame_fps_and_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            payload = {
+                "skillId": "comfy-videoedit",
+                "prompt": "A reference-guided Bernini video.",
+                "params": {"editMode": "bernini", "berniniMode": "r2v", "duration": "5"},
+            }
+            with self.assertRaisesRegex(RuntimeError, "requires params.aspectRatio and params.resolution"):
+                comfy_action.build_cli_command(
+                    payload,
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "reference.png"], "audio": [], "video": []},
+                )
+
+            payload["params"] = {
+                "editMode": "bernini",
+                "berniniMode": "r2v",
+                "aspectRatio": "16:9",
+                "resolution": "480p",
+                "duration": "5",
+            }
+            with self.assertRaisesRegex(RuntimeError, "requires params.fps"):
+                comfy_action.build_cli_command(
+                    payload,
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "reference.png"], "audio": [], "video": []},
+                )
+
+            payload["params"] = {
+                "editMode": "bernini",
+                "berniniMode": "r2v",
+                "aspectRatio": "16:9",
+                "resolution": "480p",
+                "fps": "24",
+            }
+            with self.assertRaisesRegex(RuntimeError, "requires params.duration"):
+                comfy_action.build_cli_command(
+                    payload,
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "reference.png"], "audio": [], "video": []},
+                )
+
+            payload["params"] = {
+                "editMode": "bernini",
+                "berniniMode": "r2v",
+                "aspectRatio": "16:9",
+                "resolution": "480p",
+                "duration": "5",
+                "fps": "30",
+            }
+            with self.assertRaisesRegex(RuntimeError, "WAN FPS must be 16 or 24"):
+                comfy_action.build_cli_command(
+                    payload,
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "reference.png"], "audio": [], "video": []},
+                )
+
     def test_video_dimensions_supports_seed_seeker_resolutions(self) -> None:
         self.assertEqual(
             comfy_action.video_dimensions({"aspectRatio": "16:9", "resolution": "360p"}),

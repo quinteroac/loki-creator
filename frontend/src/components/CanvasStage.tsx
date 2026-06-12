@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, WheelEvent } from "react";
 import { Crosshair, StickyNote, ZoomIn, ZoomOut } from "lucide-react";
 import {
@@ -9,6 +9,11 @@ import {
   clampCanvasNodeFrame,
   getCardHeight,
 } from "../lib/cardDocuments";
+import {
+  getCanvasViewportBounds,
+  getVirtualizedCanvasNodes,
+  type CanvasViewportBounds,
+} from "../lib/canvasVirtualization";
 import { CanvasCard } from "./CanvasCard";
 import type { BboxCardData } from "../lib/bboxCards";
 import type { CardDocument, CanvasNode, CanvasNodeFrame, EditedMediaArtifact, SelectedCardPreview } from "../types";
@@ -17,6 +22,7 @@ type CanvasStageProps = {
   documentsById: Record<string, CardDocument>;
   nodes: CanvasNode[];
   selectedIds: string[];
+  onViewportAnchorChange: (anchor: CanvasFocalPoint | null) => void;
   onCreateBbox: (frame: CanvasNodeFrame) => void;
   onCreateNote: (frame: CanvasNodeFrame) => void;
   onCreateEditedMediaArtifact: (artifact: EditedMediaArtifact, sourceNodeId: string, placementOffset?: number) => void;
@@ -38,6 +44,7 @@ const CANVAS_ZOOM_MAX = 4;
 const CANVAS_CONTEXT_MENU_WIDTH = 184;
 const CANVAS_CONTEXT_MENU_HEIGHT = 104;
 const CANVAS_CONTEXT_MENU_OFFSET = 8;
+const CANVAS_VIRTUALIZATION_OVERSCAN = 480;
 const CANVAS_LEFT_MOUSE_BUTTON = 0;
 const CANVAS_MIDDLE_MOUSE_BUTTON = 1;
 const CANVAS_WHEEL_INTERACTIVE_SELECTOR = [
@@ -110,10 +117,16 @@ type CanvasViewport = {
   pan: CanvasFocalPoint;
 };
 
-export function CanvasStage({
+type CanvasSize = {
+  width: number;
+  height: number;
+};
+
+export const CanvasStage = memo(function CanvasStage({
   documentsById,
   nodes,
   selectedIds,
+  onViewportAnchorChange,
   onCreateBbox,
   onCreateNote,
   onCreateEditedMediaArtifact,
@@ -129,6 +142,12 @@ export function CanvasStage({
 }: CanvasStageProps) {
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const cardLayerRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<CanvasViewport>({
+    zoom: DEFAULT_CANVAS_ZOOM,
+    pan: { x: 0, y: 0 },
+  });
+  const panAnimationFrameRef = useRef(0);
+  const pendingPanRef = useRef<CanvasFocalPoint | null>(null);
   const panStateRef = useRef<{
     pointerId: number;
     startClientX: number;
@@ -140,6 +159,7 @@ export function CanvasStage({
     zoom: DEFAULT_CANVAS_ZOOM,
     pan: { x: 0, y: 0 },
   });
+  const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     logicalX: number;
@@ -148,9 +168,82 @@ export function CanvasStage({
     screenY: number;
   } | null>(null);
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
-  const selectedIdSet = new Set(selectedIds);
+  const [openCardMenuNodeIds, setOpenCardMenuNodeIds] = useState<Set<string>>(new Set());
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const nodesById = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
   const { pan, zoom } = viewport;
   const zoomPercentage = Math.round(zoom * 100);
+  const forcedNodeIds = useMemo(() => {
+    const ids = new Set(openCardMenuNodeIds);
+    if (editingNodeId) {
+      ids.add(editingNodeId);
+    }
+    return ids;
+  }, [editingNodeId, openCardMenuNodeIds]);
+  const viewportBounds: CanvasViewportBounds = useMemo(
+    () =>
+      getCanvasViewportBounds({
+        height: canvasSize.height,
+        overscan: CANVAS_VIRTUALIZATION_OVERSCAN,
+        pan,
+        width: canvasSize.width,
+        zoom,
+      }),
+    [canvasSize.height, canvasSize.width, pan, zoom],
+  );
+  const virtualizedNodes = useMemo(
+    () =>
+      canvasSize.width > 0 && canvasSize.height > 0
+        ? getVirtualizedCanvasNodes({
+          bounds: viewportBounds,
+          documentsById,
+          forcedNodeIds,
+          nodes,
+          selectedCardIds: selectedIdSet,
+        })
+        : nodes.map((node) => ({ node, reason: "visible" as const })),
+    [canvasSize.height, canvasSize.width, documentsById, forcedNodeIds, nodes, selectedIdSet, viewportBounds],
+  );
+
+  useEffect(() => {
+    viewportRef.current = viewport;
+  }, [viewport]);
+
+  useEffect(() => {
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) {
+      onViewportAnchorChange(null);
+      return;
+    }
+
+    onViewportAnchorChange({
+      x: viewportBounds.left + (viewportBounds.right - viewportBounds.left) / 2,
+      y: viewportBounds.top + (viewportBounds.bottom - viewportBounds.top) / 2,
+    });
+  }, [canvasSize.height, canvasSize.width, onViewportAnchorChange, viewportBounds]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+
+    function updateCanvasSize() {
+      setCanvasSize({
+        width: canvas?.clientWidth ?? 0,
+        height: canvas?.clientHeight ?? 0,
+      });
+    }
+
+    updateCanvasSize();
+    const resizeObserver = new ResizeObserver(updateCanvasSize);
+    resizeObserver.observe(canvas);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.cancelAnimationFrame(panAnimationFrameRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (!contextMenu) return undefined;
@@ -182,21 +275,24 @@ export function CanvasStage({
     setEditingNodeId(null);
   }, [editingNodeId, nodes]);
 
-  function updateNodeFrame(nodeId: string, frame: CanvasNodeFrame) {
+  const updateNodeFrame = useCallback((nodeId: string, frame: CanvasNodeFrame) => {
     const layer = cardLayerRef.current;
-    const node = nodes.find((candidate) => candidate.id === nodeId);
+    const node = nodesById.get(nodeId);
     const document = node ? documentsById[node.cardDocumentId] : undefined;
-    const panOverflowX = Math.max(0, -pan.x);
-    const panOverflowY = Math.max(0, -pan.y);
-    const canvasWidth = layer ? (layer.clientWidth + panOverflowX) / zoom : CARD_DEFAULT_WIDTH + CANVAS_PADDING * 2;
+    const currentViewport = viewportRef.current;
+    const panOverflowX = Math.max(0, -currentViewport.pan.x);
+    const panOverflowY = Math.max(0, -currentViewport.pan.y);
+    const canvasWidth = layer
+      ? (layer.clientWidth + panOverflowX) / currentViewport.zoom
+      : CARD_DEFAULT_WIDTH + CANVAS_PADDING * 2;
     const canvasHeight = layer
-      ? (layer.clientHeight + panOverflowY) / zoom
+      ? (layer.clientHeight + panOverflowY) / currentViewport.zoom
       : getCardHeight(CARD_DEFAULT_WIDTH, document, frame) + CANVAS_PADDING * 2;
 
     onUpdateNodeFrame(nodeId, clampCanvasNodeFrame(frame, canvasWidth, canvasHeight, document));
-  }
+  }, [documentsById, nodesById, onUpdateNodeFrame]);
 
-  function changeZoom(delta: number, focalPoint?: CanvasFocalPoint) {
+  const changeZoom = useCallback((delta: number, focalPoint?: CanvasFocalPoint) => {
     setViewport((currentViewport) => {
       const nextZoom = clampCanvasZoom(Number((currentViewport.zoom + delta).toFixed(2)));
       if (!focalPoint || nextZoom === currentViewport.zoom) {
@@ -214,15 +310,15 @@ export function CanvasStage({
         },
       };
     });
-  }
+  }, []);
 
-  function zoomIn() {
+  const zoomIn = useCallback(() => {
     changeZoom(CANVAS_ZOOM_STEP);
-  }
+  }, [changeZoom]);
 
-  function zoomOut() {
+  const zoomOut = useCallback(() => {
     changeZoom(-CANVAS_ZOOM_STEP);
-  }
+  }, [changeZoom]);
 
   function handleCanvasWheel(event: WheelEvent<HTMLDivElement>) {
     if (event.deltaY === 0 || shouldIgnoreCanvasWheel(event.target)) return;
@@ -275,27 +371,42 @@ export function CanvasStage({
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    const currentViewport = viewportRef.current;
     panStateRef.current = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
       startClientY: event.clientY,
-      startX: pan.x,
-      startY: pan.y,
+      startX: currentViewport.pan.x,
+      startY: currentViewport.pan.y,
     };
     setIsPanning(true);
+  }
+
+  function schedulePan(nextPan: CanvasFocalPoint) {
+    pendingPanRef.current = nextPan;
+    if (panAnimationFrameRef.current) return;
+
+    panAnimationFrameRef.current = window.requestAnimationFrame(() => {
+      panAnimationFrameRef.current = 0;
+      const pendingPan = pendingPanRef.current;
+      if (!pendingPan) return;
+
+      pendingPanRef.current = null;
+      setViewport((currentViewport) => ({
+        ...currentViewport,
+        pan: pendingPan,
+      }));
+    });
   }
 
   function handleCanvasPointerMove(event: PointerEvent<HTMLDivElement>) {
     const panState = panStateRef.current;
     if (!panState || panState.pointerId !== event.pointerId) return;
 
-    setViewport((currentViewport) => ({
-      ...currentViewport,
-      pan: {
-        x: panState.startX + event.clientX - panState.startClientX,
-        y: panState.startY + event.clientY - panState.startClientY,
-      },
-    }));
+    schedulePan({
+      x: panState.startX + event.clientX - panState.startClientX,
+      y: panState.startY + event.clientY - panState.startClientY,
+    });
   }
 
   function stopCanvasPan(event: PointerEvent<HTMLDivElement>) {
@@ -309,6 +420,24 @@ export function CanvasStage({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
   }
+
+  const handleCardContextMenuOpenChange = useCallback((nodeId: string, isOpen: boolean) => {
+    setOpenCardMenuNodeIds((currentIds) => {
+      if (isOpen && currentIds.has(nodeId)) return currentIds;
+      if (!isOpen && !currentIds.has(nodeId)) return currentIds;
+
+      const nextIds = new Set(currentIds);
+      if (isOpen) {
+        nextIds.add(nodeId);
+      } else {
+        nextIds.delete(nodeId);
+      }
+      return nextIds;
+    });
+  }, []);
+
+  const closeMediaEditor = useCallback(() => setEditingNodeId(null), []);
+  const openMediaEditor = useCallback((nodeId: string) => setEditingNodeId(nodeId), []);
 
   function createNoteFromContextMenu() {
     if (!contextMenu) return;
@@ -378,7 +507,7 @@ export function CanvasStage({
           ref={cardLayerRef}
           style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}
         >
-          {nodes.map((node) => {
+          {virtualizedNodes.map(({ node }) => {
             const document = documentsById[node.cardDocumentId];
             if (!document) return null;
 
@@ -389,10 +518,11 @@ export function CanvasStage({
                 isSelected={selectedIdSet.has(node.cardDocumentId)}
                 isMediaEditorOpen={editingNodeId === node.id}
                 key={node.id}
-                onCloseMediaEditor={() => setEditingNodeId(null)}
+                onCloseMediaEditor={closeMediaEditor}
+                onContextMenuOpenChange={handleCardContextMenuOpenChange}
                 onCreateEditedMediaArtifact={onCreateEditedMediaArtifact}
                 onDeleteDocument={onDeleteDocument}
-                onOpenMediaEditor={(nodeId) => setEditingNodeId(nodeId)}
+                onOpenMediaEditor={openMediaEditor}
                 onRenameDocument={onRenameDocument}
                 onRedoDocument={onRedoDocument}
                 onRegisterPreviewCapture={onRegisterPreviewCapture}
@@ -435,4 +565,4 @@ export function CanvasStage({
       </div>
     </section>
   );
-}
+});

@@ -316,6 +316,40 @@ def normalize_video_mode(value: str) -> str:
     return aliases.get(normalized, normalized)
 
 
+def normalize_videoedit_mode(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    aliases = {
+        "audio": "audio-driven",
+        "audio-driven-video": "audio-driven",
+        "audio-to-video": "audio-driven",
+        "video-audio": "audio-driven",
+        "wan22-video-audio": "audio-driven",
+        "lip-sync": "lipsync",
+        "lip sync": "lipsync",
+        "video-lipsync": "lipsync",
+        "wan22-lipsync": "lipsync",
+        "reference": "bernini",
+        "reference-guided": "bernini",
+        "reference-guided-edit": "bernini",
+        "wan22-bernini": "bernini",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def normalize_bernini_mode(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    aliases = {
+        "video-to-video": "v2v",
+        "video-edit": "v2v",
+        "reference-video-to-video": "rv2v",
+        "reference-guided-video-to-video": "rv2v",
+        "reference-to-video": "r2v",
+        "reference-image-to-video": "r2v",
+        "image-to-video": "r2v",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
     width = as_int(params.get("width"))
     height = as_int(params.get("height"))
@@ -710,6 +744,43 @@ def audio_duration_seconds(path: str | Path) -> float:
     if duration <= 0:
         raise RuntimeError(f"Audio duration must be positive for {path}")
     return duration
+
+
+def video_file_dimensions(path: str | Path) -> tuple[int, int]:
+    if shutil.which("ffprobe") is None:
+        raise RuntimeError("ffprobe is required to read source video dimensions for comfy-videoedit Bernini.")
+
+    process = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=width,height",
+            "-of",
+            "json",
+            str(path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        message = process.stderr.strip() or process.stdout.strip() or "Could not read video dimensions"
+        raise RuntimeError(message)
+
+    try:
+        parsed = json.loads(process.stdout)
+        stream = parsed["streams"][0]
+        width = int(stream["width"])
+        height = int(stream["height"])
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Could not parse source video dimensions for {path}") from exc
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"Source video dimensions must be positive for {path}")
+    return width, height
 
 
 def divisible_by_16(value: int) -> int:
@@ -1349,6 +1420,174 @@ def build_s2vidgen_command(
     return command, cwd
 
 
+def append_scalar_options(command: list[str], params: dict[str, Any], pairs: tuple[tuple[str, str], ...]) -> None:
+    for key, cli_key in pairs:
+        value = first_scalar_text(params.get(key))
+        if value:
+            command.extend([f"--{cli_key}", value])
+
+
+def absolute_model_path(value: str) -> str:
+    path = Path(value)
+    if path.is_absolute():
+        return str(path)
+    return str(models_dir() / path)
+
+
+def append_bernini_model_overrides(command: list[str], params: dict[str, Any]) -> None:
+    defaults = {
+        "unet-high": "diffusion_models/Wan22_Bernini_HIGH_mxfp8.safetensors",
+        "unet-low": "diffusion_models/Wan22_Bernini_LOW_mxfp8.safetensors",
+        "lora": "loras/wan22/lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16_.safetensors",
+        "text-encoder": "clip/nsfw_wan_umt5-xxl_fp8_scaled.safetensors",
+        "vae": "vae/wan_2.1_vae.safetensors",
+    }
+    param_keys = {
+        "unet-high": ("unetHigh", "unet_high"),
+        "unet-low": ("unetLow", "unet_low"),
+        "lora": ("lora",),
+        "text-encoder": ("textEncoder", "text_encoder"),
+        "vae": ("vae",),
+    }
+    for cli_key, default in defaults.items():
+        value = first_param_text(params, *param_keys[cli_key]) or default
+        command.extend([f"--{cli_key}", absolute_model_path(value)])
+
+
+def build_videoedit_command(
+    *,
+    params: dict[str, Any],
+    prompt: str,
+    out_dir: Path,
+    media: dict[str, list[Path]],
+) -> tuple[list[str], Path]:
+    mode = normalize_videoedit_mode(first_param_text(params, "editMode", "videoEditMode", "mode", "command") or "audio-driven")
+    if mode not in {"audio-driven", "lipsync", "bernini"}:
+        raise RuntimeError("comfy-videoedit params.editMode must be audio-driven, lipsync, or bernini.")
+
+    command = [
+        sys.executable,
+        str(Path(__file__).with_name("comfy_videoedit.py")),
+        "bernini" if mode == "bernini" else "video-audio",
+        "--models-dir",
+        str(models_dir()),
+        "--out",
+        str(out_dir),
+    ]
+
+    video_input = first_param_text(params, "inputVideoPath", "videoPath", "inputPath") or str(selected_input(media, "video") or "")
+    audio_input = first_param_text(params, "audioPath", "inputAudioPath") or str(selected_input(media, "audio") or "")
+
+    if mode in {"audio-driven", "lipsync"}:
+        if not video_input:
+            raise RuntimeError("comfy-videoedit audio-driven/lipsync requires one input video from params.inputVideoPath or a selected card snapshot.")
+        if not audio_input:
+            raise RuntimeError("comfy-videoedit audio-driven/lipsync requires one input audio clip from params.audioPath or a selected card snapshot.")
+        command.extend(["--mode", mode, "--input-video", video_input, "--audio", audio_input])
+        mask_video = first_param_text(params, "maskVideoPath", "mask_video")
+        mask_image = first_param_text(params, "maskImagePath", "mask_image")
+        if mask_video:
+            command.extend(["--mask-video", mask_video])
+        if mask_image:
+            command.extend(["--mask-image", mask_image])
+        if prompt:
+            command.extend(["--prompt", prompt])
+        append_scalar_options(
+            command,
+            params,
+            (
+                ("chunkLength", "chunk-length"),
+                ("chunk_length", "chunk-length"),
+                ("chunkOverlap", "chunk-overlap"),
+                ("chunk_overlap", "chunk-overlap"),
+                ("steps", "steps"),
+                ("denoise", "denoise"),
+                ("cfg", "cfg"),
+                ("sampler", "sampler"),
+                ("scheduler", "scheduler"),
+                ("shift", "shift"),
+                ("seed", "seed"),
+                ("negativePrompt", "negative-prompt"),
+                ("negative_prompt", "negative-prompt"),
+                ("audioStartTime", "audio-start-time"),
+                ("audio_start_time", "audio-start-time"),
+            ),
+        )
+        model_profile = normalize_video_model_profile(first_param_text(params, "modelProfile", "profile") or "wan22-dasiwa-littledemon-v2-video-audio")
+        cwd = write_run_comfy_config(out_dir.parent, capability="videogen.wan22-video-audio", model_profile=model_profile)
+        return command, cwd
+
+    if not prompt:
+        raise RuntimeError("comfy-videoedit bernini requires a prompt.")
+    command.extend(["--prompt", prompt])
+    reference_images = []
+    reference_image_param = params.get("referenceImagePaths") or params.get("referenceImages") or params.get("referenceImagePath")
+    if isinstance(reference_image_param, list):
+        reference_images.extend(first_text(value) for value in reference_image_param)
+    else:
+        reference_image = first_text(reference_image_param)
+        if reference_image:
+            reference_images.append(reference_image)
+    reference_images.extend(str(path) for path in media.get("image", []))
+    bernini_mode = normalize_bernini_mode(first_param_text(params, "berniniMode", "bernini_mode") or ("rv2v" if video_input and reference_images else "v2v" if video_input else "r2v"))
+    if bernini_mode not in {"v2v", "rv2v", "r2v"}:
+        raise RuntimeError("comfy-videoedit Bernini params.berniniMode must be v2v, rv2v, or r2v.")
+    if bernini_mode in {"v2v", "rv2v"} and not video_input:
+        raise RuntimeError("comfy-videoedit Bernini v2v/rv2v requires one input video from params.inputVideoPath or a selected card snapshot.")
+    if bernini_mode == "r2v" and video_input:
+        raise RuntimeError("comfy-videoedit Bernini r2v must not include an input video; use v2v or rv2v for source-video edits.")
+    if bernini_mode == "r2v" and not reference_images:
+        raise RuntimeError("comfy-videoedit Bernini r2v requires at least one selected reference image or params.referenceImagePath.")
+
+    if video_input:
+        command.extend(["--input-video", video_input])
+    for reference_image in unique_items(reference_images):
+        command.extend(["--reference-image", reference_image])
+
+    if video_input:
+        width, height = video_file_dimensions(video_input)
+    else:
+        width, height = video_dimensions_for_resolution(params)
+        if not width or not height:
+            raise RuntimeError("comfy-videoedit Bernini r2v requires params.aspectRatio and params.resolution.")
+    if width and height:
+        command.extend(["--width", str(width), "--height", str(height)])
+    fps_text = first_scalar_text(params.get("fps"))
+    if bernini_mode == "r2v" and not fps_text:
+        raise RuntimeError("comfy-videoedit Bernini r2v requires params.fps set to 16 or 24.")
+    fps = wan_fps(fps_text) if fps_text else 16
+    command.extend(["--fps", str(fps)])
+    duration = as_int(params.get("duration"))
+    if duration is None:
+        raise RuntimeError("comfy-videoedit Bernini requires params.duration so the user can choose whether to extend the video.")
+    command.extend(["--length", str(video_length_from_duration("wan22-bernini", duration, fps))])
+    append_bernini_model_overrides(command, params)
+    append_scalar_options(
+        command,
+        params,
+        (
+            ("steps", "steps"),
+            ("splitStep", "split-step"),
+            ("split_step", "split-step"),
+            ("cfg", "cfg"),
+            ("seed", "seed"),
+            ("negativePrompt", "negative-prompt"),
+            ("negative_prompt", "negative-prompt"),
+            ("highLoraStrength", "high-lora-strength"),
+            ("high_lora_strength", "high-lora-strength"),
+            ("lowLoraStrength", "low-lora-strength"),
+            ("low_lora_strength", "low-lora-strength"),
+            ("sampler", "sampler"),
+            ("scheduler", "scheduler"),
+            ("refMaxSize", "ref-max-size"),
+            ("ref_max_size", "ref-max-size"),
+        ),
+    )
+    model_profile = normalize_video_model_profile(first_param_text(params, "modelProfile", "profile") or "wan22-bernini")
+    cwd = write_run_comfy_config(out_dir.parent, capability="videogen.wan22-bernini", model_profile=model_profile)
+    return command, cwd
+
+
 def build_imagegen_command(
     *,
     mode: str,
@@ -1454,6 +1693,9 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
 
     if skill_id == "comfy-s2vidgen":
         return build_s2vidgen_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
+
+    if skill_id == "comfy-videoedit":
+        return build_videoedit_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
 
     if skill_id == "ideogram4-image":
         return build_ideogram4_command(params=params, prompt=prompt, out_dir=out_dir, media=media)

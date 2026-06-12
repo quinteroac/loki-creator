@@ -96,6 +96,10 @@ function createClientId(prefix: string) {
   return `${prefix}_${randomId}`;
 }
 
+function areStringArraysEqual(left: string[], right: string[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 export function App() {
   const [instruction, setInstruction] = useState("");
   const [cardDocuments, setCardDocuments] = useState(initialCardDocuments);
@@ -153,6 +157,7 @@ export function App() {
   const hasSeededIgnoredSkillRunsRef = useRef(false);
   const processedCardIdsRef = useRef<Set<string>>(new Set());
   const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
+  const canvasViewportAnchorRef = useRef<{ x: number; y: number } | null>(null);
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
   useDismissablePopover(openMenu, closePopover);
@@ -287,7 +292,14 @@ export function App() {
       const currentDocumentIds = new Set(currentNodes.map((node) => node.cardDocumentId));
       const newNodes = newDocumentsForNodes
         .filter((document) => !currentDocumentIds.has(document.id))
-        .map((document, index) => createCanvasNodeForDocument(document, currentNodes.length + index, canvasWidth));
+        .map((document, index) =>
+          createCanvasNodeForDocument(
+            document,
+            canvasViewportAnchorRef.current ? index : currentNodes.length + index,
+            canvasWidth,
+            canvasViewportAnchorRef.current ?? undefined,
+          )
+        );
 
       return newNodes.length > 0 ? [...currentNodes, ...newNodes] : currentNodes;
     });
@@ -352,6 +364,10 @@ export function App() {
     const nextMentionedCardIds = cardIds.filter((cardId, index) => cardIds.indexOf(cardId) === index);
 
     setMentionedCardIds((currentMentionedCardIds) => {
+      if (areStringArraysEqual(currentMentionedCardIds, nextMentionedCardIds)) {
+        return currentMentionedCardIds;
+      }
+
       setSelectedCards((currentSelectedCards) =>
         mergeSelectedCardIds(
           currentSelectedCards.filter((cardId) => !currentMentionedCardIds.includes(cardId)),
@@ -367,10 +383,10 @@ export function App() {
     syncReferencedCards(resolveMentionedCardIds(cardDocuments, instruction));
   }, [cardDocuments, syncReferencedCards]);
 
-  function setComposerInstruction(nextInstruction: string) {
+  const setComposerInstruction = useCallback((nextInstruction: string) => {
     setInstruction(nextInstruction);
     syncReferencedCards(resolveMentionedCardIds(cardDocuments, nextInstruction));
-  }
+  }, [cardDocuments, syncReferencedCards]);
 
   function getEffectiveSelectedCardIds(prompt: string) {
     return mergeSelectedCardIds(selectedCards, resolveMentionedCardIds(cardDocuments, prompt));
@@ -964,7 +980,12 @@ export function App() {
         return [
           ...currentNodes,
           ...newDocuments.map((document, index) =>
-            createCanvasNodeForDocument(document, currentNodes.length + index, canvasWidth),
+            createCanvasNodeForDocument(
+              document,
+              canvasViewportAnchorRef.current ? index : currentNodes.length + index,
+              canvasWidth,
+              canvasViewportAnchorRef.current ?? undefined,
+            ),
           ),
         ];
       });
@@ -1003,36 +1024,41 @@ export function App() {
     setSelectedSkills((currentSkills) => toggleExclusiveAutoSelection(currentSkills, skill));
   }
 
-  function toggleCard(cardId: string) {
+  const toggleCard = useCallback((cardId: string) => {
     setSelectedCards((currentCards) =>
       mentionedCardIds.includes(cardId) && currentCards.includes(cardId)
         ? currentCards
         : toggleMultiSelection(currentCards, cardId),
     );
-  }
+  }, [mentionedCardIds]);
 
-  function toggleCanvasNode(nodeId: string) {
+  const toggleCanvasNode = useCallback((nodeId: string) => {
     const node = canvasNodes.find((candidate) => candidate.id === nodeId);
     if (node) {
       toggleCard(node.cardDocumentId);
     }
-  }
+  }, [canvasNodes, toggleCard]);
 
-  function updateCanvasNodeFrame(nodeId: string, frame: CanvasNodeFrame) {
+  const updateCanvasNodeFrame = useCallback((nodeId: string, frame: CanvasNodeFrame) => {
     setCanvasNodes((currentNodes) =>
       currentNodes.map((node) => (node.id === nodeId ? { ...node, frame } : node)),
     );
-  }
+  }, []);
 
-  function createCardFromEditedMediaArtifact(
+  const createCardFromEditedMediaArtifact = useCallback((
     artifact: EditedMediaArtifact,
     sourceNodeId: string,
     placementOffset = 0,
-  ) {
+  ) => {
     const editedDocument = createCardDocumentForEditedArtifact(artifact);
     const sourceNode = canvasNodes.find((candidate) => candidate.id === sourceNodeId);
     const sourceDocument = sourceNode ? documentsById[sourceNode.cardDocumentId] : undefined;
-    const defaultNode = createCanvasNodeForDocument(editedDocument, canvasNodes.length, window.innerWidth);
+    const defaultNode = createCanvasNodeForDocument(
+      editedDocument,
+      0,
+      window.innerWidth,
+      canvasViewportAnchorRef.current ?? undefined,
+    );
     const sourceHeight = sourceNode && sourceDocument
       ? getCardHeight(sourceNode.frame.width, sourceDocument, sourceNode.frame)
       : 0;
@@ -1061,9 +1087,9 @@ export function App() {
       return [...currentNodes, editedNode];
     });
     setSelectedCards([editedDocument.id]);
-  }
+  }, [canvasNodes, documentsById]);
 
-  function createNote(frame: CanvasNodeFrame) {
+  const createNote = useCallback((frame: CanvasNodeFrame) => {
     const noteDocument = createNoteCardDocument();
     const noteNode = {
       id: `node_${noteDocument.id}`,
@@ -1083,9 +1109,9 @@ export function App() {
     });
     setSelectedCards([noteDocument.id]);
     setStatus("Note created.");
-  }
+  }, []);
 
-  function createBbox(frame: CanvasNodeFrame) {
+  const createBbox = useCallback((frame: CanvasNodeFrame) => {
     const sourceDocument = selectedCards
       .map((cardId) => cardDocuments.find((document) => document.id === cardId))
       .find((document): document is CardDocument =>
@@ -1115,17 +1141,17 @@ export function App() {
     });
     setSelectedCards([bboxDocument.id]);
     setStatus(sourceDocument ? "BBox card created from selected media." : "BBox card created.");
-  }
+  }, [cardDocuments, selectedCards]);
 
-  function renameDocument(cardDocumentId: string, title: string) {
+  const renameDocument = useCallback((cardDocumentId: string, title: string) => {
     setCardDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
         document.id === cardDocumentId ? renameCardDocument(document, title) : document,
       ),
     );
-  }
+  }, []);
 
-  function updateDocumentPrompt(cardDocumentId: string, prompt: string) {
+  const updateDocumentPrompt = useCallback((cardDocumentId: string, prompt: string) => {
     setCardDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
         document.id === cardDocumentId
@@ -1142,17 +1168,17 @@ export function App() {
           : document,
       ),
     );
-  }
+  }, []);
 
-  function updateBboxData(cardDocumentId: string, data: BboxCardData) {
+  const updateBboxData = useCallback((cardDocumentId: string, data: BboxCardData) => {
     setCardDocuments((currentDocuments) =>
       currentDocuments.map((document) =>
         document.id === cardDocumentId ? updateBboxCardDocument(document, data) : document,
       ),
     );
-  }
+  }, []);
 
-  function redoDocument(cardDocumentId: string) {
+  const redoDocument = useCallback((cardDocumentId: string) => {
     const document = cardDocuments.find((candidate) => candidate.id === cardDocumentId);
     const prompt = document?.prompt.trim();
 
@@ -1167,15 +1193,15 @@ export function App() {
     setPendingCollectedArgs({});
     setPendingAgentRequest(null);
     setStatus("Prompt loaded from card.");
-  }
+  }, [cardDocuments, setComposerInstruction]);
 
-  function deleteDocument(cardDocumentId: string) {
+  const deleteDocument = useCallback((cardDocumentId: string) => {
     setCardDocuments((currentDocuments) => currentDocuments.filter((candidate) => candidate.id !== cardDocumentId));
     setCanvasNodes((currentNodes) => currentNodes.filter((node) => node.cardDocumentId !== cardDocumentId));
     setSelectedCards((currentCards) => currentCards.filter((selectedCardId) => selectedCardId !== cardDocumentId));
     previewCapturesRef.current.delete(cardDocumentId);
     setStatus("Card removed from canvas.");
-  }
+  }, []);
 
   const registerPreviewCapture = useCallback((cardDocumentId: string, capturePreview: () => SelectedCardPreview) => {
     previewCapturesRef.current.set(cardDocumentId, capturePreview);
@@ -1185,6 +1211,10 @@ export function App() {
         previewCapturesRef.current.delete(cardDocumentId);
       }
     };
+  }, []);
+
+  const updateCanvasViewportAnchor = useCallback((anchor: { x: number; y: number } | null) => {
+    canvasViewportAnchorRef.current = anchor;
   }, []);
 
   function selectModel(model: string) {
@@ -1311,6 +1341,7 @@ export function App() {
         onUpdateDocumentPrompt={updateDocumentPrompt}
         onUpdateBboxData={updateBboxData}
         onUpdateNodeFrame={updateCanvasNodeFrame}
+        onViewportAnchorChange={updateCanvasViewportAnchor}
         selectedIds={selectedCards}
       />
       <AgentComposer
