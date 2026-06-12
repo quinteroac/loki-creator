@@ -34,10 +34,6 @@ install_comfy_tools() {
     uv tool install \
       --python 3.12 \
       --force \
-      --index https://download.pytorch.org/whl/cu124 \
-      --with 'torch==2.6.0+cu124' \
-      --with 'torchvision==0.21.0+cu124' \
-      --with 'torchaudio==2.6.0+cu124' \
       "$package_ref"
 
   log "ensuring PyTorch CUDA 12.4 wheels are installed"
