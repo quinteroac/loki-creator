@@ -161,6 +161,12 @@ the requested subject, count, identity details, style, medium, composition,
 clothing, expression, pose, lighting, camera, background, colors, mood, text, and
 constraints.
 
+For local Comfy generation profiles, Loki does not add an NSFW filter and does
+not rewrite adult prompts into softer substitutes. Preserve adult/NSFW user
+intent when converting the request into model-friendly prose or tags. Remote
+profiles such as `grok-imagine-api` may still fail according to provider-side
+rules outside Loki's control.
+
 Do not swap the subject, setting, style, camera, mood, language, or constraints.
 Do not drop unusual details because they are hard to tag. Do not translate,
 summarize, or convert the request into a shorter tag list if that loses any

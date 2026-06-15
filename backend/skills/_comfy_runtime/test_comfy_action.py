@@ -540,6 +540,24 @@ class ComfyActionTest(unittest.TestCase):
 
         self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
 
+    def test_comfy_image_generate_does_not_apply_runtime_nsfw_filter(self) -> None:
+        original_prompt = "adult erotic editorial portrait, private studio lighting, explicit boudoir styling"
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, _cwd = comfy_action.build_imagegen_command(
+                mode="generate",
+                params={"modelProfile": "flux-klein-9b-snofs", "aspectRatio": "1:1"},
+                prompt=original_prompt,
+                out_dir=Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+                require_model_profile=True,
+                require_aspect_ratio=True,
+                require_input_image=False,
+                skill_label="comfy-image-generate",
+            )
+
+        self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
+
     def test_comfy_image_generate_r2i_requires_local_image_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             with self.assertRaisesRegex(RuntimeError, "r2i requires"):
@@ -803,6 +821,28 @@ class ComfyActionTest(unittest.TestCase):
 
         self.assertEqual(command[command.index("--fps") + 1], "16")
         self.assertEqual(command[command.index("--length") + 1], "81")
+
+    def test_comfy_videogen_does_not_apply_runtime_nsfw_filter(self) -> None:
+        original_prompt = "adult erotic scene in a private room, slow intimate camera drift, explicit mature styling"
+
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-videogen",
+                    "prompt": original_prompt,
+                    "params": {
+                        "modelProfile": "ltx23-10eros",
+                        "videoMode": "t2v",
+                        "aspectRatio": "16:9",
+                        "resolution": "480p",
+                        "duration": "5",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
 
     def test_wan_flf2v_preserves_explicit_high_and_low_loras(self) -> None:
         high_lora = "/models/loras/wan22/high.safetensors:0.9"

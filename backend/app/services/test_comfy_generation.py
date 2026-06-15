@@ -59,6 +59,24 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(kind, "image")
         self.assertEqual(params["modelProfile"], "anima-base")
 
+    def test_direct_image_generation_does_not_apply_nsfw_filter(self) -> None:
+        original_prompt = "adult erotic editorial portrait, private studio lighting, explicit boudoir styling"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, _cwd, kind, _params = service.build_command(
+                    self.request(modelProfile="flux-klein-9b-snofs"),
+                    original_prompt,
+                    out_dir,
+                    {"image": [], "video": [], "audio": []},
+                )
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "generate"])
+        self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
+        self.assertEqual(kind, "image")
+
     def test_builds_image_r2i_as_generate_command_with_selected_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = self.service(tmpdir)
@@ -197,6 +215,24 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(command[command.index("--length") + 1], "120")
         self.assertEqual(kind, "video")
         self.assertEqual(params["modelProfile"], "ltx23-10eros")
+
+    def test_direct_video_generation_does_not_apply_nsfw_filter(self) -> None:
+        original_prompt = "adult erotic scene in a private room, slow intimate camera drift, explicit mature styling"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-videogen"):
+                command, _cwd, kind, _params = service.build_command(
+                    self.request(tool="video", videoMode="t2v", modelProfile="ltx23-10eros", aspectRatio="16:9", resolution="480p", duration=5),
+                    original_prompt,
+                    out_dir,
+                    {"image": [], "video": [], "audio": []},
+                )
+
+        self.assertEqual(command[:2], ["comfy-videogen", "t2v"])
+        self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
+        self.assertEqual(kind, "video")
 
     def test_builds_wan_flf_command_with_one_image_as_first_and_last(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

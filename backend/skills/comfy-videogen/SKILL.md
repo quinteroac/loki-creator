@@ -451,6 +451,13 @@ COMFY_ORG_API_KEY=... uv run comfy-videogen seedance2-flf2v \
 
 ## Prompt Guidance
 
+For local Comfy video profiles, Loki does not add an NSFW filter and does not
+rewrite adult prompts into softer substitutes. Preserve adult/NSFW user intent
+while still writing a clear model-friendly shot prompt with concrete motion,
+camera behavior, and duration-appropriate action. Remote profiles such as
+`seedance2-api` may still fail according to provider-side rules outside Loki's
+control.
+
 For LTX 2.3 profiles, write the action prompt like a compact shot direction for
 a cinematographer. LTX 2.3 handles more detail than earlier LTX workflows, so do
 not reduce the prompt to a vague mood tag. Use one flowing paragraph in present
