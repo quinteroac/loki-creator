@@ -10,10 +10,12 @@ import {
   mergeRequestAnswers,
   parseSkillParamsJson,
   selectSkillsForAgent,
+  skillParamsFromGrokBuildText,
   validateSelectedBboxGuidePropagation,
 } from "./agentRunner";
 import { collectLocalMediaReferences, resolveLocalArtifactPath } from "./mediaReferences";
 import { repoRoot } from "./config";
+import { getAgentRuntimeMode } from "./skillSelection";
 import type { AgentRunRequest, LokiSkill } from "./types";
 
 function makeSkill(overrides: Partial<LokiSkill>): LokiSkill {
@@ -187,6 +189,48 @@ describe("agent bridge contracts", () => {
     expect(prompt).toContain("For imagegen, call loki_skill_imagegen");
   });
 
+  test("grok-build prompt asks for bridge-executable skill params", () => {
+    const request: AgentRunRequest = {
+      prompt: "create an image",
+      agentId: "base-agent",
+      model: "Grok Build (pi-grok-build)",
+      skills: ["imagegen"],
+      selectedCards: [],
+      context: {},
+    };
+
+    const prompt = buildAgentPrompt(request, [makeSkill({ id: "imagegen", name: "imagegen" })], "grok-build-stdio");
+
+    expect(prompt).toContain("Explicit user-selected project skills");
+    expect(prompt).toContain("backend/skills/imagegen/SKILL.md");
+    expect(prompt).not.toContain(".grok/skills");
+    expect(prompt).toContain("finish with a concise final operational prompt and a JSON object of structured params");
+    expect(prompt).toContain("the Loki bridge will execute it");
+    expect(prompt).not.toContain("loki_skill_imagegen");
+  });
+
+  test("routes Grok-like agent models through the Grok stdio bridge", () => {
+    expect(getAgentRuntimeMode({ id: "grok-4", provider: "xai", name: "Grok 4" })).toBe("grok-build-stdio");
+    expect(getAgentRuntimeMode({ id: "xai/grok-code-fast", provider: "pi", name: "Grok Code Fast" })).toBe("grok-build-stdio");
+    expect(getAgentRuntimeMode({ id: "gpt-5.4-mini", provider: "openai-codex", name: "GPT-5.4 mini" })).toBe("pi-tools");
+  });
+
+  test("extracts Grok Build final text into skill params", () => {
+    const params = skillParamsFromGrokBuildText(`Use this exact image edit prompt.
+
+\`\`\`json
+{"prompt":"Only change the jacket to red. Preserve everything else.","params":{"aspectRatio":"1:1","modelProfile":"wan22-bernini-image"},"title":"Red jacket edit"}
+\`\`\``);
+
+    expect(params.prompt).toBe("Only change the jacket to red. Preserve everything else.");
+    expect(params.title).toBe("Red jacket edit");
+    expect(JSON.parse(params.paramsJson ?? "{}")).toEqual({
+      aspectRatio: "1:1",
+      modelProfile: "wan22-bernini-image",
+    });
+    expect(params.outputText).toContain("Use this exact image edit prompt");
+  });
+
   test("imagegen prompt treats selected images as edit targets for edit requests", () => {
     const request: AgentRunRequest = {
       prompt: "change the shirt to red",
@@ -346,11 +390,12 @@ describe("agent bridge contracts", () => {
     }
   });
 
-  test("runner does not include text-freeform skill execution fallback", async () => {
+  test("Grok Build bridge is scoped to selected skill final params", async () => {
     const source = await readFile(new URL("./agentRunner.ts", import.meta.url), "utf8");
 
-    expect(source).not.toContain("runSelectedSkillFromAgentReasoning");
-    expect(source).not.toContain("extractFallbackParamsFromAgentText");
-    expect(source).not.toContain("extractOperationalPromptFromAgentText");
+    expect(source).toContain("runtimeMode === \"grok-build-stdio\"");
+    expect(source).toContain("selectedSkills.length > 0");
+    expect(source).toContain("chooseGrokBuildBridgeSkill");
+    expect(source).toContain("skillParamsFromGrokBuildText");
   });
 });

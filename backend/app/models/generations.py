@@ -114,7 +114,7 @@ class GeminiImageGenerationResponse(BaseModel):
 class ComfyGenerationRequest(BaseModel):
     prompt: str
     tool: Literal["image", "video"] = "image"
-    image_mode: Literal["generate", "edit", "upscale"] = Field(default="generate", alias="imageMode")
+    image_mode: Literal["generate", "r2i", "edit", "upscale"] = Field(default="generate", alias="imageMode")
     video_mode: Literal["t2v", "i2v", "flf2v", "wan22-i2v", "wan22-flf2v"] = Field(default="t2v", alias="videoMode")
     model_profile: str = Field(default="", alias="modelProfile")
     aspect_ratio: Literal["1:1", "4:3", "16:9", "9:16"] = Field(default="1:1", alias="aspectRatio")

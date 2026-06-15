@@ -777,6 +777,7 @@ export function AgentComposer({
                         aria-label="Comfy image mode"
                       >
                         <option value="generate">Generate</option>
+                        <option value="r2i">Reference</option>
                         <option value="edit">Edit</option>
                         <option value="upscale">Upscale</option>
                       </select>
@@ -792,6 +793,7 @@ export function AgentComposer({
                           <option value="anima-base">Anima</option>
                           <option value="qwen-edit2511">Qwen Edit</option>
                           <option value="flux-klein-9b-snofs">Flux Klein</option>
+                          <option value="wan22-bernini-image">Bernini Image</option>
                         </select>
                       </label>
                     )}

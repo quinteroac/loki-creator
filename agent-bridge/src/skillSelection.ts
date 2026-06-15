@@ -34,7 +34,17 @@ export function hasDirectPiToolRoutedSkill(selectedSkills: LokiSkill[], runtimeM
 }
 
 export function getAgentRuntimeMode(model: { provider?: string } | undefined): AgentRuntimeMode {
-  return model?.provider === "pi-grok-build" ? "grok-build-stdio" : "pi-tools";
+  const provider = model?.provider?.toLowerCase() ?? "";
+  const id = "id" in (model ?? {}) && typeof (model as { id?: unknown }).id === "string"
+    ? (model as { id: string }).id.toLowerCase()
+    : "";
+  const name = "name" in (model ?? {}) && typeof (model as { name?: unknown }).name === "string"
+    ? (model as { name: string }).name.toLowerCase()
+    : "";
+  if (provider === "pi-grok-build" || provider === "xai" || id.includes("grok") || name.includes("grok")) {
+    return "grok-build-stdio";
+  }
+  return "pi-tools";
 }
 
 function getDefaultSkillIds(agentId: string) {

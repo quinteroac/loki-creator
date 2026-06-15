@@ -52,6 +52,58 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(env["LOKI_COMFY_USE_SAGE_ATTENTION"], "1")
         self.assertIn(str(Path(comfy_action.__file__).resolve().parent), env["PYTHONPATH"])
 
+    def test_comfy_image_edit_bernini_builds_single_frame_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"not inspected when aspect ratio is provided")
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-image-edit",
+                    "prompt": "Only change the jacket to red. Preserve everything else.",
+                    "params": {
+                        "modelProfile": "wan22-bernini-image",
+                        "aspectRatio": "1:1",
+                        "seed": 123,
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(Path(command[1]).name, "comfy_videoedit.py")
+        self.assertEqual(command[2], "bernini")
+        self.assertEqual(command[command.index("--reference-image") + 1], str(image))
+        self.assertEqual(command[command.index("--length") + 1], "1")
+        self.assertEqual(command[command.index("--width") + 1], "1024")
+        self.assertEqual(command[command.index("--height") + 1], "1024")
+        self.assertIn('"videogen.wan22-bernini": "wan22-bernini"', config)
+
+    def test_comfy_image_edit_bernini_extracts_png_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_dir = Path(tmpdir) / "outputs"
+            out_dir.mkdir()
+            source_video = out_dir / "result.mp4"
+            source_video.write_bytes(b"video")
+
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            def fake_run(command: list[str], **_kwargs: object) -> Result:
+                Path(command[-1]).write_bytes(b"png")
+                return Result()
+
+            command = [sys.executable, str(Path(comfy_action.__file__).with_name("comfy_videoedit.py")), "bernini", "--out", str(out_dir), "--length", "1"]
+            with patch("comfy_action.shutil.which", return_value="/usr/bin/ffmpeg"), patch("comfy_action.subprocess.run", fake_run):
+                result = comfy_action.extract_bernini_image_artifact({"kind": "video", "artifacts": [str(source_video)]}, command)
+
+        self.assertEqual(result["kind"], "image")
+        self.assertEqual(result["mode"], "wan22-bernini-image")
+        self.assertEqual(Path(result["artifacts"][0]).name, "bernini-image-edit.png")
+        self.assertEqual(result["sourceVideoArtifact"], str(source_video))
+
     def test_ideogram4_builds_structured_generate_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             command, cwd = comfy_action.build_cli_command(
@@ -487,6 +539,64 @@ class ComfyActionTest(unittest.TestCase):
             )
 
         self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
+
+    def test_comfy_image_generate_r2i_requires_local_image_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "r2i requires"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "comfy-image-generate",
+                        "prompt": "masterpiece, best quality, anime illustration, 1girl, solo",
+                        "params": {
+                            "mode": "r2i",
+                            "modelProfile": "anima-base",
+                            "aspectRatio": "1:1",
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
+    def test_comfy_image_generate_r2i_maps_to_generate_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"png")
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-image-generate",
+                    "prompt": "masterpiece, best quality, anime illustration, 1girl, solo, black hair, red jacket",
+                    "params": {
+                        "mode": "r2i",
+                        "modelProfile": "anima-base",
+                        "aspectRatio": "1:1",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "generate"])
+        self.assertNotIn("--input", command)
+        self.assertEqual(command[command.index("--prompt") + 1], "masterpiece, best quality, anime illustration, 1girl, solo, black hair, red jacket")
+        self.assertIn('"imagegen.generate": "anima-base"', config)
+
+    def test_comfy_image_generate_r2i_rejects_reference_language(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "standalone visual description"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "comfy-image-generate",
+                        "prompt": "usar la imagen de referencia para crear una version nueva",
+                        "params": {
+                            "mode": "r2i",
+                            "modelProfile": "flux-klein-9b-snofs",
+                            "aspectRatio": "1:1",
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [Path(tmpdir) / "input.png"], "audio": [], "video": []},
+                )
 
     def test_anima_generation_resolves_extra_lora_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):

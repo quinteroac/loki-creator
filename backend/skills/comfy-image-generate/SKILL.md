@@ -8,6 +8,20 @@ metadata:
     runtime:
       modelsDir: .loki/models/comfyui
     arguments:
+      - id: mode
+        label: Mode
+        description: Choose whether to generate from text only or interpret selected image references first.
+        type: choice
+        required: true
+        askWhen: always
+        order: 5
+        options:
+          - value: t2i
+            label: Text to image
+            description: Build the prompt from the user's text.
+          - value: r2i
+            label: Reference to image
+            description: Use selected or attached images as visual references interpreted by the agent.
       - id: modelProfile
         label: Image model
         description: Choose the Comfy generation model profile.
@@ -77,14 +91,26 @@ outside the repo, let `comfy-tools-setup` install the CLIs with `uv tool`.
 If `.comfy-agent-tools.json` is missing or the user wants to configure a new
 checkpoint/fine-tune/default, use `comfy-model-onboarding` first.
 
+## Modes
+
+- `t2i`: transform the user's text into the final model prompt.
+- `r2i`: inspect selected or attached image artifacts, describe visible
+  subjects, style, layout, colors, pose, crop, background, and lighting, then
+  combine that with the user's prompt. The CLI has no image-conditioning flag in
+  this mode; the selected image is interpreted by the agent before invoking the
+  skill.
+
+For `r2i`, require at least one selected or attached local image artifact. Do
+not use inline previews, data URLs, or vague placeholders.
+
 ## Required Arguments
 
-Loki declares `modelProfile` and `aspectRatio` as required skill arguments. The
-bridge asks these one at a time before the agent invokes this skill, then passes
-the collected values to the action params.
+Loki declares `mode`, `modelProfile`, and `aspectRatio` as required skill
+arguments. The bridge asks these one at a time before the agent invokes this
+skill, then passes the collected values to the action params.
 
-Do not silently fall back to a default profile. The action rejects generation
-without both `modelProfile` and `aspectRatio`.
+Do not silently fall back to a default mode or profile. The action rejects
+generation without `mode`, `modelProfile`, and `aspectRatio`.
 
 Common generation profiles:
 
@@ -189,6 +215,18 @@ The runtime passes the received prompt to `comfy-imagegen` unchanged. Any prompt
 editing must happen deliberately before invoking the action and must preserve the
 user's intent.
 
+For reference-informed prompts:
+
+- Describe what is visibly present in the selected images: subject count, pose,
+  clothing, materials, style, palette, camera angle, layout, text, background,
+  linework, and lighting.
+- Write the final image prompt as a standalone visual description or, for Anima,
+  as standalone visual tags.
+- Do not include phrases such as `reference image`, `selected image`, `based on
+  the image`, `imagen de referencia`, `imagen seleccionada`, `recrear la
+  referencia`, or `mantener la referencia` in the prompt. The CLI never sees the
+  image for `r2i`, only your final prompt.
+
 Anima is not a realism model. It is intended for anime, illustration, and art.
 Keep generation around 1MP, such as 1024x1024, 896x1152, or 1152x896.
 
@@ -229,8 +267,13 @@ expected turbo behavior.
 Before invoking the Loki action, verify:
 
 - The required user choices are present: `modelProfile` and `aspectRatio`.
+- `params.mode` is `t2i` or `r2i`.
+- If `params.mode` is `r2i`, at least one selected or attached local image
+  artifact is available.
 - The action `prompt` is the final model prompt, not a copy of the user request,
   UI text, or card description boilerplate.
+- For `r2i`, the prompt is standalone and does not mention reference/selected
+  images.
 - If `modelProfile` is `anima-base` or `anima-preview3-turbo`, the prompt is a
   comma-separated booru/Danbooru-style tag list.
 - For Anima prompts, there are no imperative prose phrases such as `Generate`,

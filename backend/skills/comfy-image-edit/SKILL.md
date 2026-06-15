@@ -1,6 +1,6 @@
 ---
 name: comfy-image-edit
-description: Edit existing raster images with comfy-diffusion, including Qwen Image Edit 2511, FLUX.2 Klein 9B SNOFS, and remote Grok Imagine edit API nodes. Use when the user selects or provides an image and wants visual changes saved into the workspace. Do not use for new text-to-image generation without an input image, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
+description: Edit existing raster images with comfy-diffusion, including Qwen Image Edit 2511, FLUX.2 Klein 9B SNOFS, WAN 2.2 Bernini single-frame image edits, and remote Grok Imagine edit API nodes. Use when the user selects or provides an image and wants visual changes saved into the workspace. Do not use for new text-to-image generation without an input image, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
     visibility: user
@@ -22,6 +22,9 @@ metadata:
           - value: flux-klein-9b-snofs
             label: FLUX Klein SNOFS
             description: FLUX.2 Klein 9B FP8 + SNOFS LoRA for single-reference editing.
+          - value: wan22-bernini-image
+            label: Bernini Image
+            description: Experimental WAN 2.2 Bernini single-frame image edit profile.
           - value: grok-imagine-api
             label: Grok Imagine API
             description: Remote Grok Imagine editing when COMFY_ORG_API_KEY is configured.
@@ -66,8 +69,10 @@ Rendered previews and inline `dataUrl` payloads are UI-only and are not valid
 skill inputs.
 
 Local modes use the models directory declared in this skill's Loki metadata.
-If a supported built-in edit model is missing, use `comfy-model-downloader` with
-`imagegen.edit` for the active edit profile before running inference.
+If a supported built-in edit model is missing, use `comfy-model-downloader` for
+the active edit profile before running inference. Use `imagegen.edit` for Qwen
+and FLUX edit profiles. Use `videogen.wan22-bernini` for
+`wan22-bernini-image`.
 
 If `comfy-imagegen` or `comfy-models` is not available, use
 `comfy-tools-setup` first. In this repository, prefer `uv run comfy-imagegen`;
@@ -86,6 +91,9 @@ Common edit profiles:
 
 - `qwen-edit2511`: Qwen Image Edit 2511 for direct visual edits.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 + SNOFS LoRA for single-reference editing.
+- `wan22-bernini-image`: experimental WAN 2.2 Bernini single-frame edit. It
+  runs Bernini with the selected image as a reference, forces `length=1`, then
+  extracts that single frame to PNG so the Loki output remains an image card.
 - `grok-imagine-api`: remote Grok Imagine editing, only when the API key is configured.
 
 Aspect ratio choices:
@@ -144,6 +152,11 @@ official distilled image-edit workflow: reference-image VAE encoding, reference
 latents on both positive and negative conditioning, `Flux2Scheduler`,
 `CFGGuider`, and `SamplerCustomAdvanced`.
 
+Bernini Image is intentionally exposed as an image-edit profile, not as
+`comfy-videoedit`. Use it when the user wants to explore Bernini's reference
+editing behavior on a still image. Keep prompts change-focused and preservative.
+The runtime calls Bernini with `--length 1`; do not request a duration.
+
 ## Defaults
 
 - Models directory: declared in Loki metadata as `.loki/models/comfyui`
@@ -158,5 +171,9 @@ latents on both positive and negative conditioning, `Flux2Scheduler`,
 - FLUX text encoder: `text_encoders/qwen_3_8b_fp8mixed.safetensors`
 - FLUX VAE: `vae/flux2-vae.safetensors`
 - SNOFS LoRA: `loras/flux-klein/klein_snofs_v1_1.safetensors`
+- Bernini image profile: `wan22-bernini-image`
+- Bernini output contract: one PNG extracted from a `length=1` Bernini run
+- Bernini diffusion models: `diffusion_models/Wan22_Bernini_HIGH_mxfp8.safetensors`
+  and `diffusion_models/Wan22_Bernini_LOW_mxfp8.safetensors`
 - Grok profile: `grok-imagine-api`
 - Dependency: `comfy-diffusion[comfyui,video]`

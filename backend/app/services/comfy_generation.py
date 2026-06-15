@@ -18,6 +18,11 @@ from app.models import (
 )
 from app.services.card_packager import CardPackagerService
 
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    Image = None
+
 
 COMFY_DIRECT_SKILL_ID = "comfy-direct"
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -28,6 +33,30 @@ IMAGE_DIMENSIONS = {
     "16:9": (1344, 768),
     "9:16": (768, 1344),
 }
+FORBIDDEN_REFERENCE_PHRASES = (
+    "reference image",
+    "selected image",
+    "source image",
+    "input image",
+    "based on the image",
+    "based on the reference",
+    "from the reference",
+    "use the reference",
+    "maintain the reference",
+    "recreate the reference",
+    "imagen de referencia",
+    "imagen seleccionada",
+    "imagen fuente",
+    "imagen de entrada",
+    "basado en la imagen",
+    "basada en la imagen",
+    "basado en la referencia",
+    "basada en la referencia",
+    "de la referencia",
+    "usar la referencia",
+    "mantener la referencia",
+    "recrear la referencia",
+)
 VIDEO_DIMENSIONS = {
     "360p": {
         "1:1": (360, 360),
@@ -55,6 +84,14 @@ VIDEO_DIMENSIONS = {
     },
 }
 WAN_FPS = 16
+BERNINI_IMAGE_PROFILE = "wan22-bernini-image"
+BERNINI_MODEL_OVERRIDES = {
+    "unet-high": "diffusion_models/Wan22_Bernini_HIGH_mxfp8.safetensors",
+    "unet-low": "diffusion_models/Wan22_Bernini_LOW_mxfp8.safetensors",
+    "lora": "loras/wan22/lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16_.safetensors",
+    "text-encoder": "clip/nsfw_wan_umt5-xxl_fp8_scaled.safetensors",
+    "vae": "vae/wan_2.1_vae.safetensors",
+}
 
 
 class ComfyGenerationError(RuntimeError):
@@ -75,6 +112,9 @@ def normalize_image_profile(value: str) -> str:
         "qwen-edit-2511": "qwen-edit2511",
         "flux-klein-snofs": "flux-klein-9b-snofs",
         "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
+        "bernini": BERNINI_IMAGE_PROFILE,
+        "wan22-bernini": BERNINI_IMAGE_PROFILE,
+        "wan-bernini-image": BERNINI_IMAGE_PROFILE,
     }
     return aliases.get(value.strip(), value.strip())
 
@@ -98,6 +138,22 @@ def normalize_video_profile(value: str) -> str:
     return aliases.get(value.strip(), value.strip())
 
 
+def divisible_by_16(value: int) -> int:
+    lower = max(16, value - (value % 16))
+    upper = lower if value % 16 == 0 else lower + 16
+    return lower if abs(value - lower) <= abs(upper - value) else upper
+
+
+def reject_reference_language(prompt: str) -> None:
+    lowered = prompt.lower()
+    for phrase in FORBIDDEN_REFERENCE_PHRASES:
+        if phrase in lowered:
+            raise ComfyGenerationError(
+                "Comfy image r2i prompt must be a standalone visual description. "
+                f"Remove reference-language phrase: {phrase!r}."
+            )
+
+
 class ComfyGenerationService:
     def __init__(self, artifacts_root: Path, *, packager: CardPackagerService | None = None) -> None:
         self.artifacts_root = artifacts_root.resolve()
@@ -113,6 +169,8 @@ class ComfyGenerationService:
         media = self.selected_media(payload)
         command, cwd, expected_kind, params = self.build_command(payload, prompt, out_dir, media)
         raw = self.run_command(command, cwd)
+        if params.get("modelProfile") == BERNINI_IMAGE_PROFILE:
+            raw = self.extract_bernini_image_result(raw, out_dir)
         raw_result = self.validated_raw_result(raw, expected_kind=expected_kind, prompt=prompt)
         result = self.packager.package(
             skill=self.skill_definition(expected_kind),
@@ -215,6 +273,18 @@ class ComfyGenerationService:
         if resolved not in media[kind]:
             media[kind].append(resolved)
 
+    def image_dimensions(self, path: Path) -> tuple[int, int]:
+        if Image is None:
+            raise ComfyGenerationError("Pillow is required to read image dimensions for FLUX Klein image editing.")
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+        except Exception as exc:
+            raise ComfyGenerationError(f"Could not read image dimensions for {path}.") from exc
+        if width <= 0 or height <= 0:
+            raise ComfyGenerationError(f"Image dimensions must be positive for {path}.")
+        return width, height
+
     def write_run_comfy_config(self, run_dir: Path, *, capability: str, model_profile: str) -> Path:
         base_config = self.local_comfy_config()
         config = {
@@ -262,30 +332,82 @@ class ComfyGenerationService:
         media: dict[str, list[Path]],
     ) -> tuple[list[str], Path, Literal["image"], dict[str, Any]]:
         profile = normalize_image_profile(payload.model_profile)
-        if payload.image_mode in {"generate", "edit"} and not profile:
+        if payload.image_mode in {"generate", "r2i", "edit"} and not profile:
             raise ComfyGenerationError("Comfy image generation requires modelProfile.")
-        if payload.image_mode in {"edit", "upscale"} and not media["image"]:
+        if payload.image_mode in {"r2i", "edit", "upscale"} and not media["image"]:
             raise ComfyGenerationError(f"Comfy image {payload.image_mode} requires one selected or attached image.")
+        if payload.image_mode == "r2i":
+            reject_reference_language(prompt)
 
-        command = [self.executable("comfy-imagegen"), payload.image_mode, "--out", str(out_dir)]
-        if payload.image_mode in {"generate", "edit", "upscale"}:
+        if payload.image_mode == "edit" and profile == BERNINI_IMAGE_PROFILE:
+            return self.build_bernini_image_command(payload, prompt, out_dir, media)
+
+        cli_mode = "generate" if payload.image_mode == "r2i" else payload.image_mode
+        command = [self.executable("comfy-imagegen"), cli_mode, "--out", str(out_dir)]
+        if payload.image_mode in {"generate", "r2i", "edit", "upscale"}:
             command.extend(["--models-dir", str(self.models_dir())])
-        if payload.image_mode in {"generate", "edit"}:
+        if payload.image_mode in {"generate", "r2i", "edit"}:
             command.extend(["--prompt", prompt])
         if payload.image_mode in {"edit", "upscale"}:
             command.extend(["--input", str(media["image"][0])])
-        if payload.image_mode == "generate":
+        if payload.image_mode in {"generate", "r2i"}:
             width, height = IMAGE_DIMENSIONS[payload.aspect_ratio]
             command.extend(["--width", str(width), "--height", str(height)])
+        if payload.image_mode == "edit" and profile == "flux-klein-9b-snofs":
+            input_width, input_height = self.image_dimensions(media["image"][0])
+            command.extend(["--width", str(divisible_by_16(input_width)), "--height", str(divisible_by_16(input_height))])
         if payload.seed is not None:
             command.extend(["--seed", str(payload.seed)])
 
-        capability = f"imagegen.{payload.image_mode}"
+        capability = f"imagegen.{cli_mode}"
         cwd = self.write_run_comfy_config(out_dir.parent, capability=capability, model_profile=profile) if profile else REPO_ROOT
         params = {
             "tool": payload.tool,
             "imageMode": payload.image_mode,
             "modelProfile": profile,
+            "aspectRatio": payload.aspect_ratio,
+            "seed": payload.seed,
+        }
+        return command, cwd, "image", params
+
+    def build_bernini_image_command(
+        self,
+        payload: ComfyGenerationRequest,
+        prompt: str,
+        out_dir: Path,
+        media: dict[str, list[Path]],
+    ) -> tuple[list[str], Path, Literal["image"], dict[str, Any]]:
+        width, height = IMAGE_DIMENSIONS[payload.aspect_ratio]
+        command = [
+            self.executable("comfy-videogen"),
+            "wan22-bernini",
+            "--out",
+            str(out_dir),
+            "--models-dir",
+            str(self.models_dir()),
+            "--prompt",
+            prompt,
+            "--reference-image",
+            str(media["image"][0]),
+            "--width",
+            str(width),
+            "--height",
+            str(height),
+            "--fps",
+            str(WAN_FPS),
+            "--length",
+            "1",
+        ]
+        for key, model_path in BERNINI_MODEL_OVERRIDES.items():
+            command.extend([f"--{key}", str(self.models_dir() / model_path)])
+        if payload.seed is not None:
+            command.extend(["--seed", str(payload.seed)])
+
+        cwd = self.write_run_comfy_config(out_dir.parent, capability="videogen.wan22-bernini", model_profile="wan22-bernini")
+        params = {
+            "tool": payload.tool,
+            "imageMode": payload.image_mode,
+            "modelProfile": BERNINI_IMAGE_PROFILE,
             "aspectRatio": payload.aspect_ratio,
             "seed": payload.seed,
         }
@@ -372,6 +494,44 @@ class ComfyGenerationService:
         if not isinstance(parsed, dict):
             raise ComfyGenerationError("Comfy command returned non-object JSON.")
         return parsed
+
+    def extract_bernini_image_result(self, raw: dict[str, Any], out_dir: Path) -> dict[str, Any]:
+        artifacts = raw.get("artifacts")
+        if not isinstance(artifacts, list) or not artifacts:
+            raise ComfyGenerationError("Comfy Bernini image edit completed without returning a video artifact to extract.")
+
+        source_video = ""
+        for artifact in artifacts:
+            path_value = artifact if isinstance(artifact, str) else artifact.get("path") if isinstance(artifact, dict) else None
+            if isinstance(path_value, str) and Path(path_value).suffix.lower() in {".mp4", ".mov", ".webm"}:
+                source_video = path_value
+                break
+        if not source_video:
+            raise ComfyGenerationError("Comfy Bernini image edit did not return a video artifact that can be converted to an image.")
+        if shutil.which("ffmpeg") is None:
+            raise ComfyGenerationError("ffmpeg is required to extract the Bernini image edit frame.")
+
+        image_path = out_dir / "bernini-image-edit.png"
+        process = subprocess.run(
+            ["ffmpeg", "-y", "-i", source_video, "-frames:v", "1", str(image_path)],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if process.returncode != 0:
+            message = process.stderr.strip() or process.stdout.strip() or "Could not extract Bernini image edit frame."
+            raise ComfyGenerationError(message)
+        if not image_path.is_file():
+            raise ComfyGenerationError("ffmpeg completed but did not create the Bernini image edit artifact.")
+
+        return {
+            **raw,
+            "kind": "image",
+            "mode": BERNINI_IMAGE_PROFILE,
+            "title": "Bernini image edit",
+            "artifacts": [str(image_path)],
+            "sourceVideoArtifact": source_video,
+        }
 
     def validate_comfy_cuda(self, command: list[str], cwd: Path, env: dict[str, str]) -> None:
         if not self.env_value_enabled(env.get("LOKI_REQUIRE_COMFY_CUDA")):

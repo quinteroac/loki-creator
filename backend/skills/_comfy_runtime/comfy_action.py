@@ -99,6 +99,7 @@ VIDEO_RESOLUTION_DIMENSIONS = {
     },
 }
 WAN_FPS_VALUES = {16, 24}
+BERNINI_IMAGE_PROFILE = "wan22-bernini-image"
 IDEOGRAM4_DEFAULT_LORA = "Realism_Engine_Ideogram4_beta.safetensors"
 MUSIC_QUALITY_DEFAULTS = {
     "steps": "64",
@@ -568,6 +569,9 @@ def normalize_model_profile(value: str) -> str:
         "qwen-edit-2511": "qwen-edit2511",
         "flux-klein-snofs": "flux-klein-9b-snofs",
         "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
+        "bernini": BERNINI_IMAGE_PROFILE,
+        "wan22-bernini": BERNINI_IMAGE_PROFILE,
+        "wan-bernini-image": BERNINI_IMAGE_PROFILE,
     }
     return aliases.get(value, value)
 
@@ -956,6 +960,20 @@ def maybe_adjust_imagegen_mode_for_profile(mode: str, model_profile: str) -> str
     return mode
 
 
+def normalize_imagegen_mode(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-")
+    aliases = {
+        "text-to-image": "t2i",
+        "txt2img": "t2i",
+        "generate": "t2i",
+        "reference-to-image": "r2i",
+        "ref-to-image": "r2i",
+        "reference-image": "r2i",
+        "reference-image-to-image": "r2i",
+    }
+    return aliases.get(normalized, normalized)
+
+
 def is_anima_profile(model_profile: str) -> bool:
     return model_profile in {"anima-base", "anima-preview3-turbo"}
 
@@ -1256,6 +1274,17 @@ def reject_ideogram_reference_language(*values: str) -> None:
                 )
 
 
+def reject_reference_language(skill_label: str, *values: str) -> None:
+    for value in values:
+        lowered = value.lower()
+        for phrase in IDEOGRAM_FORBIDDEN_REFERENCE_PHRASES:
+            if phrase in lowered:
+                raise RuntimeError(
+                    f"{skill_label} r2i prompt must be a standalone visual description. "
+                    f"Remove reference-language phrase: {phrase!r}."
+                )
+
+
 def build_ideogram4_command(
     *,
     params: dict[str, Any],
@@ -1454,6 +1483,83 @@ def append_bernini_model_overrides(command: list[str], params: dict[str, Any]) -
         command.extend([f"--{cli_key}", absolute_model_path(value)])
 
 
+def bernini_image_dimensions(params: dict[str, Any], image_input: Path | None) -> tuple[int, int]:
+    width, height = dimensions(params)
+    if width and height:
+        return width, height
+
+    input_width, input_height = image_dimensions(image_input)
+    if input_width and input_height:
+        return divisible_by_16(input_width), divisible_by_16(input_height)
+
+    raise RuntimeError("comfy-image-edit Bernini requires a readable input image or params.aspectRatio/width/height.")
+
+
+def build_bernini_image_command(
+    *,
+    params: dict[str, Any],
+    prompt: str,
+    out_dir: Path,
+    media: dict[str, list[Path]],
+    skill_label: str,
+) -> tuple[list[str], Path]:
+    if not prompt:
+        raise RuntimeError(f"{skill_label} Bernini requires a prompt.")
+
+    image_input_text = first_text(params.get("inputPath"))
+    image_input_path = Path(image_input_text).expanduser().resolve() if image_input_text else selected_input(media, "image")
+    if not image_input_path:
+        raise RuntimeError(f"{skill_label} Bernini requires an input image from params.inputPath or a selected card snapshot.")
+
+    width, height = bernini_image_dimensions(params, image_input_path)
+    fps = wan_fps(params.get("fps"))
+    command = [
+        sys.executable,
+        str(Path(__file__).with_name("comfy_videoedit.py")),
+        "bernini",
+        "--models-dir",
+        str(models_dir()),
+        "--out",
+        str(out_dir),
+        "--prompt",
+        prompt,
+        "--reference-image",
+        str(image_input_path),
+        "--width",
+        str(width),
+        "--height",
+        str(height),
+        "--fps",
+        str(fps),
+        "--length",
+        "1",
+    ]
+    append_bernini_model_overrides(command, params)
+    append_scalar_options(
+        command,
+        params,
+        (
+            ("steps", "steps"),
+            ("splitStep", "split-step"),
+            ("split_step", "split-step"),
+            ("cfg", "cfg"),
+            ("seed", "seed"),
+            ("negativePrompt", "negative-prompt"),
+            ("negative_prompt", "negative-prompt"),
+            ("highLoraStrength", "high-lora-strength"),
+            ("high_lora_strength", "high-lora-strength"),
+            ("lowLoraStrength", "low-lora-strength"),
+            ("low_lora_strength", "low-lora-strength"),
+            ("sampler", "sampler"),
+            ("scheduler", "scheduler"),
+            ("refMaxSize", "ref-max-size"),
+            ("ref_max_size", "ref-max-size"),
+        ),
+    )
+    cwd = write_run_comfy_config(out_dir.parent, capability="videogen.wan22-bernini", model_profile="wan22-bernini")
+    return command, cwd
+
+
 def build_videoedit_command(
     *,
     params: dict[str, Any],
@@ -1610,8 +1716,22 @@ def build_imagegen_command(
     if require_aspect_ratio and not aspect_ratio:
         raise RuntimeError(f"{skill_label} requires params.aspectRatio. The agent must ask the user which aspect ratio to use.")
 
+    if mode == "r2i":
+        if selected_input(media, "image") is None:
+            raise RuntimeError(f"{skill_label} r2i requires a selected or attached local image artifact.")
+        reject_reference_language(skill_label, prompt)
+        mode = "generate"
+
     if model_profile:
         mode = maybe_adjust_imagegen_mode_for_profile(mode, model_profile)
+    if mode == "edit" and model_profile == BERNINI_IMAGE_PROFILE:
+        return build_bernini_image_command(
+            params=params,
+            prompt=prompt,
+            out_dir=out_dir,
+            media=media,
+            skill_label=skill_label,
+        )
 
     command = ["comfy-imagegen", mode, "--out", str(out_dir)]
     if mode in {"generate", "edit", "upscale"}:
@@ -1653,8 +1773,11 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
     model_dir = models_dir()
 
     if skill_id == "comfy-image-generate":
+        requested_mode = normalize_imagegen_mode(command_from_params(params, "t2i"))
+        if requested_mode not in {"t2i", "r2i"}:
+            raise RuntimeError("comfy-image-generate params.mode must be t2i or r2i.")
         return build_imagegen_command(
-            mode="generate",
+            mode="r2i" if requested_mode == "r2i" else "generate",
             params=params,
             prompt=prompt,
             out_dir=out_dir,
@@ -2052,6 +2175,61 @@ def raw_result_from_cli(payload: dict[str, Any], command: list[str], prompt: str
     }
 
 
+def is_bernini_image_command(command: list[str]) -> bool:
+    return (
+        len(command) > 2
+        and Path(command[1]).name == "comfy_videoedit.py"
+        and command[2] == "bernini"
+        and value_after_option(command, "--length") == "1"
+        and not value_after_option(command, "--input-video")
+    )
+
+
+def extract_bernini_image_artifact(payload: dict[str, Any], command: list[str]) -> dict[str, Any]:
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise RuntimeError("comfy-image-edit Bernini completed without returning a video artifact to extract.")
+
+    source_video = ""
+    for artifact in artifacts:
+        if isinstance(artifact, str) and Path(artifact).suffix.lower() in {".mp4", ".mov", ".webm"}:
+            source_video = artifact
+            break
+        if isinstance(artifact, dict):
+            path = first_text(artifact.get("path"))
+            if Path(path).suffix.lower() in {".mp4", ".mov", ".webm"}:
+                source_video = path
+                break
+    if not source_video:
+        raise RuntimeError("comfy-image-edit Bernini did not return a video artifact that can be converted to an image.")
+
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg is required to extract the Bernini image edit frame.")
+
+    out_dir = Path(value_after_option(command, "--out") or Path(source_video).parent)
+    image_path = out_dir / "bernini-image-edit.png"
+    process = subprocess.run(
+        ["ffmpeg", "-y", "-i", source_video, "-frames:v", "1", str(image_path)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        message = process.stderr.strip() or process.stdout.strip() or "Could not extract Bernini image edit frame."
+        raise RuntimeError(message)
+    if not image_path.is_file():
+        raise RuntimeError("ffmpeg completed but did not create the Bernini image edit artifact.")
+
+    return {
+        **payload,
+        "kind": "image",
+        "mode": BERNINI_IMAGE_PROFILE,
+        "title": "Bernini image edit",
+        "artifacts": [str(image_path)],
+        "sourceVideoArtifact": source_video,
+    }
+
+
 def combine_raw_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     combined: dict[str, Any] = {
         "artifacts": [],
@@ -2133,6 +2311,8 @@ def main() -> None:
 
     for index, (segment_command, segment_cwd) in enumerate(commands, start=1):
         result = run_command(segment_command, segment_cwd)
+        if is_bernini_image_command(segment_command):
+            result = extract_bernini_image_artifact(result, segment_command)
         raw = raw_result_from_cli(result, segment_command, prompt_from_command(segment_command, base_prompt(payload)))
         annotate_requested_video_mode(raw, requested_mode)
         if len(segments) == len(commands):

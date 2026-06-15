@@ -496,6 +496,105 @@ export function parseSkillParamsJson(value?: string) {
   return parsed as Record<string, unknown>;
 }
 
+function findLastJsonObjectSpan(value: string) {
+  let depth = 0;
+  let start = -1;
+  let last: { start: number; end: number } | null = null;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+    if (character === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+    if (character === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        last = { start, end: index + 1 };
+        start = -1;
+      }
+    }
+  }
+
+  return last;
+}
+
+function stripJsonSpan(value: string, span: { start: number; end: number } | null) {
+  if (!span) return value.trim();
+  return `${value.slice(0, span.start)}${value.slice(span.end)}`
+    .replace(/```json\s*```/gi, "")
+    .replace(/```\s*```/g, "")
+    .trim();
+}
+
+function grokBuildParamsJsonFromObject(parsed: Record<string, unknown>) {
+  const paramsJson = parsed.paramsJson;
+  if (typeof paramsJson === "string" && paramsJson.trim()) return paramsJson.trim();
+  if (asRecord(paramsJson)) return JSON.stringify(paramsJson);
+
+  const params = asRecord(parsed.params) ?? asRecord(parsed.structuredParams);
+  if (params) return JSON.stringify(params);
+
+  const promptKeys = new Set(["prompt", "operationalPrompt", "skillPrompt", "finalPrompt", "instruction", "instructions"]);
+  const entries = Object.entries(parsed).filter(([key]) => !promptKeys.has(key));
+  return entries.length > 0 ? JSON.stringify(Object.fromEntries(entries)) : undefined;
+}
+
+export function skillParamsFromGrokBuildText(value: string): LokiSkillParams {
+  const fencedMatch = value.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+  const jsonSpan = fencedMatch?.index !== undefined
+    ? { start: fencedMatch.index, end: fencedMatch.index + fencedMatch[0].length }
+    : findLastJsonObjectSpan(value);
+  const jsonText = fencedMatch?.[1] ?? (jsonSpan ? value.slice(jsonSpan.start, jsonSpan.end) : "");
+  let parsed: Record<string, unknown> | null = null;
+  if (jsonText) {
+    try {
+      parsed = asRecord(JSON.parse(jsonText));
+    } catch {
+      parsed = null;
+    }
+  }
+
+  const remainingText = stripJsonSpan(value, jsonSpan);
+  const prompt = parsed
+    ? firstString(
+      parsed.prompt,
+      parsed.operationalPrompt,
+      parsed.skillPrompt,
+      parsed.finalPrompt,
+      parsed.instruction,
+      parsed.instructions,
+      remainingText,
+    )
+    : remainingText;
+  const title = parsed ? firstString(parsed.title) : "";
+
+  return {
+    prompt: prompt.trim() || value.trim(),
+    title: title || undefined,
+    paramsJson: parsed ? grokBuildParamsJsonFromObject(parsed) : undefined,
+    outputText: value.trim() || undefined,
+  };
+}
+
 function skillSupportsAdHocLora(skill: LokiSkill) {
   return [
     "comfy-image-generate",
@@ -953,9 +1052,9 @@ const skillToolProfiles: Record<string, SkillToolProfile> = {
   },
   "comfy-image-generate": {
     description:
-      " For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not use empty reference tokens like use reference image, exact same character, same pose, or same outfit unless the skill is an edit mode with an actual image input.",
+      " For Comfy image generation, put paramsJson.mode as t2i or r2i. For r2i, require a selected or attached local image artifact, inspect the visual content, and convert observed traits into a standalone final image prompt; the CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags.",
     promptDescription:
-      "Final image generation prompt. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance.",
+      "Final standalone image generation prompt. Put paramsJson.mode as t2i or r2i. For r2i, never mention reference/selected images. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For non-Anima profiles, follow the selected model's prompt guidance.",
   },
   "ideogram4-image": {
     description:
@@ -1082,6 +1181,12 @@ function createLokiSkillPiTool(
 function hasExplicitSkillSelection(selectedSkills: string[]) {
   const normalizedSelected = selectedSkills.map(normalizeSkillName);
   return normalizedSelected.length > 0 && !normalizedSelected.includes("auto");
+}
+
+function chooseGrokBuildBridgeSkill(selectedSkills: LokiSkill[]) {
+  if (selectedSkills.length === 0) return null;
+  if (selectedSkills.length === 1) return selectedSkills[0];
+  return selectedSkills.find((skill) => skill.id === "imagegen") ?? selectedSkills[0];
 }
 
 function normalizeQuestionMatchText(value: string) {
@@ -1719,11 +1824,11 @@ function formatExplicitSkillSelection(request: AgentRunRequest, exposedSkills: L
   if (runtimeMode === "grok-build-stdio") {
     return `
 Explicit user-selected project skills:
-${exposedSkills.map((skill) => `- ${skill.name} (${skill.id}) at .grok/skills/${skill.id}/SKILL.md`).join("\n")}
+${exposedSkills.map((skill) => `- ${skill.name} (${skill.id}) at backend/skills/${skill.id}/SKILL.md`).join("\n")}
 
 The user selected these skills explicitly. This is not a suggestion or a list of optional capabilities.
 - Use the selected project skill for this request.
-- Read and follow the selected skill's instructions before deciding the final operational prompt.
+- Read and follow the selected skill's SKILL.md instructions before deciding the final operational prompt.
 - If a required user choice is still missing, ask one concise question and stop.
 - Otherwise produce the artifact intent for the selected skill. Do not mention Loki internal tools or loki_skill_* names.
 - If your runtime cannot call the skill directly, finish with a concise final operational prompt and a JSON object of structured params for that selected skill; the Loki bridge will execute it.${loraInstruction}${imagegenEditInstruction}`;
@@ -1863,7 +1968,17 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
       appendRunDiagnostic(runState, `conversationId=${request.conversationId} was not found; merging request answers directly`);
     }
     const selectedSkillIds = existingConversation?.selectedSkillIds ?? request.skills;
-    const selectedSkills = selectSkillsForAgent(availableSkills, selectedSkillIds, agentId);
+    let selectedSkills = selectSkillsForAgent(availableSkills, selectedSkillIds, agentId);
+    if (selectedSkills.length === 0) {
+      const defaultSkills = selectSkillsForAgent(availableSkills, ["auto"], agentId);
+      if (defaultSkills.length > 0) {
+        appendRunDiagnostic(
+          runState,
+          `selected skills did not resolve; falling back to agent defaults=${defaultSkills.map((skill) => skill.id).join(",")}`,
+        );
+        selectedSkills = defaultSkills;
+      }
+    }
     appendRunDiagnostic(
       runState,
       `selectedSkillIds=${JSON.stringify(selectedSkillIds)} resolvedSkills=${
@@ -2067,6 +2182,23 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
     }
 
     const responseText = responseChunks.join("").trim();
+    if (
+      runtimeMode === "grok-build-stdio"
+      && runState.skillRunIds.length === 0
+      && selectedSkills.length > 0
+      && (hasExplicitSkillSelection(selectedSkillIds) || hasRuntimeInputs(runtimeRequest))
+    ) {
+      const skill = chooseGrokBuildBridgeSkill(selectedSkills);
+      if (skill) {
+        const skillParams = skillParamsFromGrokBuildText(responseText || runtimeRequest.prompt);
+        appendRunDiagnostic(
+          runState,
+          `grok-build bridge invoking selected skill=${skill.id} from final text resolvedSkills=${selectedSkills.map((item) => item.id).join(",")}`,
+        );
+        await invokeLokiSkillWithState(skill, skillParams, runtimeRequest, runState);
+      }
+    }
+
     if (runState.directToolErrors.length > 0 && runState.cardIds.length === 0) {
       const message = runState.directToolErrors.join("\n");
       appendRunDiagnostic(runState, "direct Pi tool failed without packageable cards");

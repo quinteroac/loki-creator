@@ -32,6 +32,7 @@ prefer `uv run comfy-models`; outside the repo, use the installed CLI.
 - Image to video: `videogen.i2v`
 - First/last frame video: `videogen.flf2v`
 - Image plus audio to video: `videogen.ia2av`
+- WAN 2.2 Bernini video or single-frame image edit: `videogen.wan22-bernini`
 - WAN 2.2 sound to video: `videogen.wan22-s2v`
 - Music generation: `musicgen.generate`
 
@@ -71,6 +72,8 @@ uv run comfy-models validate-profile anima-base
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 generation/editing with SNOFS.
 - `clear-reality`: ClearReality image upscaling.
 - `ltx23-10eros`: LTX 2.3 video and IA2AV.
+- `wan22-bernini`: WAN 2.2 Bernini reference-guided video and single-frame
+  image editing.
 - `wan22-s2v`: WAN 2.2 sound-to-video.
 - `wan22-dasiwa-littledemon-v2-s2v`: Dasiwa LittleDemon V2 WAN 2.2 sound-to-video.
 - `ace15-base`: ACE-Step 1.5 music generation.
