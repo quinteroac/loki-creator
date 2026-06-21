@@ -34,6 +34,7 @@ from app.models.generations import (
 from app.models.projects import (
     ProjectCanvasNode,
     ProjectCanvasNodeFrame,
+    ProjectAgentMemoryRequest,
     ProjectCreateRequest,
     ProjectDocument,
     ProjectSaveRequest,
@@ -93,6 +94,7 @@ __all__ = [
     "SeedanceVideoGenerationResponse",
     "ProjectCanvasNode",
     "ProjectCanvasNodeFrame",
+    "ProjectAgentMemoryRequest",
     "ProjectCreateRequest",
     "ProjectDocument",
     "ProjectSaveRequest",

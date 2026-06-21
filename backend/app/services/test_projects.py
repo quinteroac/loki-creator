@@ -124,6 +124,27 @@ class ProjectServiceTest(unittest.TestCase):
             self.assertEqual(saved.name, "Renamed Project")
             self.assertTrue((Path(tmpdir) / "projects" / "my-project" / "project.json").is_file())
 
+    def test_agent_memory_persists_and_survives_canvas_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(Path(tmpdir))
+            project = service.create_project(ProjectCreateRequest.model_validate(project_payload("Memory")))
+            memory = {
+                "projectId": project.id,
+                "workflowId": "short-film",
+                "videoEngine": "wan-flf2v",
+                "phase": "plan",
+                "turns": [{"user": "idea", "assistant": "plan", "skillRunIds": [], "cardIds": [], "createdAt": "now"}],
+            }
+
+            service.save_agent_memory(project.id, "video-director", memory)
+            saved = service.save_project(
+                project.id,
+                ProjectSaveRequest.model_validate(project_payload("Memory renamed")),
+            )
+
+            self.assertEqual(saved.agent_memory["video-director"], memory)
+            self.assertEqual(service.get_agent_memory(project.id, "video-director"), memory)
+
     def test_lists_by_status_and_lifecycle_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = self.service(Path(tmpdir))
@@ -160,6 +181,16 @@ class ProjectServiceTest(unittest.TestCase):
             self.assertEqual(duplicate.id, "source-copy")
             self.assertEqual(duplicate.status, "active")
             self.assertEqual(len(duplicate.card_documents), 1)
+
+    def test_duplicate_project_copies_agent_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(Path(tmpdir))
+            source = service.create_project(ProjectCreateRequest.model_validate(project_payload("Memory Source")))
+            service.save_agent_memory(source.id, "video-director", {"phase": "clip_review", "turns": []})
+
+            duplicate = service.duplicate_project(source.id)
+
+            self.assertEqual(duplicate.agent_memory["video-director"]["phase"], "clip_review")
 
     def test_export_includes_project_manifest_and_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

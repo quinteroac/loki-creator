@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { layout, prepare } from "@chenglou/pretext";
-import { Download, Info, RotateCcw, Scissors, Trash2 } from "lucide-react";
+import { Copy, Download, Info, RotateCcw, Scissors, Trash2 } from "lucide-react";
 import {
   downloadCardDocument,
   extractSelectedCardMediaAssets,
@@ -293,6 +293,7 @@ export const CanvasCard = memo(function CanvasCard({
   const isNote = document.metadata?.kind === "note";
   const isBbox = document.metadata?.kind === "bbox";
   const isAudio = document.metadata?.kind === "audio";
+  const isVideoDirectorPromptCard = document.metadata?.videoDirectorPromptOnly === true;
   const canShowMetadataToggle = isSelected && !isNote && !isBbox;
   const videoArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "video"
     ? document.metadata.artifactUrl
@@ -646,6 +647,18 @@ export const CanvasCard = memo(function CanvasCard({
     setIsMetadataVisible((currentValue) => !currentValue);
   }
 
+  async function handleCopyPrompt(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      await navigator.clipboard.writeText(document.prompt);
+      onStatus("Prompt copied.");
+    } catch (error) {
+      onStatus(error instanceof Error ? error.message : "Could not copy prompt.");
+    }
+  }
+
   function handleNoteTextPaste(event: ClipboardEvent<HTMLDivElement>) {
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
@@ -825,6 +838,19 @@ export const CanvasCard = memo(function CanvasCard({
           onPointerDown={stopCardInteraction}
         >
           <Info size={15} aria-hidden="true" />
+        </button>
+      )}
+      {isVideoDirectorPromptCard && (
+        <button
+          className="canvas-card-copy-prompt"
+          type="button"
+          aria-label={`Copy ${accessibleTitle} prompt`}
+          title="Copy prompt"
+          onClick={handleCopyPrompt}
+          onContextMenu={stopCardInteraction}
+          onPointerDown={stopCardInteraction}
+        >
+          <Copy size={15} aria-hidden="true" />
         </button>
       )}
       {isMetadataVisible && !isNote && !isBbox && (

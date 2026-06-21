@@ -103,6 +103,7 @@ class ProjectService:
             status="active",
             cardDocuments=payload.card_documents,
             canvasNodes=payload.canvas_nodes,
+            agentMemory=payload.agent_memory or {},
         )
 
         self._write_project(project)
@@ -125,6 +126,7 @@ class ProjectService:
             importedAt=existing.imported_at,
             cardDocuments=payload.card_documents,
             canvasNodes=payload.canvas_nodes,
+            agentMemory=payload.agent_memory if payload.agent_memory is not None else existing.agent_memory,
         )
 
         self._write_project(project)
@@ -166,6 +168,7 @@ class ProjectService:
             status="active",
             cardDocuments=project.card_documents,
             canvasNodes=project.canvas_nodes,
+            agentMemory=project.agent_memory,
         )
 
         self._write_project(duplicate)
@@ -236,6 +239,34 @@ class ProjectService:
         self._write_project(project)
         return project
 
+    def get_agent_memory(self, project_id: str, agent_id: str) -> dict[str, Any]:
+        project = self._read_existing_project(project_id)
+        value = project.agent_memory.get(agent_id)
+        return value if isinstance(value, dict) else {}
+
+    def save_agent_memory(self, project_id: str, agent_id: str, memory: dict[str, Any]) -> dict[str, Any]:
+        project = self._read_existing_project(project_id)
+        if project.status == "trashed":
+            raise ProjectInvalidOperationError("Trashed projects must be restored before saving agent memory.")
+
+        updated_memory = {**project.agent_memory, agent_id: memory}
+        updated = ProjectDocument(
+            schemaVersion=PROJECT_SCHEMA_VERSION,
+            id=project.id,
+            name=project.name,
+            createdAt=project.created_at,
+            updatedAt=datetime.now(UTC),
+            status=project.status,
+            archivedAt=project.archived_at,
+            trashedAt=project.trashed_at,
+            importedAt=project.imported_at,
+            cardDocuments=project.card_documents,
+            canvasNodes=project.canvas_nodes,
+            agentMemory=updated_memory,
+        )
+        self._write_project(updated)
+        return memory
+
     def artifact_count(self, project: ProjectDocument) -> int:
         return len(self._collect_project_artifact_urls(project))
 
@@ -260,6 +291,7 @@ class ProjectService:
             importedAt=project.imported_at,
             cardDocuments=project.card_documents,
             canvasNodes=project.canvas_nodes,
+            agentMemory=project.agent_memory,
         )
         self._write_project(updated)
         return updated
@@ -296,6 +328,7 @@ class ProjectService:
             payload.setdefault("archivedAt", None)
             payload.setdefault("trashedAt", None)
             payload.setdefault("importedAt", None)
+            payload.setdefault("agentMemory", {})
             return ProjectDocument.model_validate(payload)
         except Exception as exc:
             raise ProjectStorageError(f"Could not read project file: {project_file}") from exc

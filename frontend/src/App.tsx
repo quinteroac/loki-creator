@@ -78,6 +78,9 @@ import type {
   SeedanceDuration,
   SelectedCardPreview,
   SkillRun,
+  VideoDirectorEngine,
+  VideoDirectorPhase,
+  VideoDirectorWorkflow,
 } from "./types";
 
 const fallbackModels: AgentModel[] = [
@@ -110,6 +113,9 @@ export function App() {
   const [availableModels, setAvailableModels] = useState<AgentModel[]>(fallbackModels);
   const [selectedModel, setSelectedModel] = useState(fallbackModels[0].label);
   const [composerMode, setComposerMode] = useState<ComposerMode>("agent");
+  const [videoDirectorWorkflow, setVideoDirectorWorkflow] = useState<VideoDirectorWorkflow>("auto");
+  const [videoDirectorEngine, setVideoDirectorEngine] = useState<VideoDirectorEngine>("auto");
+  const [videoDirectorPhase, setVideoDirectorPhase] = useState<VideoDirectorPhase>("idea");
   const [seedanceAspectRatio, setSeedanceAspectRatio] = useState<SeedanceAspectRatio>("16:9");
   const [seedanceDuration, setSeedanceDuration] = useState<SeedanceDuration>(5);
   const [grokTool, setGrokTool] = useState<GrokTool>("image");
@@ -158,6 +164,7 @@ export function App() {
   const processedCardIdsRef = useRef<Set<string>>(new Set());
   const previewCapturesRef = useRef<Map<string, CardPreviewCapture>>(new Map());
   const canvasViewportAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const videoDirectorSessionIdRef = useRef(createClientId("video_director_session"));
 
   const closePopover = useCallback(() => setOpenMenu(null), []);
   useDismissablePopover(openMenu, closePopover);
@@ -214,7 +221,7 @@ export function App() {
             skill.visibility === "user" && !["grok-imagine-image", "grok-imagine-video"].includes(skill.id)
           );
           setAvailableSkills(userSkills.map((skill) => skill.name));
-          setVisibleSkillIds(new Set(userSkills.map((skill) => skill.id)));
+          setVisibleSkillIds(new Set([...userSkills.map((skill) => skill.id), "video-director-os"]));
         }
       } catch {
         if (isMounted) {
@@ -525,14 +532,14 @@ export function App() {
     });
   }
 
-  function startAgentRunStream(streamId: string) {
+  function startAgentRunStream(streamId: string, title = "Base Agent") {
     agentEventSourceRef.current?.close();
     activeAgentRunIdRef.current = streamId;
     stoppedAgentRunIdsRef.current.delete(streamId);
     const now = Date.now();
     setAgentRunStartedAt(now);
     setAgentLastActivityAt(now);
-    setAgentActivityTitle("Base Agent");
+    setAgentActivityTitle(title);
     agentRunStatusRef.current = "running";
     setAgentRunStatus("running");
     setAgentChatMessages([]);
@@ -727,18 +734,30 @@ export function App() {
     );
     const effectiveSelectedDocument = cardDocuments.find((document) => document.id === effectiveSelectedCards[0]);
 
+    const isVideoDirector = composerMode === "video-director";
+    const agentId = isVideoDirector ? "video-director" : "base-agent";
+    const projectId = projectsController.currentProjectId ?? videoDirectorSessionIdRef.current;
+
     return {
-      agentId: "base-agent",
+      agentId,
       prompt,
       model: selectedModel,
-      skills: selectedSkills,
+      skills: isVideoDirector ? ["Auto"] : selectedSkills,
       selectedCards: effectiveSelectedCards,
       selectedCardSnapshots,
       attachments,
+      projectId,
+      workflowId: isVideoDirector ? videoDirectorWorkflow : undefined,
+      videoEngine: isVideoDirector ? videoDirectorEngine : undefined,
+      phaseOverride: isVideoDirector ? videoDirectorPhase : undefined,
       context: {
-        skills: selectedSkills,
+        skills: isVideoDirector ? ["Auto"] : selectedSkills,
         model: selectedModel,
-        agentId: "base-agent",
+        agentId,
+        projectId,
+        workflowId: isVideoDirector ? videoDirectorWorkflow : undefined,
+        videoEngine: isVideoDirector ? videoDirectorEngine : undefined,
+        phaseOverride: isVideoDirector ? videoDirectorPhase : undefined,
         selectedElement: effectiveSelectedDocument ? getCardDisplayTitle(effectiveSelectedDocument) : null,
         attachments,
       },
@@ -771,7 +790,7 @@ export function App() {
       setPendingQuestion(null);
       setComposerInstruction("");
       setStatus("Continuing agent...");
-      startAgentRunStream(streamId);
+      startAgentRunStream(streamId, pendingAgentRequest.agentId === "video-director" ? "Video Director" : "Base Agent");
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
     } catch (error) {
@@ -826,7 +845,7 @@ export function App() {
     }
 
     if (!text) {
-      setStatus(composerMode === "agent" ? "Write an instruction before sending it to the agent." : "Write a prompt before generating.");
+      setStatus(composerMode === "agent" || composerMode === "video-director" ? "Write an instruction before sending it to the agent." : "Write a prompt before generating.");
       return;
     }
 
@@ -956,7 +975,7 @@ export function App() {
       setStatus("Running agent...");
       const request = await buildAgentRequest(text);
       request.streamId = streamId;
-      startAgentRunStream(streamId);
+      startAgentRunStream(streamId, request.agentId === "video-director" ? "Video Director" : "Base Agent");
       const agentRun = await createAgentRun(request);
       await handleAgentRunResponse(agentRun, request);
     } catch (error) {
@@ -1411,6 +1430,9 @@ export function App() {
         grokVideoAspectRatio={grokVideoAspectRatio}
         grokVideoDuration={grokVideoDuration}
         grokVideoResolution={grokVideoResolution}
+        videoDirectorEngine={videoDirectorEngine}
+        videoDirectorPhase={videoDirectorPhase}
+        videoDirectorWorkflow={videoDirectorWorkflow}
         onGrokImageAspectRatioChange={setGrokImageAspectRatio}
         onGrokImageResolutionChange={setGrokImageResolution}
         onGrokToolChange={setGrokTool}
@@ -1419,6 +1441,9 @@ export function App() {
         onGrokVideoResolutionChange={setGrokVideoResolution}
         onSeedanceAspectRatioChange={setSeedanceAspectRatio}
         onSeedanceDurationChange={setSeedanceDuration}
+        onVideoDirectorEngineChange={setVideoDirectorEngine}
+        onVideoDirectorPhaseChange={setVideoDirectorPhase}
+        onVideoDirectorWorkflowChange={setVideoDirectorWorkflow}
         onSelectModel={selectModel}
         onSetComposerMode={setComposerMode}
         onStop={stopActiveAgentRun}

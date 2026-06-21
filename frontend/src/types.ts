@@ -35,7 +35,42 @@ export type SeedanceAspectRatio = "16:9" | "9:16";
 
 export type SeedanceDuration = 4 | 5 | 7 | 10 | 15;
 
-export type ComposerMode = "agent" | "seedance" | "grok" | "codex" | "gemini" | "comfy";
+export type ComposerMode = "agent" | "video-director" | "seedance" | "grok" | "codex" | "gemini" | "comfy";
+
+export type VideoDirectorWorkflow =
+  | "auto"
+  | "short-film"
+  | "first-last-frame-sequence"
+  | "image-to-video-sequence"
+  | "product-ad"
+  | "music-performance"
+  | "retake-repair"
+  | "video-edit"
+  | "post-production";
+
+export type VideoDirectorEngine =
+  | "auto"
+  | "prompt-only"
+  | "seedance-openrouter"
+  | "wan-flf2v"
+  | "wan-i2v"
+  | "ltx-i2v"
+  | "ltx-flf2v"
+  | "grok-video"
+  | "s2v-audio-driven"
+  | "bernini-v2v-edit";
+
+export type VideoDirectorPhase =
+  | "idea"
+  | "plan"
+  | "reference_frames"
+  | "frame_approval"
+  | "video_generation"
+  | "clip_review"
+  | "video_edit"
+  | "assembly"
+  | "post"
+  | "delivery";
 
 export type ComfyTool = "image" | "video";
 
@@ -301,6 +336,7 @@ export type ProjectDocument = {
   importedAt?: string | null;
   cardDocuments: CardDocument[];
   canvasNodes: CanvasNode[];
+  agentMemory?: Record<string, unknown>;
 };
 
 export type ProjectStatus = "active" | "archived" | "trashed";
@@ -322,6 +358,7 @@ export type ProjectSaveRequest = {
   name: string;
   cardDocuments: CardDocument[];
   canvasNodes: CanvasNode[];
+  agentMemory?: Record<string, unknown>;
 };
 
 export type ProjectCreateRequest = ProjectSaveRequest;
@@ -414,6 +451,10 @@ export type AgentRunRequest = {
   selectedCardSnapshots: SelectedCardSnapshot[];
   attachments: AgentAttachment[];
   context: Record<string, unknown>;
+  projectId?: string;
+  workflowId?: string;
+  videoEngine?: string;
+  phaseOverride?: string;
   conversationId?: string;
   answers?: Record<string, string>;
   collectedArgs?: Record<string, string>;

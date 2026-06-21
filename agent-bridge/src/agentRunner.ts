@@ -128,6 +128,132 @@ const activeAgentRuns = new Map<string, ActiveAgentRun>();
 const requestedAgentRunStops = new Set<string>();
 const encoder = new TextEncoder();
 const hiddenAgentModelProviders = new Set(["openrouter"]);
+const videoDirectorSkillId = "video-director-os";
+
+type VideoDirectorMemory = {
+  projectId: string;
+  workflowId: string;
+  videoEngine: string;
+  phase: string;
+  turns: Array<{
+    user: string;
+    assistant: string;
+    skillRunIds: string[];
+    cardIds: string[];
+    createdAt: string;
+  }>;
+};
+
+const videoDirectorMemories = new Map<string, VideoDirectorMemory>();
+
+function isVideoDirectorRequest(request: AgentRunRequest) {
+  return (request.agentId ?? "") === "video-director";
+}
+
+function videoDirectorMemoryKey(request: AgentRunRequest) {
+  const projectId = firstString(
+    request.projectId,
+    asRecord(request.context)?.projectId,
+    "default-project",
+  );
+  return `${projectId}:video-director`;
+}
+
+function getVideoDirectorMemory(request: AgentRunRequest): VideoDirectorMemory {
+  const key = videoDirectorMemoryKey(request);
+  const context = asRecord(request.context);
+  const memory = videoDirectorMemories.get(key) ?? {
+    projectId: firstString(request.projectId, context?.projectId, "default-project"),
+    workflowId: firstString(request.workflowId, context?.workflowId, "auto"),
+    videoEngine: firstString(request.videoEngine, context?.videoEngine, "auto"),
+    phase: firstString(request.phaseOverride, context?.phaseOverride, "idea"),
+    turns: [],
+  };
+  videoDirectorMemories.set(key, memory);
+  return memory;
+}
+
+function videoDirectorProjectId(request: AgentRunRequest) {
+  const context = asRecord(request.context);
+  return firstString(request.projectId, context?.projectId, "default-project");
+}
+
+function shouldPersistVideoDirectorMemory(request: AgentRunRequest) {
+  const projectId = videoDirectorProjectId(request);
+  return Boolean(
+    projectId
+    && projectId !== "default-project"
+    && projectId !== "unsaved-project"
+    && !projectId.startsWith("video_director_session_"),
+  );
+}
+
+function isVideoDirectorMemory(value: unknown): value is VideoDirectorMemory {
+  const record = asRecord(value);
+  return Boolean(
+    record
+    && typeof record.projectId === "string"
+    && typeof record.workflowId === "string"
+    && typeof record.videoEngine === "string"
+    && typeof record.phase === "string"
+    && Array.isArray(record.turns),
+  );
+}
+
+async function hydrateVideoDirectorMemory(request: AgentRunRequest) {
+  if (!isVideoDirectorRequest(request) || !shouldPersistVideoDirectorMemory(request)) return;
+  const key = videoDirectorMemoryKey(request);
+  if (videoDirectorMemories.has(key)) return;
+
+  try {
+    const response = await requestJson<{ memory?: unknown }>(
+      `${backendApiUrl}/api/projects/${encodeURIComponent(videoDirectorProjectId(request))}/agent-memory/video-director`,
+    );
+    if (isVideoDirectorMemory(response.memory)) {
+      videoDirectorMemories.set(key, response.memory);
+    }
+  } catch {
+    // Unsaved, missing, or unavailable projects keep using in-memory context.
+  }
+}
+
+function updateVideoDirectorMemory(
+  request: AgentRunRequest,
+  responseText: string,
+  runState: AgentRunState,
+): VideoDirectorMemory | null {
+  if (!isVideoDirectorRequest(request)) return null;
+  const memory = getVideoDirectorMemory(request);
+  const context = asRecord(request.context);
+  memory.workflowId = firstString(request.workflowId, context?.workflowId, memory.workflowId, "auto");
+  memory.videoEngine = firstString(request.videoEngine, context?.videoEngine, memory.videoEngine, "auto");
+  memory.phase = firstString(request.phaseOverride, context?.phaseOverride, memory.phase, "idea");
+  memory.turns.push({
+    user: truncateText(request.prompt, 1200),
+    assistant: truncateText(responseText, 6000),
+    skillRunIds: [...runState.skillRunIds],
+    cardIds: [...runState.cardIds],
+    createdAt: new Date().toISOString(),
+  });
+  memory.turns = memory.turns.slice(-12);
+  return memory;
+}
+
+async function persistVideoDirectorMemory(request: AgentRunRequest, memory: VideoDirectorMemory | null) {
+  if (!memory || !shouldPersistVideoDirectorMemory(request)) return;
+  try {
+    await requestJson(
+      `${backendApiUrl}/api/projects/${encodeURIComponent(videoDirectorProjectId(request))}/agent-memory/video-director`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memory }),
+      },
+    );
+  } catch {
+    // Persistence is best-effort; the active bridge cache still carries context.
+  }
+}
 
 type PiModelSummary = {
   id: string;
@@ -926,6 +1052,85 @@ async function packagePiToolResultAsSkillRun(
   };
 }
 
+async function packageVideoDirectorPromptOnlyCard(
+  request: AgentRunRequest,
+  responseText: string,
+  runState: AgentRunState,
+) {
+  if (!responseText.trim()) return;
+
+  throwIfAgentRunCancelled(runState.activeRun);
+  runState.emit({
+    type: "skill",
+    status: "running",
+    skillName: "Video Director",
+    message: "Packaging prompt-only output for a copyable Loki card.",
+  });
+
+  const run = await withAgentRunCancellation(
+    requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs/package`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: runState.activeRun?.controller.signal,
+      body: JSON.stringify({
+        skillId: videoDirectorSkillId,
+        prompt: request.prompt,
+        context: {
+          ...request.context,
+          agentId: request.agentId ?? "video-director",
+          model: request.model,
+          collectedArgs: request.collectedArgs ?? {},
+          selectedCardSnapshots: request.selectedCardSnapshots ?? [],
+          attachments: request.attachments ?? [],
+          sourceTool: "video-director-prompt-only",
+        },
+        selectedCards: request.selectedCards,
+        selectedCardSnapshots: request.selectedCardSnapshots ?? [],
+        attachments: request.attachments ?? [],
+        params: {
+          ...(request.collectedArgs ?? {}),
+          title: "Video Director Prompt Pack",
+          sourceTool: "video-director-prompt-only",
+        },
+        rawResult: {
+          text: responseText,
+          metadata: {
+            kind: "interactive",
+            title: "Video Director Prompt Pack",
+            videoDirectorPromptOnly: true,
+            workflowId: request.workflowId ?? asRecord(request.context)?.workflowId ?? "auto",
+            videoEngine: request.videoEngine ?? asRecord(request.context)?.videoEngine ?? "prompt-only",
+            phaseOverride: request.phaseOverride ?? asRecord(request.context)?.phaseOverride ?? "plan",
+            preferredAspectRatio: "4:3",
+            tags: ["video-director", "prompt-only", "copyable-prompt"],
+          },
+        },
+      }),
+    }),
+    runState.activeRun,
+  );
+
+  runState.activeRun?.skillRunIds.add(run.id);
+  runState.skillRunIds.push(run.id);
+  const cardIds = (run.result?.cards ?? []).map((card) => card.id);
+  runState.cardIds.push(...cardIds);
+
+  runState.emit({
+    type: "skill",
+    status: run.status === "failed" ? "failed" : "succeeded",
+    skillName: "Video Director",
+    skillRunId: run.id,
+    cardIds,
+    message: run.status === "failed"
+      ? `Video Director prompt card packaging failed: ${run.error ?? "unknown packaging error"}`
+      : "Video Director prompt card created.",
+  });
+
+  if (run.status === "failed") {
+    runState.skillErrors.push(run.error ?? "Video Director prompt card packaging failed.");
+  }
+}
+
 function trackPiToolResultPackaging(
   toolName: string,
   toolCallId: string,
@@ -1189,10 +1394,15 @@ function hasExplicitSkillSelection(selectedSkills: string[]) {
   return normalizedSelected.length > 0 && !normalizedSelected.includes("auto");
 }
 
+function isExecutableLokiSkill(skill: LokiSkill) {
+  return Boolean(skill.action);
+}
+
 function chooseGrokBuildBridgeSkill(selectedSkills: LokiSkill[]) {
-  if (selectedSkills.length === 0) return null;
-  if (selectedSkills.length === 1) return selectedSkills[0];
-  return selectedSkills.find((skill) => skill.id === "imagegen") ?? selectedSkills[0];
+  const executableSkills = selectedSkills.filter(isExecutableLokiSkill);
+  if (executableSkills.length === 0) return null;
+  if (executableSkills.length === 1) return executableSkills[0];
+  return executableSkills.find((skill) => skill.id === "imagegen") ?? executableSkills[0];
 }
 
 function normalizeQuestionMatchText(value: string) {
@@ -1870,6 +2080,71 @@ Imagegen selected-image edit contract:
 - If no local artifact path is available for the selected image, fail or ask_user instead of returning a new image.`;
 }
 
+function formatVideoDirectorMemory(request: AgentRunRequest) {
+  if (!isVideoDirectorRequest(request)) return "";
+  const memory = getVideoDirectorMemory(request);
+  if (memory.turns.length === 0) return "- No prior Video Director turns for this project.";
+
+  const recentTurns = memory.turns.slice(-6);
+  return [
+    "- Recent Video Director turns are authoritative continuity context for this project.",
+    "- Use these turns to resolve references like \"opcion 6\", \"option 6\", \"la segunda\", \"esa\", \"la anterior\", or approval/rejection of a proposed card/shot/flow.",
+    "- If the latest user message selects a numbered option, match it against the most recent numbered list in assistant memory before asking the user to repeat it.",
+    "",
+    ...recentTurns
+    .map((turn, index) => [
+      `Recent turn ${memory.turns.length - recentTurns.length + index + 1}:`,
+      `user=${JSON.stringify(turn.user)}`,
+      `assistant=${JSON.stringify(turn.assistant)}`,
+      `skillRunIds=${turn.skillRunIds.join(",") || "none"}`,
+      `cardIds=${turn.cardIds.join(",") || "none"}`,
+    ].join("\n"))
+  ].join("\n\n");
+}
+
+function formatVideoDirectorOperatingRules(request: AgentRunRequest) {
+  if (!isVideoDirectorRequest(request)) return "";
+  const context = asRecord(request.context);
+  const workflowId = firstString(request.workflowId, context?.workflowId, "auto");
+  const videoEngine = firstString(request.videoEngine, context?.videoEngine, "auto");
+  const phaseOverride = firstString(request.phaseOverride, context?.phaseOverride, "idea");
+  const isPromptOnly = videoEngine === "prompt-only";
+
+  return `
+Video Director operating system:
+- You are Loki's Video Director: run the conversation as a production workflow, not as a one-shot prompt helper.
+- Current workflow: ${workflowId}. Current video engine override: ${videoEngine}. Current phase override: ${phaseOverride}.
+- The local skill backend/skills/video-director-os vendors the literal Emily2040/seedance-2.0 Skill OS under backend/skills/video-director-os/vendor/seedance-2.0. Use that corpus for prompt construction, interview structure, camera/motion/lighting language, anti-slop filtering, first/last-frame grammar, I2V guidance, continuity, retake protocol, and QC.
+- Required prompt-construction files include vendor/seedance-2.0/SKILL.md, vendor/seedance-2.0/skills/seedance-prompt/SKILL.md, vendor/seedance-2.0/skills/seedance-interview/SKILL.md, vendor/seedance-2.0/references/prompt-examples.md, vendor/seedance-2.0/references/cinematography-shot-language.md, vendor/seedance-2.0/references/reference-workflow.md, vendor/seedance-2.0/references/first-last-frame-guide.md, vendor/seedance-2.0/references/i2v-guide.md, vendor/seedance-2.0/references/shot-list-continuity.md, and vendor/seedance-2.0/references/retake-protocol.md.
+- Treat Loki local references as execution overrides and the vendored Seedance OS as the primary prompt-writing craft source. Translate Seedance-specific craft to WAN, LTX, Grok, Bernini, S2V, or prompt-only outputs as needed.
+- Maintain project memory: brief, workflow, phase, shot list, reference role map, approved frames, generated clips, approved clips, edits, assembly, post notes, and retake log.
+- Resolve conversational references from project memory before asking clarification. If the user says "opcion 6", "option 6", "la 6", "esa opcion", "me gusta esa", or similar, identify the referenced item from the most recent numbered list or proposed workflow in memory and continue from it.
+- Work in phases: idea, plan, reference_frames, frame_approval, video_generation, clip_review, video_edit, assembly, post, delivery.
+- Ask for approval before expensive generation phases unless the user explicitly approved that exact phase in this turn.
+- Multiple cards are allowed when the phase calls for them: imagegen can create multiple first/last frames; comfy-videogen can create multiple storyboard segment videos; ffmpeg-video-join returns one assembled video.
+- If the user manually selected a video engine, respect it unless it is technically incompatible with the phase or selected inputs. Explain the incompatibility and ask for the missing input/change.
+- Prompt only mode: ${isPromptOnly ? "ACTIVE. Do not invoke image, video, audio, ffmpeg, Seedance, Grok, Comfy, or HyperFrames skills. Return copyable prompts, shot list, reference role map, parameters, and platform notes only." : "inactive."}
+- Seedance via OpenRouter means use openrouter-seedance-video. Do not route Seedance through ComfyUI for Video Director.
+- WAN FLF2V means comfy-videogen with paramsJson.modelProfile="wan22-i2v" and paramsJson.videoMode="flf2v" or wan22-flf2v-compatible params.
+- WAN I2V means comfy-videogen with paramsJson.modelProfile="wan22-i2v" and paramsJson.videoMode="i2v".
+- LTX I2V means comfy-videogen with an LTX modelProfile and paramsJson.videoMode="i2v"; use ltx-seed-seeker for previews.
+- LTX FLF2V means comfy-videogen with an LTX modelProfile and paramsJson.videoMode="flf2v" only when local support exists.
+- Grok video means grok-imagine-video unless the selected PI model is Grok Build, where the existing Grok Build bridge may produce bridge-executable params.
+- S2V/audio-driven means comfy-s2vidgen for image+audio generation or comfy-videoedit for lip sync/audio-driven edits.
+- Bernini V2V/Edit means comfy-videoedit with paramsJson.editMode="bernini" and paramsJson.modelProfile="wan22-bernini"; use berniniMode v2v, rv2v, or r2v. V2V/RV2V inherit frame size from the selected video; R2V needs aspectRatio, resolution, fps, and duration.
+- For clip review, classify each take as keep, fix in post, edit, reroll, or rewrite. Use Bernini for visual edits when timing/composition are worth preserving.
+- For assembly, use ffmpeg-video-join and preserve the approved clip order.
+
+Video Director project memory:
+${formatVideoDirectorMemory(request)}`;
+}
+
+function isVideoDirectorPromptOnly(request: AgentRunRequest) {
+  if (!isVideoDirectorRequest(request)) return false;
+  const context = asRecord(request.context);
+  return firstString(request.videoEngine, context?.videoEngine) === "prompt-only";
+}
+
 export function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSkill[], runtimeMode: AgentRuntimeMode) {
   const agentId = request.agentId ?? "base-agent";
   const skillNames = exposedSkills
@@ -1879,6 +2154,7 @@ export function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSk
   const selectedCardInputs = formatSelectedCardInputs(request.selectedCardSnapshots ?? [], localMediaReferences);
   const attachmentInputs = formatAttachmentInputs(request.attachments ?? []);
   const imagegenSelectedImageEditRules = formatImagegenSelectedImageEditRules(request, exposedSkills, runtimeMode);
+  const videoDirectorRules = formatVideoDirectorOperatingRules(request);
   const completionInstruction = runtimeMode === "grok-build-stdio"
     ? "Use the selected project skill when the request requires producing canvas cards. If the Grok runtime cannot execute the project skill directly, finish with the complete operational prompt and structured parameters you want Loki to execute. Return a concise final response for the UI response panel."
     : "Use the exposed Loki skills or their mapped direct Pi tools when the request requires producing canvas cards. For imagegen, use loki_skill_imagegen and let Loki package its image result. Invoke each selected artifact-producing target at most once per user request; one successful tool call is enough to create the canvas card. Return a concise final response for the UI response panel.";
@@ -1900,6 +2176,7 @@ ${attachmentInputs}
 ${formatCollectedArgs(request.collectedArgs)}
 ${formatExplicitSkillSelection(request, exposedSkills, runtimeMode)}
 ${imagegenSelectedImageEditRules}
+${videoDirectorRules}
 
 Loki runtime model:
 - Skills are the primary runtime unit. Their SKILL.md files contain instructions.
@@ -1999,7 +2276,9 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
       conversationId: existingConversation?.id ?? request.conversationId,
       collectedArgs,
     };
-    const nextQuestion = findNextSkillQuestion(selectedSkills, collectedArgs);
+    const nextQuestion = isVideoDirectorRequest(effectiveRequest)
+      ? null
+      : findNextSkillQuestion(selectedSkills, collectedArgs);
     appendRunDiagnostic(
       runState,
       `collectedArgs=${JSON.stringify(collectedArgs)} nextQuestion=${nextQuestion?.id ?? "none"}`,
@@ -2037,6 +2316,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
         localMediaReferences,
       },
     });
+    await withAgentRunCancellation(hydrateVideoDirectorMemory(runtimeRequest), activeRun);
 
     const { authStorage, modelRegistry, resourceLoader } = await withAgentRunCancellation(getAgentServices(), activeRun);
     const model = await withAgentRunCancellation(resolveSelectedModel(runtimeRequest.model), activeRun);
@@ -2052,7 +2332,7 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
       ...(runtimeMode === "grok-build-stdio"
         ? []
         : selectedSkills
-          .filter((skill) => !isDirectPiToolRoutedSkill(skill, runtimeMode))
+          .filter((skill) => isExecutableLokiSkill(skill) && !isDirectPiToolRoutedSkill(skill, runtimeMode))
           .map((skill) => createLokiSkillPiTool(skill, runtimeRequest, runState))),
     ];
     appendRunDiagnostic(
@@ -2172,6 +2452,15 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
     );
 
     if (runState.pendingQuestion) {
+      const responseText = responseChunks.join("").trim();
+      const memoryResponseText = [
+        responseText,
+        runState.pendingQuestion.text,
+      ].filter(Boolean).join("\n\n");
+      await persistVideoDirectorMemory(
+        runtimeRequest,
+        updateVideoDirectorMemory(runtimeRequest, memoryResponseText, runState),
+      );
       const conversationId = `conversation_${crypto.randomUUID().replaceAll("-", "")}`;
       const conversation: PendingConversation = {
         id: conversationId,
@@ -2205,6 +2494,15 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
       }
     }
 
+    if (isVideoDirectorPromptOnly(runtimeRequest) && runState.skillRunIds.length === 0) {
+      await packageVideoDirectorPromptOnlyCard(runtimeRequest, responseText, runState);
+    }
+
+    await persistVideoDirectorMemory(
+      runtimeRequest,
+      updateVideoDirectorMemory(runtimeRequest, responseText, runState),
+    );
+
     if (runState.directToolErrors.length > 0 && runState.cardIds.length === 0) {
       const message = runState.directToolErrors.join("\n");
       appendRunDiagnostic(runState, "direct Pi tool failed without packageable cards");
@@ -2221,7 +2519,11 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
       };
     }
 
-    if ((hasExplicitSkillSelection(selectedSkillIds) || hasRuntimeInputs(runtimeRequest)) && runState.skillRunIds.length === 0) {
+    if (
+      !isVideoDirectorPromptOnly(runtimeRequest)
+      && (hasExplicitSkillSelection(selectedSkillIds) || hasRuntimeInputs(runtimeRequest))
+      && runState.skillRunIds.length === 0
+    ) {
       const selectedDirectToolTargets = selectedSkills
         .map((skill) => directPiToolForSkill(skill))
         .filter((toolName): toolName is string => Boolean(toolName));

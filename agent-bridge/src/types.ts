@@ -131,6 +131,10 @@ export type AgentRunRequest = {
   selectedCardSnapshots?: SelectedCardSnapshot[];
   attachments?: AgentAttachment[];
   context: Record<string, unknown>;
+  projectId?: string;
+  workflowId?: string;
+  videoEngine?: string;
+  phaseOverride?: string;
   conversationId?: string;
   answers?: Record<string, string>;
   collectedArgs?: Record<string, string>;

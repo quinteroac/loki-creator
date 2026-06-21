@@ -26,6 +26,7 @@ from app.models import (
     InstructionResponse,
     ProjectCreateRequest,
     ProjectDocument,
+    ProjectAgentMemoryRequest,
     ProjectSaveRequest,
     ProjectSummary,
     SeedanceVideoGenerationRequest,
@@ -250,6 +251,37 @@ def save_project(
 ) -> ProjectDocument:
     try:
         return service.save_project(project_id, payload)
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectInvalidOperationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProjectStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/projects/{project_id}/agent-memory/{agent_id}")
+def get_project_agent_memory(
+    project_id: str,
+    agent_id: str,
+    service: ProjectService = Depends(get_project_service),
+) -> dict[str, object]:
+    try:
+        return {"memory": service.get_agent_memory(project_id, agent_id)}
+    except ProjectNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found") from exc
+    except ProjectStorageError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.put("/projects/{project_id}/agent-memory/{agent_id}")
+def save_project_agent_memory(
+    project_id: str,
+    agent_id: str,
+    payload: ProjectAgentMemoryRequest,
+    service: ProjectService = Depends(get_project_service),
+) -> dict[str, object]:
+    try:
+        return {"memory": service.save_agent_memory(project_id, agent_id, payload.memory)}
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found") from exc
     except ProjectInvalidOperationError as exc:

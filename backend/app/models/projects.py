@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +35,7 @@ class ProjectDocument(BaseModel):
     imported_at: datetime | None = Field(default=None, alias="importedAt")
     card_documents: list[GeneratedCard] = Field(default_factory=list, alias="cardDocuments")
     canvas_nodes: list[ProjectCanvasNode] = Field(default_factory=list, alias="canvasNodes")
+    agent_memory: dict[str, Any] = Field(default_factory=dict, alias="agentMemory")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -58,9 +59,16 @@ class ProjectSaveRequest(BaseModel):
     name: str
     card_documents: list[GeneratedCard] = Field(default_factory=list, alias="cardDocuments")
     canvas_nodes: list[ProjectCanvasNode] = Field(default_factory=list, alias="canvasNodes")
+    agent_memory: dict[str, Any] | None = Field(default=None, alias="agentMemory")
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class ProjectCreateRequest(ProjectSaveRequest):
     pass
+
+
+class ProjectAgentMemoryRequest(BaseModel):
+    memory: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)

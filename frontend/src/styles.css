@@ -1542,6 +1542,34 @@ button {
   outline-offset: 2px;
 }
 
+.canvas-card-copy-prompt {
+  position: absolute;
+  z-index: 7;
+  top: 8px;
+  right: 8px;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  color: var(--dark-text);
+  background: color-mix(in srgb, var(--panel-bg) 78%, transparent);
+  border: 1px solid var(--dark-hairline);
+  border-radius: 9999px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 4px 6px 0;
+  touch-action: none;
+}
+
+.canvas-card-copy-prompt svg {
+  width: 15px;
+  height: 15px;
+}
+
+.canvas-card-copy-prompt:focus-visible {
+  outline: 2px solid var(--brand-blue-deep);
+  outline-offset: 2px;
+}
+
 .canvas-card-metadata-note {
   position: absolute;
   z-index: 3;

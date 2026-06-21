@@ -35,6 +35,9 @@ import type {
   GrokVideoResolution,
   SeedanceAspectRatio,
   SeedanceDuration,
+  VideoDirectorEngine,
+  VideoDirectorPhase,
+  VideoDirectorWorkflow,
 } from "../types";
 
 type AgentComposerProps = {
@@ -63,6 +66,9 @@ type AgentComposerProps = {
   grokVideoAspectRatio: GrokVideoAspectRatio;
   grokVideoDuration: GrokVideoDuration;
   grokVideoResolution: GrokVideoResolution;
+  videoDirectorEngine: VideoDirectorEngine;
+  videoDirectorPhase: VideoDirectorPhase;
+  videoDirectorWorkflow: VideoDirectorWorkflow;
   onAttachFiles: (event: ChangeEvent<HTMLInputElement>) => void | Promise<void>;
   onCodexImageResolutionChange: (resolution: CodexImageResolution) => void;
   onComfyAspectRatioChange: (aspectRatio: ComfyAspectRatio) => void;
@@ -90,6 +96,9 @@ type AgentComposerProps = {
   onSelectModel: (model: string) => void;
   onSeedanceAspectRatioChange: (aspectRatio: SeedanceAspectRatio) => void;
   onSeedanceDurationChange: (duration: SeedanceDuration) => void;
+  onVideoDirectorEngineChange: (engine: VideoDirectorEngine) => void;
+  onVideoDirectorPhaseChange: (phase: VideoDirectorPhase) => void;
+  onVideoDirectorWorkflowChange: (workflow: VideoDirectorWorkflow) => void;
   onSetComposerMode: (mode: ComposerMode) => void;
   onStop: () => void | Promise<void>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -139,6 +148,9 @@ export function AgentComposer({
   grokVideoAspectRatio,
   grokVideoDuration,
   grokVideoResolution,
+  videoDirectorEngine,
+  videoDirectorPhase,
+  videoDirectorWorkflow,
   onAttachFiles,
   onCodexImageResolutionChange,
   onComfyAspectRatioChange,
@@ -166,6 +178,9 @@ export function AgentComposer({
   onSelectModel,
   onSeedanceAspectRatioChange,
   onSeedanceDurationChange,
+  onVideoDirectorEngineChange,
+  onVideoDirectorPhaseChange,
+  onVideoDirectorWorkflowChange,
   onSetComposerMode,
   onStop,
   onSubmit,
@@ -587,6 +602,7 @@ export function AgentComposer({
                 aria-label="Composer mode"
               >
                 <option value="agent">Agent</option>
+                <option value="video-director">Video Director</option>
                 <option value="seedance">Seedance</option>
                 <option value="grok">Grok</option>
                 <option value="codex">Codex</option>
@@ -594,6 +610,66 @@ export function AgentComposer({
                 <option value="comfy">Comfy</option>
               </select>
             </label>
+            {composerMode === "video-director" && (
+              <>
+                <label className="composer-select-chip">
+                  <span>Workflow</span>
+                  <select
+                    value={videoDirectorWorkflow}
+                    onChange={(event) => onVideoDirectorWorkflowChange(event.target.value as VideoDirectorWorkflow)}
+                    aria-label="Video Director workflow"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="short-film">Short film</option>
+                    <option value="first-last-frame-sequence">First/Last</option>
+                    <option value="image-to-video-sequence">I2V sequence</option>
+                    <option value="product-ad">Product ad</option>
+                    <option value="music-performance">Music</option>
+                    <option value="retake-repair">Retake</option>
+                    <option value="video-edit">Video edit</option>
+                    <option value="post-production">Post</option>
+                  </select>
+                </label>
+                <label className="composer-select-chip">
+                  <span>Engine</span>
+                  <select
+                    value={videoDirectorEngine}
+                    onChange={(event) => onVideoDirectorEngineChange(event.target.value as VideoDirectorEngine)}
+                    aria-label="Video Director video engine"
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="prompt-only">Prompt only</option>
+                    <option value="seedance-openrouter">Seedance OR</option>
+                    <option value="wan-flf2v">WAN FLF</option>
+                    <option value="wan-i2v">WAN I2V</option>
+                    <option value="ltx-i2v">LTX I2V</option>
+                    <option value="ltx-flf2v">LTX FLF</option>
+                    <option value="grok-video">Grok video</option>
+                    <option value="s2v-audio-driven">S2V/audio</option>
+                    <option value="bernini-v2v-edit">Bernini</option>
+                  </select>
+                </label>
+                <label className="composer-select-chip">
+                  <span>Phase</span>
+                  <select
+                    value={videoDirectorPhase}
+                    onChange={(event) => onVideoDirectorPhaseChange(event.target.value as VideoDirectorPhase)}
+                    aria-label="Video Director phase"
+                  >
+                    <option value="idea">Idea</option>
+                    <option value="plan">Plan</option>
+                    <option value="reference_frames">Frames</option>
+                    <option value="frame_approval">Frame OK</option>
+                    <option value="video_generation">Clips</option>
+                    <option value="clip_review">Review</option>
+                    <option value="video_edit">Edit</option>
+                    <option value="assembly">Assembly</option>
+                    <option value="post">Post</option>
+                    <option value="delivery">Delivery</option>
+                  </select>
+                </label>
+              </>
+            )}
             {composerMode === "seedance" && (
               <>
                 <label className="composer-select-chip">
@@ -876,7 +952,7 @@ export function AgentComposer({
                 )}
               </>
             )}
-            {composerMode === "agent" && (
+            {(composerMode === "agent" || composerMode === "video-director") && (
               <>
                 <button
                   className="chat-chip model-chip"
@@ -888,6 +964,10 @@ export function AgentComposer({
                   <Cpu size={14} strokeWidth={2} />
                   <span>{selectedModel}</span>
                 </button>
+              </>
+            )}
+            {composerMode === "agent" && (
+              <>
                 <button
                   className="chat-chip skill-chip"
                   type="button"

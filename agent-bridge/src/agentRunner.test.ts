@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 
 import {
+  agents,
   buildAgentPrompt,
   directPiToolForSkill,
   findNextSkillQuestion,
@@ -94,6 +95,27 @@ describe("agent bridge contracts", () => {
     const music = makeSkill({ id: "comfy-musicgen", name: "comfy-musicgen" });
 
     expect(selectSkillsForAgent([imagegen, music], ["auto"], "base-agent")).toEqual([imagegen]);
+  });
+
+  test("selects Video Director default production skills in auto mode", () => {
+    const skills = [
+      makeSkill({ id: "video-director-os", name: "video-director-os" }),
+      makeSkill({ id: "imagegen", name: "imagegen" }),
+      makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
+      makeSkill({ id: "openrouter-seedance-video", name: "openrouter-seedance-video" }),
+      makeSkill({ id: "grok-imagine-video", name: "grok-imagine-video" }),
+      makeSkill({ id: "unrelated", name: "unrelated" }),
+    ];
+
+    const selected = selectSkillsForAgent(skills, ["auto"], "video-director").map((skill) => skill.id);
+
+    expect(selected).toContain("video-director-os");
+    expect(selected).toContain("imagegen");
+    expect(selected).toContain("comfy-videoedit");
+    expect(selected).toContain("openrouter-seedance-video");
+    expect(selected).toContain("grok-imagine-video");
+    expect(selected).not.toContain("unrelated");
+    expect(agents.find((agent) => agent.id === "video-director")?.name).toBe("Video Director");
   });
 
   test("resolves explicit selected skills by id or name", () => {
@@ -207,6 +229,43 @@ describe("agent bridge contracts", () => {
     expect(prompt).toContain("finish with a concise final operational prompt and a JSON object of structured params");
     expect(prompt).toContain("the Loki bridge will execute it");
     expect(prompt).not.toContain("loki_skill_imagegen");
+  });
+
+  test("Video Director prompt includes workflow, manual engine, memory, and prompt-only guard", () => {
+    const request: AgentRunRequest = {
+      prompt: "plan a 20 second short",
+      agentId: "video-director",
+      model: "GPT-5.4 mini (openai-codex)",
+      skills: ["Auto"],
+      selectedCards: [],
+      projectId: "project-test",
+      workflowId: "short-film",
+      videoEngine: "prompt-only",
+      phaseOverride: "plan",
+      context: {
+        projectId: "project-test",
+        workflowId: "short-film",
+        videoEngine: "prompt-only",
+        phaseOverride: "plan",
+      },
+    };
+
+    const prompt = buildAgentPrompt(request, [
+      makeSkill({ id: "video-director-os", name: "video-director-os" }),
+      makeSkill({ id: "openrouter-seedance-video", name: "openrouter-seedance-video" }),
+      makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
+    ], "pi-tools");
+
+    expect(prompt).toContain("Video Director operating system");
+    expect(prompt).toContain("Current workflow: short-film");
+    expect(prompt).toContain("Current video engine override: prompt-only");
+    expect(prompt).toContain("Prompt only mode: ACTIVE");
+    expect(prompt).toContain("Do not invoke image, video, audio, ffmpeg, Seedance, Grok, Comfy, or HyperFrames skills");
+    expect(prompt).toContain("Seedance via OpenRouter means use openrouter-seedance-video");
+    expect(prompt).toContain('paramsJson.editMode="bernini"');
+    expect(prompt).toContain('paramsJson.modelProfile="wan22-bernini"');
+    expect(prompt).toContain("Resolve conversational references from project memory");
+    expect(prompt).toContain("If the user says \"opcion 6\"");
   });
 
   test("routes Grok-like agent models through the Grok stdio bridge", () => {
@@ -397,5 +456,15 @@ describe("agent bridge contracts", () => {
     expect(source).toContain("selectedSkills.length > 0");
     expect(source).toContain("chooseGrokBuildBridgeSkill");
     expect(source).toContain("skillParamsFromGrokBuildText");
+  });
+
+  test("Video Director persists memory before returning needs_input", async () => {
+    const source = await readFile(new URL("./agentRunner.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("const memoryResponseText = [");
+    expect(source).toContain("updateVideoDirectorMemory(runtimeRequest, memoryResponseText, runState)");
+    expect(source).toContain("projectId.startsWith(\"video_director_session_\")");
+    expect(source).toContain("packageVideoDirectorPromptOnlyCard(runtimeRequest, responseText, runState)");
+    expect(source).toContain("videoDirectorPromptOnly: true");
   });
 });
