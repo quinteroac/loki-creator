@@ -36,6 +36,7 @@ from app.models import (
     SkillRun,
     SkillRunRequest,
     VideoEditArtifact,
+    VideoEffectOption,
     VideoFrameRequest,
     VideoLutOption,
     VideoTimelineRequest,
@@ -457,7 +458,7 @@ def create_video_timeline(
     service: VideoEditorService = Depends(get_video_editor_service),
 ) -> VideoTimelineResponse:
     try:
-        return service.timeline(payload.artifact_url, payload.max_thumbnails, payload.lut_id)
+        return service.timeline(payload.artifact_url, payload.max_thumbnails, payload.lut_id, payload.effect_id)
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -469,13 +470,20 @@ def list_video_luts(
     return service.list_luts()
 
 
+@router.get("/artifacts/video/effects", response_model=list[VideoEffectOption])
+def list_video_effects(
+    service: VideoEditorService = Depends(get_video_editor_service),
+) -> list[VideoEffectOption]:
+    return service.list_effects()
+
+
 @router.post("/artifacts/video/frame", response_model=VideoEditArtifact)
 def export_video_frame(
     payload: VideoFrameRequest,
     service: VideoEditorService = Depends(get_video_editor_service),
 ) -> VideoEditArtifact:
     try:
-        return service.export_frame(payload.artifact_url, payload.time_seconds, payload.lut_id)
+        return service.export_frame(payload.artifact_url, payload.time_seconds, payload.lut_id, payload.effect_id)
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -486,7 +494,7 @@ def trim_video_artifact(
     service: VideoEditorService = Depends(get_video_editor_service),
 ) -> VideoEditArtifact:
     try:
-        return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds, payload.lut_id)
+        return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds, payload.lut_id, payload.effect_id)
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

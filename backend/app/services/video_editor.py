@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ from uuid import uuid4
 
 from app.models import (
     VideoEditArtifact,
+    VideoEffectOption,
     VideoLutOption,
     VideoTimelineResponse,
     VideoTimelineThumbnail,
@@ -30,11 +32,170 @@ class VideoLutPreset:
     path: Path | None = None
 
 
+@dataclass(frozen=True)
+class VideoEffectPreset:
+    id: str
+    label: str
+    filter_name: str | None = None
+    filter_params: str | None = None
+
+
+INSTALLED_FREI0R_EFFECT_IDS = (
+    "3dflippo",
+    "B",
+    "G",
+    "IIRblur",
+    "R",
+    "RGB",
+    "addition",
+    "addition_alpha",
+    "aech0r",
+    "alpha0ps",
+    "alphaatop",
+    "alphagrad",
+    "alphain",
+    "alphainjection",
+    "alphaout",
+    "alphaover",
+    "alphaspot",
+    "alphaxor",
+    "balanc0r",
+    "baltan",
+    "bgsubtract0r",
+    "blend",
+    "bluescreen0r",
+    "brightness",
+    "burn",
+    "bw0r",
+    "c0rners",
+    "cairoaffineblend",
+    "cairoblend",
+    "cairogradient",
+    "cairoimagegrid",
+    "cartoon",
+    "cluster",
+    "colgate",
+    "color_only",
+    "coloradj_RGB",
+    "colordistance",
+    "colorhalftone",
+    "colorize",
+    "colortap",
+    "composition",
+    "contrast0r",
+    "curves",
+    "d90stairsteppingfix",
+    "darken",
+    "defish0r",
+    "delay0r",
+    "delaygrab",
+    "difference",
+    "distort0r",
+    "dither",
+    "divide",
+    "dodge",
+    "edgeglow",
+    "elastic_scale",
+    "emboss",
+    "equaliz0r",
+    "facebl0r",
+    "facedetect",
+    "flippo",
+    "gamma",
+    "glitch0r",
+    "glow",
+    "grain_extract",
+    "grain_merge",
+    "hardlight",
+    "hqdn3d",
+    "hue",
+    "hueshift0r",
+    "invert0r",
+    "ising0r",
+    "keyspillm0pup",
+    "lenscorrection",
+    "letterb0xed",
+    "levels",
+    "lighten",
+    "lightgraffiti",
+    "lissajous0r",
+    "luminance",
+    "mask0mate",
+    "medians",
+    "multiply",
+    "ndvi",
+    "nervous",
+    "nois0r",
+    "normaliz0r",
+    "nosync0r",
+    "onecol0r",
+    "overlay",
+    "partik0l",
+    "perspective",
+    "pixeliz0r",
+    "plasma",
+    "posterize",
+    "pr0be",
+    "pr0file",
+    "premultiply",
+    "primaries",
+    "rgbnoise",
+    "rgbparade",
+    "rgbsplit0r",
+    "saturat0r",
+    "saturation",
+    "scale0tilt",
+    "scanline0r",
+    "screen",
+    "select0r",
+    "sharpness",
+    "sigmoidaltransfer",
+    "sobel",
+    "softglow",
+    "softlight",
+    "sopsat",
+    "spillsupress",
+    "squareblur",
+    "subtract",
+    "tehroxx0r",
+    "test_pat_B",
+    "test_pat_C",
+    "test_pat_G",
+    "test_pat_I",
+    "test_pat_L",
+    "test_pat_R",
+    "three_point_balance",
+    "threelay0r",
+    "threshold0r",
+    "timeout",
+    "tint0r",
+    "transparency",
+    "twolay0r",
+    "uvmap",
+    "value",
+    "vectorscope",
+    "vertigo",
+    "vignette",
+    "xfade0r",
+)
+
+
+def _frei0r_effect_label(effect_id: str) -> str:
+    if effect_id.isupper():
+        return effect_id
+    words = effect_id.replace("_", " ").replace("-", " ").split()
+    return " ".join(word[:1].upper() + word[1:] for word in words) or effect_id
+
+
 class VideoEditorService:
     DEFAULT_THUMBNAILS = 16
     MAX_THUMBNAILS = 24
     MIN_TRIM_SECONDS = 0.1
+    FREI0R_COMPATIBILITY_TIMEOUT_SECONDS = 4
+    _ffmpeg_supports_frei0r_cache: bool | None = None
+    _frei0r_filter_compatibility_cache: dict[str, bool] = {}
     ORIGINAL_LUT_ID = "original"
+    NO_EFFECT_ID = "none"
     LUT_PRESETS = (
         VideoLutPreset(id=ORIGINAL_LUT_ID, label="Original"),
         VideoLutPreset(id="cinematic", label="Cinematic", filename="cinematic.cube"),
@@ -45,6 +206,10 @@ class VideoEditorService:
         VideoLutPreset(id="clean-contrast", label="Clean Contrast", filename="clean-contrast.cube"),
         VideoLutPreset(id="mono", label="Mono", filename="mono.cube"),
     )
+    EFFECT_PRESETS = (
+        VideoEffectPreset(id=NO_EFFECT_ID, label="None"),
+        *(VideoEffectPreset(id=effect_id, label=_frei0r_effect_label(effect_id), filter_name=effect_id) for effect_id in INSTALLED_FREI0R_EFFECT_IDS),
+    )
 
     def __init__(self, artifacts_root: Path) -> None:
         self.artifacts_root = artifacts_root.resolve()
@@ -52,22 +217,31 @@ class VideoEditorService:
         self.editor_root = self.artifacts_root / "video-editor"
         self.luts_root = Path(__file__).resolve().parents[1] / "assets" / "video_luts"
         self.imported_luts_root = self.artifacts_root / "video-luts" / "imported"
+        self._frei0r_plugin_paths_cache: dict[str, Path | None] = {}
 
     def list_luts(self) -> list[VideoLutOption]:
         return [VideoLutOption(id=preset.id, label=preset.label) for preset in self._all_lut_presets()]
+
+    def list_effects(self) -> list[VideoEffectOption]:
+        return [
+            VideoEffectOption(id=preset.id, label=preset.label, available=self._effect_available(preset))
+            for preset in self.EFFECT_PRESETS
+        ]
 
     def timeline(
         self,
         artifact_url: str,
         max_thumbnails: int | None = None,
         lut_id: str | None = None,
+        effect_id: str | None = None,
     ) -> VideoTimelineResponse:
         source = self._resolve_artifact_url(artifact_url)
         self._require_tools()
         lut = self._resolve_lut(lut_id)
+        effect = self._resolve_effect(effect_id)
         info = self.video_info(source)
         thumbnail_count = self._thumbnail_count(max_thumbnails)
-        timeline_dir = self.editor_root / "timelines" / self._timeline_cache_key(source, thumbnail_count, lut)
+        timeline_dir = self.editor_root / "timelines" / self._timeline_cache_key(source, thumbnail_count, lut, effect)
         timeline_dir.mkdir(parents=True, exist_ok=True)
         times = self._thumbnail_times(float(info["duration"]), thumbnail_count, float(info["fps"]))
         thumbnails = [
@@ -76,6 +250,7 @@ class VideoEditorService:
                 destination=timeline_dir / f"thumb-{index:02d}.jpg",
                 time_seconds=time,
                 lut=lut,
+                effect=effect,
             )
             for index, time in enumerate(times, start=1)
         ]
@@ -89,15 +264,22 @@ class VideoEditorService:
             thumbnails=thumbnails,
         )
 
-    def export_frame(self, artifact_url: str, time_seconds: float, lut_id: str | None = None) -> VideoEditArtifact:
+    def export_frame(
+        self,
+        artifact_url: str,
+        time_seconds: float,
+        lut_id: str | None = None,
+        effect_id: str | None = None,
+    ) -> VideoEditArtifact:
         source = self._resolve_artifact_url(artifact_url)
         self._require_tools()
         lut = self._resolve_lut(lut_id)
+        effect = self._resolve_effect(effect_id)
         info = self.video_info(source)
         timestamp = self._validate_time(time_seconds, float(info["duration"]), float(info["fps"]))
         output_dir = self.editor_root / "exports" / uuid4().hex
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{source.stem}-frame-{self._milliseconds(timestamp)}-{lut.id}.png"
+        output_path = output_dir / f"{source.stem}-frame-{self._milliseconds(timestamp)}-{lut.id}-{effect.id}.png"
         command = [
             "ffmpeg",
             "-y",
@@ -106,7 +288,7 @@ class VideoEditorService:
             "-i",
             str(source),
         ]
-        filter_value = self._video_filter(lut)
+        filter_value = self._video_filter(lut, effect)
         if filter_value:
             command.extend(["-vf", filter_value])
         command.extend(
@@ -134,6 +316,8 @@ class VideoEditorService:
             timeSeconds=timestamp,
             lutId=lut.id,
             lutLabel=lut.label,
+            effectId=effect.id,
+            effectLabel=effect.label,
         )
 
     def trim(
@@ -142,15 +326,17 @@ class VideoEditorService:
         start_seconds: float,
         end_seconds: float,
         lut_id: str | None = None,
+        effect_id: str | None = None,
     ) -> VideoEditArtifact:
         source = self._resolve_artifact_url(artifact_url)
         self._require_tools()
         lut = self._resolve_lut(lut_id)
+        effect = self._resolve_effect(effect_id)
         info = self.video_info(source)
         start, end = self._validate_trim_range(start_seconds, end_seconds, float(info["duration"]))
         output_dir = self.editor_root / "exports" / uuid4().hex
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{source.stem}-trim-{self._milliseconds(start)}-{self._milliseconds(end)}-{lut.id}.mp4"
+        output_path = output_dir / f"{source.stem}-trim-{self._milliseconds(start)}-{self._milliseconds(end)}-{lut.id}-{effect.id}.mp4"
         command = [
             "ffmpeg",
             "-y",
@@ -165,7 +351,7 @@ class VideoEditorService:
         ]
         if info["has_audio"]:
             command.extend(["-map", "0:a:0"])
-        filter_value = self._video_filter(lut)
+        filter_value = self._video_filter(lut, effect)
         if filter_value:
             command.extend(["-filter:v", filter_value])
         command.extend(
@@ -206,6 +392,8 @@ class VideoEditorService:
             endSeconds=end,
             lutId=lut.id,
             lutLabel=lut.label,
+            effectId=effect.id,
+            effectLabel=effect.label,
         )
 
     def video_info(self, path: Path) -> dict[str, object]:
@@ -257,11 +445,17 @@ class VideoEditorService:
     def _artifact_url_for_path(self, path: Path) -> str:
         return f"/api/artifacts/{path.resolve().relative_to(self.artifacts_root).as_posix()}"
 
-    def _timeline_cache_key(self, source: Path, thumbnail_count: int, lut: VideoLutPreset) -> str:
+    def _timeline_cache_key(
+        self,
+        source: Path,
+        thumbnail_count: int,
+        lut: VideoLutPreset,
+        effect: VideoEffectPreset,
+    ) -> str:
         relative = source.resolve().relative_to(self.artifacts_root).as_posix()
         stat = source.stat()
         digest = hashlib.sha256(
-            f"timeline-v4|{relative}|{stat.st_mtime_ns}|{stat.st_size}|{thumbnail_count}|{self._lut_cache_token(lut)}".encode(
+            f"timeline-v5|{relative}|{stat.st_mtime_ns}|{stat.st_size}|{thumbnail_count}|{self._lut_cache_token(lut)}|{self._effect_cache_token(effect)}".encode(
                 "utf-8"
             )
         ).hexdigest()
@@ -285,9 +479,10 @@ class VideoEditorService:
         destination: Path,
         time_seconds: float,
         lut: VideoLutPreset,
+        effect: VideoEffectPreset,
     ) -> VideoTimelineThumbnail:
         if not destination.is_file():
-            filter_value = self._video_filter(lut, "scale=360:-2")
+            filter_value = self._video_filter(lut, effect, "scale=360:-2")
             self._run_command(
                 [
                     "ffmpeg",
@@ -360,13 +555,32 @@ class VideoEditorService:
             raise VideoEditorError(f"Video LUT was not found: {preset.id}")
         return preset
 
-    def _video_filter(self, lut: VideoLutPreset, *filters: str) -> str:
+    def _resolve_effect(self, effect_id: str | None) -> VideoEffectPreset:
+        normalized_id = (effect_id or self.NO_EFFECT_ID).strip() or self.NO_EFFECT_ID
+        preset = next((candidate for candidate in self.EFFECT_PRESETS if candidate.id == normalized_id), None)
+        if preset is None:
+            raise VideoEditorError(f"Unknown video effect: {normalized_id}")
+        self._require_effect_available(preset)
+        return preset
+
+    def _video_filter(self, lut: VideoLutPreset, effect: VideoEffectPreset, *filters: str) -> str:
         parts: list[str] = []
         lut_path = self._lut_path(lut)
         if lut_path is not None:
             parts.append(f"lut3d=file={self._escape_filter_value(str(lut_path))}:interp=tetrahedral")
+        effect_filter = self._effect_filter(effect)
+        if effect_filter:
+            parts.append(effect_filter)
         parts.extend(filter_value for filter_value in filters if filter_value)
         return ",".join(parts)
+
+    def _effect_filter(self, effect: VideoEffectPreset) -> str:
+        if effect.filter_name is None:
+            return ""
+        value = f"frei0r=filter_name={self._escape_filter_value(effect.filter_name)}"
+        if effect.filter_params:
+            value = f"{value}:filter_params={self._escape_filter_value(effect.filter_params)}"
+        return value
 
     def _escape_filter_value(self, value: str) -> str:
         return value.replace("\\", "\\\\").replace(":", "\\:").replace(",", "\\,")
@@ -377,6 +591,11 @@ class VideoEditorService:
             return lut.id
         stat = lut_path.stat()
         return f"{lut.id}|{stat.st_mtime_ns}|{stat.st_size}"
+
+    def _effect_cache_token(self, effect: VideoEffectPreset) -> str:
+        if effect.filter_name is None:
+            return effect.id
+        return f"{effect.id}|{effect.filter_name}|{effect.filter_params or ''}|{self._frei0r_plugin_path(effect) or 'missing'}"
 
     def _all_lut_presets(self) -> list[VideoLutPreset]:
         return [*self.LUT_PRESETS, *self._imported_lut_presets()]
@@ -438,6 +657,109 @@ class VideoEditorService:
             return f"Imported - {name}"
         category = re.sub(r"\s+", " ", relative_path.parts[0].replace("_", " ").strip())
         return f"{category} - {name}"
+
+    def _effect_available(self, effect: VideoEffectPreset) -> bool:
+        return effect.filter_name is None or (
+            self._ffmpeg_supports_frei0r()
+            and self._frei0r_plugin_path(effect) is not None
+            and self._frei0r_filter_compatible(effect)
+        )
+
+    def _require_effect_available(self, effect: VideoEffectPreset) -> None:
+        if effect.filter_name is None:
+            return
+        if not self._ffmpeg_supports_frei0r():
+            raise VideoEditorError("FFmpeg was not built with frei0r filter support.")
+        if self._frei0r_plugin_path(effect) is None:
+            raise VideoEditorError(f"frei0r plugin was not found: {effect.filter_name}")
+        if not self._frei0r_filter_compatible(effect):
+            raise VideoEditorError(f"frei0r plugin is not compatible with the video filter editor: {effect.filter_name}")
+
+    def _ffmpeg_supports_frei0r(self) -> bool:
+        if VideoEditorService._ffmpeg_supports_frei0r_cache is not None:
+            return VideoEditorService._ffmpeg_supports_frei0r_cache
+        if shutil.which("ffmpeg") is None:
+            VideoEditorService._ffmpeg_supports_frei0r_cache = False
+            return False
+        process = subprocess.run(["ffmpeg", "-hide_banner", "-filters"], text=True, capture_output=True, check=False)
+        VideoEditorService._ffmpeg_supports_frei0r_cache = process.returncode == 0 and " frei0r " in process.stdout
+        return VideoEditorService._ffmpeg_supports_frei0r_cache
+
+    def _frei0r_filter_compatible(self, effect: VideoEffectPreset) -> bool:
+        if effect.filter_name is None:
+            return True
+        cache_key = self._effect_cache_token(effect)
+        if cache_key in VideoEditorService._frei0r_filter_compatibility_cache:
+            return VideoEditorService._frei0r_filter_compatibility_cache[cache_key]
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=64x48:r=10:d=0.2",
+            "-vf",
+            self._effect_filter(effect),
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ]
+        try:
+            process = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=self.FREI0R_COMPATIBILITY_TIMEOUT_SECONDS,
+            )
+            compatible = process.returncode == 0
+        except subprocess.TimeoutExpired:
+            compatible = False
+        VideoEditorService._frei0r_filter_compatibility_cache[cache_key] = compatible
+        return compatible
+
+    def _frei0r_plugin_path(self, effect: VideoEffectPreset) -> Path | None:
+        if effect.filter_name is None:
+            return None
+        if effect.filter_name in self._frei0r_plugin_paths_cache:
+            return self._frei0r_plugin_paths_cache[effect.filter_name]
+        plugin_name = effect.filter_name
+        for directory in self._frei0r_search_paths():
+            if not directory.is_dir():
+                continue
+            for suffix in (".so", ".dylib", ".dll"):
+                candidate = directory / f"{plugin_name}{suffix}"
+                if candidate.is_file():
+                    self._frei0r_plugin_paths_cache[plugin_name] = candidate
+                    return candidate
+        self._frei0r_plugin_paths_cache[plugin_name] = None
+        return None
+
+    def _frei0r_search_paths(self) -> list[Path]:
+        paths: list[Path] = []
+        env_value = os.environ.get("FREI0R_PATH")
+        if env_value:
+            paths.extend(Path(part) for part in env_value.split(os.pathsep) if part)
+        paths.extend(
+            [
+                Path.home() / ".frei0r-1" / "lib",
+                Path("/usr/local/lib/frei0r-1"),
+                Path("/usr/lib/frei0r-1"),
+            ]
+        )
+        paths.extend(Path(path) for path in sorted(Path("/usr/lib").glob("*/frei0r-1")))
+        unique_paths: list[Path] = []
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key not in seen:
+                unique_paths.append(path)
+                seen.add(key)
+        return unique_paths
 
     def _require_tools(self) -> None:
         missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]

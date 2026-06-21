@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { MouseEvent, PointerEvent, WheelEvent } from "react";
-import { ImagePlus, Images, Palette, Scissors, X } from "lucide-react";
-import { exportVideoFrame, listVideoLuts, loadVideoTimeline, trimVideoArtifact } from "../api/videoEditor";
-import type { VideoEditArtifact, VideoLutOption, VideoTimelineResponse } from "../types";
+import { ImagePlus, Images, Palette, Scissors, Sparkles, X } from "lucide-react";
+import {
+  exportVideoFrame,
+  listVideoEffects,
+  listVideoLuts,
+  loadVideoTimeline,
+  trimVideoArtifact,
+} from "../api/videoEditor";
+import type { VideoEditArtifact, VideoEffectOption, VideoLutOption, VideoTimelineResponse } from "../types";
 
 type VideoTimelineEditorProps = {
   artifactUrl: string;
@@ -17,6 +23,7 @@ type DragMode = "scrub" | "start" | "end";
 const TIMELINE_THUMBNAILS = 16;
 const MIN_TRIM_SECONDS = 0.1;
 const ORIGINAL_LUT: VideoLutOption = { id: "original", label: "Original" };
+const NO_EFFECT: VideoEffectOption = { id: "none", label: "None", available: true };
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -71,7 +78,9 @@ export function VideoTimelineEditor({
   const lastArtifactUrlRef = useRef<string | null>(null);
   const [timeline, setTimeline] = useState<VideoTimelineResponse | null>(null);
   const [luts, setLuts] = useState<VideoLutOption[]>([ORIGINAL_LUT]);
+  const [effects, setEffects] = useState<VideoEffectOption[]>([NO_EFFECT]);
   const [selectedLutId, setSelectedLutId] = useState(ORIGINAL_LUT.id);
+  const [selectedEffectId, setSelectedEffectId] = useState(NO_EFFECT.id);
   const [selectedTime, setSelectedTime] = useState(0);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
@@ -105,6 +114,25 @@ export function VideoTimelineEditor({
         setSelectedLutId(ORIGINAL_LUT.id);
       });
 
+    listVideoEffects()
+      .then((loadedEffects) => {
+        if (!isMounted) return;
+        const normalizedEffects = loadedEffects.some((effect) => effect.id === NO_EFFECT.id)
+          ? loadedEffects
+          : [NO_EFFECT, ...loadedEffects];
+        const availableEffects = normalizedEffects.filter((effect) => effect.available);
+        setEffects(availableEffects.length > 0 ? availableEffects : [NO_EFFECT]);
+        setSelectedEffectId((currentId) => {
+          const currentEffect = availableEffects.find((effect) => effect.id === currentId);
+          return currentEffect?.available ? currentId : NO_EFFECT.id;
+        });
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setEffects([NO_EFFECT]);
+        setSelectedEffectId(NO_EFFECT.id);
+      });
+
     return () => {
       isMounted = false;
     };
@@ -120,7 +148,7 @@ export function VideoTimelineEditor({
     setTimeline(null);
     setError("");
 
-    loadVideoTimeline(artifactUrl, TIMELINE_THUMBNAILS, selectedLutId)
+    loadVideoTimeline(artifactUrl, TIMELINE_THUMBNAILS, selectedLutId, selectedEffectId)
       .then((loadedTimeline) => {
         if (!isMounted) return;
         const safeMaxTime = Math.max(0, loadedTimeline.durationSeconds - 0.001);
@@ -147,7 +175,7 @@ export function VideoTimelineEditor({
     return () => {
       isMounted = false;
     };
-  }, [artifactUrl, selectedLutId]);
+  }, [artifactUrl, selectedLutId, selectedEffectId]);
 
   function timeFromPointer(event: PointerEvent<HTMLElement>) {
     const filmstrip = filmstripRef.current;
@@ -232,7 +260,7 @@ export function VideoTimelineEditor({
     try {
       setAction("frame");
       setError("");
-      const artifact = await exportVideoFrame(artifactUrl, selectedTime, selectedLutId);
+      const artifact = await exportVideoFrame(artifactUrl, selectedTime, selectedLutId, selectedEffectId);
       onCreateArtifact(artifact);
       onStatus("Frame added to canvas.");
     } catch (frameError) {
@@ -248,8 +276,8 @@ export function VideoTimelineEditor({
       setAction("bounds");
       setError("");
       const [firstFrame, lastFrame] = await Promise.all([
-        exportVideoFrame(artifactUrl, 0, selectedLutId),
-        exportVideoFrame(artifactUrl, timeline.durationSeconds, selectedLutId),
+        exportVideoFrame(artifactUrl, 0, selectedLutId, selectedEffectId),
+        exportVideoFrame(artifactUrl, timeline.durationSeconds, selectedLutId, selectedEffectId),
       ]);
       onCreateArtifact(firstFrame, 0);
       onCreateArtifact(lastFrame, 1);
@@ -266,7 +294,7 @@ export function VideoTimelineEditor({
     try {
       setAction("trim");
       setError("");
-      const artifact = await trimVideoArtifact(artifactUrl, trimStart, trimEnd, selectedLutId);
+      const artifact = await trimVideoArtifact(artifactUrl, trimStart, trimEnd, selectedLutId, selectedEffectId);
       onCreateArtifact(artifact);
       onStatus("Trimmed clip added to canvas.");
     } catch (trimError) {
@@ -395,6 +423,23 @@ export function VideoTimelineEditor({
                 {luts.map((lut) => (
                   <option key={lut.id} value={lut.id}>
                     {lut.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="video-editor-effect-select">
+              <Sparkles size={14} aria-hidden="true" />
+              <span>Filter</span>
+              <select
+                aria-label="Video filter"
+                disabled={Boolean(action)}
+                value={selectedEffectId}
+                onChange={(event) => setSelectedEffectId(event.target.value)}
+              >
+                {effects.map((effect) => (
+                  <option key={effect.id} value={effect.id}>
+                    {effect.label}
                   </option>
                 ))}
               </select>

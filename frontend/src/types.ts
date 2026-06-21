@@ -225,6 +225,12 @@ export type VideoLutOption = {
   label: string;
 };
 
+export type VideoEffectOption = {
+  id: string;
+  label: string;
+  available: boolean;
+};
+
 export type AudioTimelineResponse = {
   artifactUrl: string;
   durationSeconds: number;
@@ -250,6 +256,8 @@ export type EditedMediaArtifact = {
   channels?: number | null;
   lutId?: string | null;
   lutLabel?: string | null;
+  effectId?: string | null;
+  effectLabel?: string | null;
 };
 
 export type VideoEditArtifact = EditedMediaArtifact;

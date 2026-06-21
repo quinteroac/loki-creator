@@ -43,6 +43,35 @@ for command_name in comfy-imagegen comfy-videogen comfy-musicgen comfy-models; d
   check_bootstrap_command "$command_name"
 done
 
+log "checking frei0r video effects"
+if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' frei0r '; then
+  printf 'ffmpeg frei0r filter: ok\n'
+else
+  warn "ffmpeg is missing frei0r filter support"
+  failures=$((failures + 1))
+fi
+
+frei0r_plugin_found=0
+frei0r_paths=()
+if [[ -n "${FREI0R_PATH:-}" ]]; then
+  IFS=':' read -r -a frei0r_paths <<< "${FREI0R_PATH}"
+fi
+frei0r_paths+=("$HOME/.frei0r-1/lib" /usr/local/lib/frei0r-1 /usr/lib/frei0r-1)
+for path in /usr/lib/*/frei0r-1; do
+  [[ -d "$path" ]] && frei0r_paths+=("$path")
+done
+for path in "${frei0r_paths[@]}"; do
+  if compgen -G "${path}/*.so" >/dev/null 2>&1; then
+    printf 'frei0r plugins: %s\n' "$path"
+    frei0r_plugin_found=1
+    break
+  fi
+done
+if [[ "$frei0r_plugin_found" -ne 1 ]]; then
+  warn "no frei0r plugins found in FREI0R_PATH or standard library paths"
+  failures=$((failures + 1))
+fi
+
 log "checking GPU visibility"
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>/dev/null || warn "nvidia-smi is installed but no GPU is visible"

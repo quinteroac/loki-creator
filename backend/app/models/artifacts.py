@@ -39,6 +39,7 @@ class VideoArtifactRequest(BaseModel):
 class VideoTimelineRequest(VideoArtifactRequest):
     max_thumbnails: int | None = Field(default=None, alias="maxThumbnails")
     lut_id: str | None = Field(default=None, alias="lutId")
+    effect_id: str | None = Field(default=None, alias="effectId")
 
 
 class VideoLutOption(BaseModel):
@@ -46,6 +47,14 @@ class VideoLutOption(BaseModel):
 
     id: str
     label: str
+
+
+class VideoEffectOption(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: str
+    label: str
+    available: bool
 
 
 class VideoTimelineThumbnail(BaseModel):
@@ -71,12 +80,14 @@ class VideoTimelineResponse(BaseModel):
 class VideoFrameRequest(VideoArtifactRequest):
     time_seconds: float = Field(alias="timeSeconds")
     lut_id: str | None = Field(default=None, alias="lutId")
+    effect_id: str | None = Field(default=None, alias="effectId")
 
 
 class VideoTrimRequest(VideoArtifactRequest):
     start_seconds: float = Field(alias="startSeconds")
     end_seconds: float = Field(alias="endSeconds")
     lut_id: str | None = Field(default=None, alias="lutId")
+    effect_id: str | None = Field(default=None, alias="effectId")
 
 
 class AudioArtifactRequest(BaseModel):
@@ -123,3 +134,5 @@ class VideoEditArtifact(BaseModel):
     channels: int | None = None
     lut_id: str | None = Field(default=None, alias="lutId")
     lut_label: str | None = Field(default=None, alias="lutLabel")
+    effect_id: str | None = Field(default=None, alias="effectId")
+    effect_label: str | None = Field(default=None, alias="effectLabel")

@@ -1,4 +1,4 @@
-import type { VideoEditArtifact, VideoLutOption, VideoTimelineResponse } from "../types";
+import type { VideoEditArtifact, VideoEffectOption, VideoLutOption, VideoTimelineResponse } from "../types";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -48,15 +48,21 @@ export function listVideoLuts(): Promise<VideoLutOption[]> {
   return getJson<VideoLutOption[]>("/api/artifacts/video/luts");
 }
 
+export function listVideoEffects(): Promise<VideoEffectOption[]> {
+  return getJson<VideoEffectOption[]>("/api/artifacts/video/effects");
+}
+
 export function loadVideoTimeline(
   artifactUrl: string,
   maxThumbnails = 16,
   lutId = "original",
+  effectId = "none",
 ): Promise<VideoTimelineResponse> {
   return postJson<VideoTimelineResponse>("/api/artifacts/video/timeline", {
     artifactUrl,
     maxThumbnails,
     lutId,
+    effectId,
   });
 }
 
@@ -64,11 +70,13 @@ export function exportVideoFrame(
   artifactUrl: string,
   timeSeconds: number,
   lutId = "original",
+  effectId = "none",
 ): Promise<VideoEditArtifact> {
   return postJson<VideoEditArtifact>("/api/artifacts/video/frame", {
     artifactUrl,
     timeSeconds,
     lutId,
+    effectId,
   });
 }
 
@@ -77,11 +85,13 @@ export function trimVideoArtifact(
   startSeconds: number,
   endSeconds: number,
   lutId = "original",
+  effectId = "none",
 ): Promise<VideoEditArtifact> {
   return postJson<VideoEditArtifact>("/api/artifacts/video/trim", {
     artifactUrl,
     startSeconds,
     endSeconds,
     lutId,
+    effectId,
   });
 }

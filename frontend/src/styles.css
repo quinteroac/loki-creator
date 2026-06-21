@@ -941,7 +941,8 @@ button {
   white-space: nowrap;
 }
 
-.video-editor-lut-select {
+.video-editor-lut-select,
+.video-editor-effect-select {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -957,11 +958,13 @@ button {
   line-height: 1.5;
 }
 
-.video-editor-lut-select span {
+.video-editor-lut-select span,
+.video-editor-effect-select span {
   color: var(--dark-text-soft);
 }
 
-.video-editor-lut-select select {
+.video-editor-lut-select select,
+.video-editor-effect-select select {
   max-width: 144px;
   min-width: 0;
   color: var(--dark-text);
@@ -972,12 +975,14 @@ button {
   outline: 0;
 }
 
-.video-editor-lut-select select:disabled {
+.video-editor-lut-select select:disabled,
+.video-editor-effect-select select:disabled {
   color: var(--dark-text-soft);
   cursor: default;
 }
 
-.video-editor-lut-select:focus-within {
+.video-editor-lut-select:focus-within,
+.video-editor-effect-select:focus-within {
   outline: 2px solid var(--brand-blue-deep);
   outline-offset: 2px;
 }

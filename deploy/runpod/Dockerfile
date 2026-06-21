@@ -19,6 +19,7 @@ RUN apt-get update \
     ca-certificates \
     curl \
     ffmpeg \
+    frei0r-plugins \
     git \
     gnupg \
     jq \
