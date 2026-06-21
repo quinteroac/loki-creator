@@ -461,18 +461,22 @@ function formatMediaSeconds(value?: number | null): string {
 export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifact): CardDocument {
   const isFrame = artifact.kind === "image";
   const isAudio = artifact.kind === "audio";
-  const title = isFrame
-    ? `Frame ${formatMediaSeconds(artifact.timeSeconds)}`
-    : isAudio
-      ? `Audio clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`
-    : `Clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`;
-  const description = isFrame
-    ? `Frame exported from video at ${formatMediaSeconds(artifact.timeSeconds)}.`
-    : isAudio
-      ? `Audio trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`
-    : `Video trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`;
+  const isImageVideo = artifact.kind === "video" && artifact.startSeconds == null && artifact.endSeconds == null;
   const editorId = isAudio ? "audio-editor" : "video-editor";
-  const actionId = isFrame ? "frame-export" : isAudio ? "audio-trim" : "video-trim";
+  const actionId = isFrame ? "frame-export" : isAudio ? "audio-trim" : isImageVideo ? "image-to-video" : "video-trim";
+  let title = `Clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`;
+  let description = `Video trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`;
+
+  if (isFrame) {
+    title = `Frame ${formatMediaSeconds(artifact.timeSeconds)}`;
+    description = `Frame exported from video at ${formatMediaSeconds(artifact.timeSeconds)}.`;
+  } else if (isAudio) {
+    title = `Audio clip ${formatMediaSeconds(artifact.startSeconds)}-${formatMediaSeconds(artifact.endSeconds)}`;
+    description = `Audio trim from ${formatMediaSeconds(artifact.startSeconds)} to ${formatMediaSeconds(artifact.endSeconds)}.`;
+  } else if (isImageVideo) {
+    title = `Image video ${formatMediaSeconds(artifact.durationSeconds)}`;
+    description = `Video generated from image at ${formatMediaSeconds(artifact.durationSeconds)}.`;
+  }
 
   return {
     id: `card_media_edit_${crypto.randomUUID?.().replaceAll("-", "") ?? Date.now().toString(36)}`,
@@ -488,7 +492,7 @@ export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifac
       artifactUrl: artifact.artifactUrl,
       thumbnailUrl: isFrame ? artifact.artifactUrl : undefined,
       createdAt: new Date().toISOString(),
-      tags: [editorId, isFrame ? "frame" : "trim"],
+      tags: [editorId, isFrame ? "frame" : isImageVideo ? "image-to-video" : "trim"],
       capabilities: [isAudio ? "audio-edit" : "video-edit"],
       preferredAspectRatio: isAudio ? "4:3" : "auto",
       playableMedia: !isFrame,
@@ -496,6 +500,7 @@ export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifac
       height: artifact.height ?? undefined,
       sourceArtifactUrl: artifact.sourceArtifactUrl,
       durationSeconds: artifact.durationSeconds,
+      fps: artifact.fps,
       timeSeconds: artifact.timeSeconds,
       startSeconds: artifact.startSeconds,
       endSeconds: artifact.endSeconds,
@@ -503,6 +508,8 @@ export function createCardDocumentForEditedArtifact(artifact: EditedMediaArtifac
       channels: artifact.channels,
       lutId: artifact.lutId,
       lutLabel: artifact.lutLabel,
+      effectId: artifact.effectId,
+      effectLabel: artifact.effectLabel,
     },
   };
 }

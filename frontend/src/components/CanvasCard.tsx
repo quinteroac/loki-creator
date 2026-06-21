@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import { layout, prepare } from "@chenglou/pretext";
-import { Copy, Download, Info, RotateCcw, Scissors, Trash2 } from "lucide-react";
+import { Copy, Download, Info, RotateCcw, Scissors, Trash2, Video } from "lucide-react";
 import {
   downloadCardDocument,
   extractSelectedCardMediaAssets,
@@ -17,6 +17,7 @@ import { getBboxData, type BboxCardData } from "../lib/bboxCards";
 import type { CardDocument, CanvasNode, CanvasNodeFrame, EditedMediaArtifact, SelectedCardPreview } from "../types";
 import { AudioTimelineEditor } from "./AudioTimelineEditor";
 import { BboxCardEditor } from "./BboxCardEditor";
+import { ImageVideoGenerator } from "./ImageVideoGenerator";
 import { VideoTimelineEditor } from "./VideoTimelineEditor";
 
 type CanvasRenderingContext2DWithHtml = CanvasRenderingContext2D & {
@@ -301,9 +302,13 @@ export const CanvasCard = memo(function CanvasCard({
   const editableAudioArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "audio"
     ? document.metadata.artifactUrl
     : "";
+  const imageArtifactUrl = typeof document.metadata?.artifactUrl === "string" && document.metadata.kind === "image"
+    ? document.metadata.artifactUrl
+    : "";
   const canEditVideo = Boolean(videoArtifactUrl);
   const canEditAudio = Boolean(editableAudioArtifactUrl);
   const canEditMedia = canEditVideo || canEditAudio;
+  const canCreateVideoFromImage = Boolean(imageArtifactUrl);
   const audioPreviewSource = useMemo(() => getAudioPreviewSource(document), [document]);
   const usesNativeAudioPreview = Boolean(audioPreviewSource);
   const frame = node.frame;
@@ -711,6 +716,11 @@ export const CanvasCard = memo(function CanvasCard({
     setContextMenuPosition(null);
   }
 
+  function handleCreateVideoFromImage() {
+    onOpenMediaEditor(node.id);
+    setContextMenuPosition(null);
+  }
+
   function handleDelete() {
     onDeleteDocument(document.id);
     setContextMenuPosition(null);
@@ -910,6 +920,15 @@ export const CanvasCard = memo(function CanvasCard({
           onStatus={onStatus}
         />
       )}
+      {isMediaEditorOpen && canCreateVideoFromImage && (
+        <ImageVideoGenerator
+          artifactUrl={imageArtifactUrl}
+          title={accessibleTitle}
+          onClose={onCloseMediaEditor}
+          onCreateArtifact={(artifact) => onCreateEditedMediaArtifact(artifact, node.id)}
+          onStatus={onStatus}
+        />
+      )}
       {contextMenuPosition && (
         <div
           className="context-menu canvas-card-context-menu"
@@ -932,6 +951,12 @@ export const CanvasCard = memo(function CanvasCard({
             <button className="context-menu-item" type="button" role="menuitem" onClick={handleEditMedia}>
               <Scissors size={16} aria-hidden="true" />
               <span>Editar</span>
+            </button>
+          )}
+          {canCreateVideoFromImage && (
+            <button className="context-menu-item" type="button" role="menuitem" onClick={handleCreateVideoFromImage}>
+              <Video size={16} aria-hidden="true" />
+              <span>Crear video</span>
             </button>
           )}
           <button className="context-menu-item" type="button" role="menuitem" onClick={handleRedo}>

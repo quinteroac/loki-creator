@@ -95,3 +95,19 @@ export function trimVideoArtifact(
     effectId,
   });
 }
+
+export function createVideoFromImage(
+  artifactUrl: string,
+  durationSeconds = 5,
+  fps = 24,
+  lutId = "original",
+  effectId = "none",
+): Promise<VideoEditArtifact> {
+  return postJson<VideoEditArtifact>("/api/artifacts/video/from-image", {
+    artifactUrl,
+    durationSeconds,
+    fps,
+    lutId,
+    effectId,
+  });
+}

@@ -38,6 +38,7 @@ class VideoEffectPreset:
     label: str
     filter_name: str | None = None
     filter_params: str | None = None
+    kind: str = "filter"
 
 
 INSTALLED_FREI0R_EFFECT_IDS = (
@@ -192,8 +193,14 @@ class VideoEditorService:
     MAX_THUMBNAILS = 24
     MIN_TRIM_SECONDS = 0.1
     FREI0R_COMPATIBILITY_TIMEOUT_SECONDS = 4
+    MIN_IMAGE_VIDEO_DURATION_SECONDS = 0.5
+    MAX_IMAGE_VIDEO_DURATION_SECONDS = 60
+    MIN_IMAGE_VIDEO_FPS = 1
+    MAX_IMAGE_VIDEO_FPS = 60
+    IMAGE_EXTENSIONS = frozenset({".bmp", ".jpeg", ".jpg", ".png", ".webp"})
     _ffmpeg_supports_frei0r_cache: bool | None = None
     _frei0r_filter_compatibility_cache: dict[str, bool] = {}
+    _frei0r_generator_compatibility_cache: dict[str, bool] = {}
     ORIGINAL_LUT_ID = "original"
     NO_EFFECT_ID = "none"
     LUT_PRESETS = (
@@ -210,6 +217,19 @@ class VideoEditorService:
         VideoEffectPreset(id=NO_EFFECT_ID, label="None"),
         *(VideoEffectPreset(id=effect_id, label=_frei0r_effect_label(effect_id), filter_name=effect_id) for effect_id in INSTALLED_FREI0R_EFFECT_IDS),
     )
+    GENERATOR_PRESETS = (
+        VideoEffectPreset(id="generator-ising0r", label="Ising0r", filter_name="ising0r", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-lissajous0r", label="Lissajous0r", filter_name="lissajous0r", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-nois0r", label="Nois0r", filter_name="nois0r", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-onecol0r", label="Onecol0r", filter_name="onecol0r", filter_params="red", kind="generator"),
+        VideoEffectPreset(id="generator-plasma", label="Plasma", filter_name="plasma", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-test-pat-b", label="Test Pat B", filter_name="test_pat_B", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-test-pat-c", label="Test Pat C", filter_name="test_pat_C", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-test-pat-g", label="Test Pat G", filter_name="test_pat_G", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-test-pat-i", label="Test Pat I", filter_name="test_pat_I", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-test-pat-l", label="Test Pat L", filter_name="test_pat_L", filter_params="0", kind="generator"),
+        VideoEffectPreset(id="generator-test-pat-r", label="Test Pat R", filter_name="test_pat_R", filter_params="0", kind="generator"),
+    )
 
     def __init__(self, artifacts_root: Path) -> None:
         self.artifacts_root = artifacts_root.resolve()
@@ -224,8 +244,8 @@ class VideoEditorService:
 
     def list_effects(self) -> list[VideoEffectOption]:
         return [
-            VideoEffectOption(id=preset.id, label=preset.label, available=self._effect_available(preset))
-            for preset in self.EFFECT_PRESETS
+            VideoEffectOption(id=preset.id, label=preset.label, kind=preset.kind, available=self._effect_available(preset))
+            for preset in (*self.EFFECT_PRESETS, *self.GENERATOR_PRESETS)
         ]
 
     def timeline(
@@ -396,6 +416,54 @@ class VideoEditorService:
             effectLabel=effect.label,
         )
 
+    def image_to_video(
+        self,
+        artifact_url: str,
+        duration_seconds: float = 5,
+        fps: float = 24,
+        lut_id: str | None = None,
+        effect_id: str | None = None,
+    ) -> VideoEditArtifact:
+        source = self._resolve_image_artifact_url(artifact_url)
+        self._require_tools()
+        duration = self._validate_image_video_duration(duration_seconds)
+        output_fps = self._validate_image_video_fps(fps)
+        lut = self._resolve_lut(lut_id)
+        effect = self._resolve_effect(effect_id, allowed_kinds=("filter", "generator"))
+        width, height = self._image_dimensions(source)
+        if width <= 0 or height <= 0:
+            raise VideoEditorError(f"Could not read image dimensions: {source.name}")
+
+        output_dir = self.editor_root / "exports" / uuid4().hex
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{source.stem}-image-video-{self._milliseconds(duration)}-{self._format_seconds(output_fps)}fps-{lut.id}-{effect.id}.mp4"
+        if effect.kind == "generator":
+            command = self._image_to_video_generator_command(source, output_path, width, height, duration, output_fps, lut, effect)
+        else:
+            command = self._image_to_video_filter_command(source, output_path, duration, output_fps, lut, effect)
+
+        self._run_command(command)
+        if not output_path.is_file():
+            raise VideoEditorError("ffmpeg did not create the requested image video artifact.")
+
+        output_info = self.video_info(output_path)
+        return VideoEditArtifact(
+            artifactUrl=self._artifact_url_for_path(output_path),
+            sourceArtifactUrl=artifact_url,
+            name=f"{source.stem} image video",
+            kind="video",
+            mimeType="video/mp4",
+            size=output_path.stat().st_size,
+            width=int(output_info["width"]),
+            height=int(output_info["height"]),
+            durationSeconds=float(output_info["duration"]),
+            fps=float(output_info["fps"]),
+            lutId=lut.id,
+            lutLabel=lut.label,
+            effectId=effect.id,
+            effectLabel=effect.label,
+        )
+
     def video_info(self, path: Path) -> dict[str, object]:
         probe = self._ffprobe(path)
         video_stream = self._first_stream(probe, "video")
@@ -440,6 +508,13 @@ class VideoEditorService:
 
         if not artifact.is_file():
             raise VideoEditorError("Artifact file was not found.")
+        return artifact
+
+    def _resolve_image_artifact_url(self, artifact_url: str) -> Path:
+        artifact = self._resolve_artifact_url(artifact_url)
+        if artifact.suffix.lower() not in self.IMAGE_EXTENSIONS:
+            raise VideoEditorError("Image-to-video only supports local image artifacts.")
+        self._image_dimensions(artifact)
         return artifact
 
     def _artifact_url_for_path(self, path: Path) -> str:
@@ -543,6 +618,28 @@ class VideoEditorService:
             raise VideoEditorError("Trim endSeconds cannot be greater than the video duration.")
         return start, end
 
+    def _validate_image_video_duration(self, value: float) -> float:
+        try:
+            duration = float(value)
+        except (TypeError, ValueError) as exc:
+            raise VideoEditorError("durationSeconds must be a number.") from exc
+        if not math.isfinite(duration):
+            raise VideoEditorError("durationSeconds must be finite.")
+        if duration < self.MIN_IMAGE_VIDEO_DURATION_SECONDS or duration > self.MAX_IMAGE_VIDEO_DURATION_SECONDS:
+            raise VideoEditorError("durationSeconds must be between 0.5 and 60.")
+        return duration
+
+    def _validate_image_video_fps(self, value: float) -> float:
+        try:
+            fps = float(value)
+        except (TypeError, ValueError) as exc:
+            raise VideoEditorError("fps must be a number.") from exc
+        if not math.isfinite(fps):
+            raise VideoEditorError("fps must be finite.")
+        if fps < self.MIN_IMAGE_VIDEO_FPS or fps > self.MAX_IMAGE_VIDEO_FPS:
+            raise VideoEditorError("fps must be between 1 and 60.")
+        return fps
+
     def _resolve_lut(self, lut_id: str | None) -> VideoLutPreset:
         normalized_id = (lut_id or self.ORIGINAL_LUT_ID).strip() or self.ORIGINAL_LUT_ID
         preset = next((candidate for candidate in self._all_lut_presets() if candidate.id == normalized_id), None)
@@ -555,11 +652,13 @@ class VideoEditorService:
             raise VideoEditorError(f"Video LUT was not found: {preset.id}")
         return preset
 
-    def _resolve_effect(self, effect_id: str | None) -> VideoEffectPreset:
+    def _resolve_effect(self, effect_id: str | None, allowed_kinds: tuple[str, ...] = ("filter",)) -> VideoEffectPreset:
         normalized_id = (effect_id or self.NO_EFFECT_ID).strip() or self.NO_EFFECT_ID
-        preset = next((candidate for candidate in self.EFFECT_PRESETS if candidate.id == normalized_id), None)
+        preset = next((candidate for candidate in (*self.EFFECT_PRESETS, *self.GENERATOR_PRESETS) if candidate.id == normalized_id), None)
         if preset is None:
             raise VideoEditorError(f"Unknown video effect: {normalized_id}")
+        if preset.kind not in allowed_kinds:
+            raise VideoEditorError(f"Video effect is not supported in this editor: {normalized_id}")
         self._require_effect_available(preset)
         return preset
 
@@ -582,6 +681,111 @@ class VideoEditorService:
             value = f"{value}:filter_params={self._escape_filter_value(effect.filter_params)}"
         return value
 
+    def _generator_source_filter(self, effect: VideoEffectPreset, width: int, height: int, fps: float) -> str:
+        if effect.filter_name is None:
+            raise VideoEditorError("Generator effect is missing a frei0r plugin name.")
+        value = (
+            f"frei0r_src=size={width}x{height}:framerate={self._format_seconds(fps)}"
+            f":filter_name={self._escape_filter_value(effect.filter_name)}"
+        )
+        if effect.filter_params:
+            value = f"{value}:filter_params={self._escape_filter_value(effect.filter_params)}"
+        return value
+
+    def _image_to_video_filter_command(
+        self,
+        source: Path,
+        output_path: Path,
+        duration: float,
+        fps: float,
+        lut: VideoLutPreset,
+        effect: VideoEffectPreset,
+    ) -> list[str]:
+        return [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-framerate",
+            self._format_seconds(fps),
+            "-i",
+            str(source),
+            "-t",
+            self._format_seconds(duration),
+            "-filter:v",
+            self._video_filter(lut, effect, "format=yuv420p") or "format=yuv420p",
+            "-r",
+            self._format_seconds(fps),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            str(output_path),
+        ]
+
+    def _image_to_video_generator_command(
+        self,
+        source: Path,
+        output_path: Path,
+        width: int,
+        height: int,
+        duration: float,
+        fps: float,
+        lut: VideoLutPreset,
+        effect: VideoEffectPreset,
+    ) -> list[str]:
+        base_filter = self._video_filter(lut, VideoEffectPreset(id=self.NO_EFFECT_ID, label="None"))
+        base_parts = [f"scale={width}:{height}", "setsar=1"]
+        if base_filter:
+            base_parts.append(base_filter)
+        base_parts.append("format=rgba")
+        filter_complex = (
+            f"[0:v]{','.join(base_parts)}[base];"
+            "[1:v]format=rgba,colorchannelmixer=aa=0.35[fx];"
+            "[base][fx]overlay=shortest=1:format=auto,format=yuv420p[out]"
+        )
+        return [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-framerate",
+            self._format_seconds(fps),
+            "-i",
+            str(source),
+            "-f",
+            "lavfi",
+            "-i",
+            self._generator_source_filter(effect, width, height, fps),
+            "-t",
+            self._format_seconds(duration),
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[out]",
+            "-r",
+            self._format_seconds(fps),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            "-an",
+            str(output_path),
+        ]
+
     def _escape_filter_value(self, value: str) -> str:
         return value.replace("\\", "\\\\").replace(":", "\\:").replace(",", "\\,")
 
@@ -595,7 +799,7 @@ class VideoEditorService:
     def _effect_cache_token(self, effect: VideoEffectPreset) -> str:
         if effect.filter_name is None:
             return effect.id
-        return f"{effect.id}|{effect.filter_name}|{effect.filter_params or ''}|{self._frei0r_plugin_path(effect) or 'missing'}"
+        return f"{effect.id}|{effect.kind}|{effect.filter_name}|{effect.filter_params or ''}|{self._frei0r_plugin_path(effect) or 'missing'}"
 
     def _all_lut_presets(self) -> list[VideoLutPreset]:
         return [*self.LUT_PRESETS, *self._imported_lut_presets()]
@@ -659,11 +863,13 @@ class VideoEditorService:
         return f"{category} - {name}"
 
     def _effect_available(self, effect: VideoEffectPreset) -> bool:
-        return effect.filter_name is None or (
-            self._ffmpeg_supports_frei0r()
-            and self._frei0r_plugin_path(effect) is not None
-            and self._frei0r_filter_compatible(effect)
-        )
+        if effect.filter_name is None:
+            return True
+        if not self._ffmpeg_supports_frei0r() or self._frei0r_plugin_path(effect) is None:
+            return False
+        if effect.kind == "generator":
+            return self._frei0r_generator_compatible(effect)
+        return self._frei0r_filter_compatible(effect)
 
     def _require_effect_available(self, effect: VideoEffectPreset) -> None:
         if effect.filter_name is None:
@@ -672,6 +878,10 @@ class VideoEditorService:
             raise VideoEditorError("FFmpeg was not built with frei0r filter support.")
         if self._frei0r_plugin_path(effect) is None:
             raise VideoEditorError(f"frei0r plugin was not found: {effect.filter_name}")
+        if effect.kind == "generator":
+            if not self._frei0r_generator_compatible(effect):
+                raise VideoEditorError(f"frei0r plugin is not compatible with image video generation: {effect.filter_name}")
+            return
         if not self._frei0r_filter_compatible(effect):
             raise VideoEditorError(f"frei0r plugin is not compatible with the video filter editor: {effect.filter_name}")
 
@@ -720,6 +930,43 @@ class VideoEditorService:
         except subprocess.TimeoutExpired:
             compatible = False
         VideoEditorService._frei0r_filter_compatibility_cache[cache_key] = compatible
+        return compatible
+
+    def _frei0r_generator_compatible(self, effect: VideoEffectPreset) -> bool:
+        if effect.filter_name is None:
+            return True
+        cache_key = self._effect_cache_token(effect)
+        if cache_key in VideoEditorService._frei0r_generator_compatibility_cache:
+            return VideoEditorService._frei0r_generator_compatibility_cache[cache_key]
+        command = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            self._generator_source_filter(effect, 64, 48, 10),
+            "-t",
+            "0.2",
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ]
+        try:
+            process = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=self.FREI0R_COMPATIBILITY_TIMEOUT_SECONDS,
+            )
+            compatible = process.returncode == 0
+        except subprocess.TimeoutExpired:
+            compatible = False
+        VideoEditorService._frei0r_generator_compatibility_cache[cache_key] = compatible
         return compatible
 
     def _frei0r_plugin_path(self, effect: VideoEffectPreset) -> Path | None:

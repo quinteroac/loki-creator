@@ -23,7 +23,7 @@ type DragMode = "scrub" | "start" | "end";
 const TIMELINE_THUMBNAILS = 16;
 const MIN_TRIM_SECONDS = 0.1;
 const ORIGINAL_LUT: VideoLutOption = { id: "original", label: "Original" };
-const NO_EFFECT: VideoEffectOption = { id: "none", label: "None", available: true };
+const NO_EFFECT: VideoEffectOption = { id: "none", label: "None", kind: "filter", available: true };
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -120,7 +120,7 @@ export function VideoTimelineEditor({
         const normalizedEffects = loadedEffects.some((effect) => effect.id === NO_EFFECT.id)
           ? loadedEffects
           : [NO_EFFECT, ...loadedEffects];
-        const availableEffects = normalizedEffects.filter((effect) => effect.available);
+        const availableEffects = normalizedEffects.filter((effect) => effect.kind === "filter" && effect.available);
         setEffects(availableEffects.length > 0 ? availableEffects : [NO_EFFECT]);
         setSelectedEffectId((currentId) => {
           const currentEffect = availableEffects.find((effect) => effect.id === currentId);

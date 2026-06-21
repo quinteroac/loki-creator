@@ -228,6 +228,7 @@ export type VideoLutOption = {
 export type VideoEffectOption = {
   id: string;
   label: string;
+  kind: "filter" | "generator";
   available: boolean;
 };
 
@@ -249,6 +250,7 @@ export type EditedMediaArtifact = {
   width?: number | null;
   height?: number | null;
   durationSeconds?: number | null;
+  fps?: number | null;
   timeSeconds?: number | null;
   startSeconds?: number | null;
   endSeconds?: number | null;

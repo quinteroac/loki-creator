@@ -38,6 +38,7 @@ from app.models import (
     VideoEditArtifact,
     VideoEffectOption,
     VideoFrameRequest,
+    VideoImageRequest,
     VideoLutOption,
     VideoTimelineRequest,
     VideoTimelineResponse,
@@ -495,6 +496,23 @@ def trim_video_artifact(
 ) -> VideoEditArtifact:
     try:
         return service.trim(payload.artifact_url, payload.start_seconds, payload.end_seconds, payload.lut_id, payload.effect_id)
+    except VideoEditorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/artifacts/video/from-image", response_model=VideoEditArtifact)
+def create_video_from_image(
+    payload: VideoImageRequest,
+    service: VideoEditorService = Depends(get_video_editor_service),
+) -> VideoEditArtifact:
+    try:
+        return service.image_to_video(
+            payload.artifact_url,
+            payload.duration_seconds,
+            payload.fps,
+            payload.lut_id,
+            payload.effect_id,
+        )
     except VideoEditorError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -13,7 +13,9 @@ from app.services.video_editor import INSTALLED_FREI0R_EFFECT_IDS, VideoEditorEr
 
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
-HAS_FREI0R = HAS_FFMPEG and any(effect.available for effect in VideoEditorService(Path(tempfile.gettempdir())).list_effects() if effect.id != "none")
+HAS_FREI0R = HAS_FFMPEG and any(
+    effect.available and effect.kind == "filter" for effect in VideoEditorService(Path(tempfile.gettempdir())).list_effects() if effect.id != "none"
+)
 
 
 def run(command: list[str]) -> None:
@@ -62,6 +64,25 @@ def create_clip(path: Path, *, audio: bool = True, color: str = "red", duration:
     run(command)
 
 
+def create_image(path: Path, *, color: str = "blue") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c={color}:s=64x48",
+            "-frames:v",
+            "1",
+            "-update",
+            "1",
+            str(path),
+        ]
+    )
+
+
 class VideoEditorValidationTest(unittest.TestCase):
     def test_rejects_non_artifact_urls(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -108,8 +129,12 @@ class VideoEditorValidationTest(unittest.TestCase):
             by_id = {effect.id: effect for effect in catalog}
 
             self.assertTrue(by_id["none"].available)
+            self.assertEqual(by_id["none"].kind, "filter")
             for effect_id in INSTALLED_FREI0R_EFFECT_IDS:
                 self.assertIn(effect_id, by_id)
+                self.assertEqual(by_id[effect_id].kind, "filter")
+            self.assertEqual(by_id["generator-plasma"].kind, "generator")
+            self.assertIn("generator-nois0r", by_id)
 
     def test_effect_catalog_only_marks_filter_compatible_plugins_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -134,6 +159,13 @@ class VideoEditorValidationTest(unittest.TestCase):
 
             with self.assertRaisesRegex(VideoEditorError, "Unknown video effect"):
                 service._resolve_effect("freeform-filter")
+
+    def test_rejects_generator_effects_in_video_filter_editor(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = VideoEditorService(Path(tmpdir))
+
+            with self.assertRaisesRegex(VideoEditorError, "not supported"):
+                service._resolve_effect("generator-plasma")
 
     def test_video_filter_combines_lut_frei0r_and_scale_in_stable_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -312,6 +344,60 @@ class VideoEditorFfmpegTest(unittest.TestCase):
             info = VideoEditorService(root).video_info(output)
             self.assertTrue(info["has_audio"])
 
+    def test_image_to_video_creates_mp4_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.png"
+            create_image(source)
+            service = VideoEditorService(root)
+
+            artifact = service.image_to_video("/api/artifacts/imports/source.png", duration_seconds=1, fps=12)
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "video")
+            self.assertEqual(artifact.mime_type, "video/mp4")
+            self.assertEqual(artifact.width, 64)
+            self.assertEqual(artifact.height, 48)
+            self.assertEqual(artifact.fps, 12)
+            self.assertFalse(service.video_info(output)["has_audio"])
+
+    def test_image_to_video_with_lut_creates_mp4_artifact_with_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.jpg"
+            create_image(source, color="green")
+            service = VideoEditorService(root)
+
+            artifact = service.image_to_video("/api/artifacts/imports/source.jpg", duration_seconds=1, fps=12, lut_id="mono")
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "video")
+            self.assertEqual(artifact.lut_id, "mono")
+            self.assertEqual(artifact.lut_label, "Mono")
+            self.assertEqual(artifact.effect_id, "none")
+            self.assertEqual(artifact.effect_label, "None")
+            self.assertFalse(service.video_info(output)["has_audio"])
+
+    def test_image_to_video_rejects_non_images_and_invalid_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            image = root / "imports" / "source.png"
+            video = root / "imports" / "source.mp4"
+            create_image(image)
+            create_clip(video)
+            service = VideoEditorService(root)
+
+            with self.assertRaisesRegex(VideoEditorError, "local artifact URLs"):
+                service.image_to_video("https://example.test/source.png")
+            with self.assertRaisesRegex(VideoEditorError, "local image artifacts"):
+                service.image_to_video("/api/artifacts/imports/source.mp4")
+            with self.assertRaisesRegex(VideoEditorError, "between 0.5 and 60"):
+                service.image_to_video("/api/artifacts/imports/source.png", duration_seconds=0.4)
+            with self.assertRaisesRegex(VideoEditorError, "between 1 and 60"):
+                service.image_to_video("/api/artifacts/imports/source.png", fps=61)
+
     def test_rejects_unknown_lut_ids_and_external_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -355,6 +441,19 @@ class VideoEditorFfmpegTest(unittest.TestCase):
             with self.assertRaisesRegex(VideoEditorError, "not compatible"):
                 service.trim("/api/artifacts/imports/source.mp4", 0.1, 0.6, effect_id="blend")
 
+    def test_image_to_video_rejects_unsafe_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.png"
+            create_image(source)
+            service = VideoEditorService(root)
+            blend = next(effect for effect in service.EFFECT_PRESETS if effect.id == "blend")
+            if service._frei0r_plugin_path(blend) is None:
+                self.skipTest("blend frei0r plugin is not installed")
+
+            with self.assertRaisesRegex(VideoEditorError, "not compatible"):
+                service.image_to_video("/api/artifacts/imports/source.png", duration_seconds=1, fps=12, effect_id="blend")
+
 
 @unittest.skipUnless(HAS_FREI0R, "ffmpeg, ffprobe, and at least one frei0r plugin are required")
 class VideoEditorFrei0rTest(unittest.TestCase):
@@ -364,7 +463,9 @@ class VideoEditorFrei0rTest(unittest.TestCase):
             source = root / "imports" / "source.mp4"
             create_clip(source, duration=1.6)
             service = VideoEditorService(root)
-            effect = next(candidate for candidate in service.list_effects() if candidate.id == "glow" and candidate.available)
+            effect = next((candidate for candidate in service.list_effects() if candidate.id == "glow" and candidate.available), None)
+            if effect is None:
+                self.skipTest("glow frei0r filter is not installed or compatible")
 
             timeline = service.timeline("/api/artifacts/imports/source.mp4", max_thumbnails=2, effect_id=effect.id)
             frame = service.export_frame("/api/artifacts/imports/source.mp4", 0.3, effect_id=effect.id)
@@ -379,6 +480,49 @@ class VideoEditorFrei0rTest(unittest.TestCase):
             self.assertEqual(trim.effect_id, effect.id)
             self.assertEqual(trim.effect_label, effect.label)
             self.assertTrue(service.video_info(root / trim.artifact_url.removeprefix("/api/artifacts/"))["has_audio"])
+
+    def test_frei0r_filter_creates_image_video_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.png"
+            create_image(source)
+            service = VideoEditorService(root)
+            effect = next((candidate for candidate in service.list_effects() if candidate.id == "glow" and candidate.available), None)
+            if effect is None:
+                self.skipTest("glow frei0r filter is not installed or compatible")
+
+            artifact = service.image_to_video("/api/artifacts/imports/source.png", duration_seconds=1, fps=12, effect_id=effect.id)
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.effect_id, effect.id)
+            self.assertEqual(artifact.effect_label, effect.label)
+            self.assertFalse(service.video_info(output)["has_audio"])
+
+
+@unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required")
+class VideoEditorFrei0rGeneratorTest(unittest.TestCase):
+    def test_frei0r_generator_creates_image_video_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            source = root / "imports" / "source.png"
+            create_image(source)
+            service = VideoEditorService(root)
+            effect = next(
+                (candidate for candidate in service.list_effects() if candidate.id == "generator-plasma" and candidate.available),
+                None,
+            )
+            if effect is None:
+                self.skipTest("plasma frei0r generator is not installed or compatible")
+
+            artifact = service.image_to_video("/api/artifacts/imports/source.png", duration_seconds=1, fps=12, effect_id=effect.id)
+
+            output = root / artifact.artifact_url.removeprefix("/api/artifacts/")
+            self.assertTrue(output.is_file())
+            self.assertEqual(artifact.kind, "video")
+            self.assertEqual(artifact.effect_id, effect.id)
+            self.assertEqual(artifact.effect_label, effect.label)
+            self.assertFalse(service.video_info(output)["has_audio"])
 
 
 if __name__ == "__main__":

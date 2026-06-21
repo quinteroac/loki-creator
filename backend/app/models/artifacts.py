@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -54,6 +56,7 @@ class VideoEffectOption(BaseModel):
 
     id: str
     label: str
+    kind: Literal["filter", "generator"]
     available: bool
 
 
@@ -86,6 +89,13 @@ class VideoFrameRequest(VideoArtifactRequest):
 class VideoTrimRequest(VideoArtifactRequest):
     start_seconds: float = Field(alias="startSeconds")
     end_seconds: float = Field(alias="endSeconds")
+    lut_id: str | None = Field(default=None, alias="lutId")
+    effect_id: str | None = Field(default=None, alias="effectId")
+
+
+class VideoImageRequest(VideoArtifactRequest):
+    duration_seconds: float = Field(default=5, alias="durationSeconds")
+    fps: float = 24
     lut_id: str | None = Field(default=None, alias="lutId")
     effect_id: str | None = Field(default=None, alias="effectId")
 
@@ -127,6 +137,7 @@ class VideoEditArtifact(BaseModel):
     width: int | None = None
     height: int | None = None
     duration_seconds: float | None = Field(default=None, alias="durationSeconds")
+    fps: float | None = None
     time_seconds: float | None = Field(default=None, alias="timeSeconds")
     start_seconds: float | None = Field(default=None, alias="startSeconds")
     end_seconds: float | None = Field(default=None, alias="endSeconds")
