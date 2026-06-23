@@ -37,7 +37,7 @@ metadata:
     action:
       type: cli-local
       command: [python3, scripts/seedance_openrouter_action.py]
-      timeoutSeconds: 900
+      timeoutSeconds: 0
     output:
       packager: auto
       kind: video

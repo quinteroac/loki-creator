@@ -106,6 +106,11 @@ MUSIC_QUALITY_DEFAULTS = {
     "cfg": "7.0",
 }
 CHANGE_ASPECT_RATIOS = set(ASPECT_DIMENSIONS)
+VIDEO_UPSCALE_ENGINES = {"rtx-vsr", "seedvr2"}
+RTX_UPSCALE_RESOLUTIONS = {"480p", "720p", "1080p", "1440p", "4k", "8k"}
+SEEDVR2_UPSCALE_RESOLUTIONS = {"720p", "1080p", "1440p", "4k"}
+RTX_UPSCALE_QUALITIES = {"LOW", "MEDIUM", "HIGH", "ULTRA"}
+SEEDVR2_MODELS_DIR = Path(".loki") / "models" / "comfyui" / "seedvr2"
 
 
 def read_payload() -> dict[str, Any]:
@@ -747,6 +752,38 @@ def audio_duration_seconds(path: str | Path) -> float:
         raise RuntimeError(f"Could not parse audio duration for {path}") from exc
     if duration <= 0:
         raise RuntimeError(f"Audio duration must be positive for {path}")
+    return duration
+
+
+def video_duration_seconds(path: str | Path) -> float:
+    if shutil.which("ffprobe") is None:
+        raise RuntimeError("ffprobe is required to measure video duration for comfy-upscale-video long video processing.")
+
+    process = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        message = process.stderr.strip() or process.stdout.strip() or "Could not read video duration"
+        raise RuntimeError(message)
+
+    try:
+        duration = float(process.stdout.strip().splitlines()[-1])
+    except (IndexError, ValueError) as exc:
+        raise RuntimeError(f"Could not parse video duration for {path}") from exc
+    if duration <= 0:
+        raise RuntimeError(f"Video duration must be positive for {path}")
     return duration
 
 
@@ -1694,6 +1731,101 @@ def build_videoedit_command(
     return command, cwd
 
 
+def build_video_upscale_command(
+    *,
+    params: dict[str, Any],
+    out_dir: Path,
+    media: dict[str, list[Path]],
+) -> tuple[list[str], Path]:
+    video_input = first_param_text(params, "inputVideoPath", "videoPath", "inputPath") or str(selected_input(media, "video") or "")
+    if not video_input:
+        raise RuntimeError("comfy-upscale-video requires one input video from params.inputVideoPath or a selected card snapshot.")
+
+    engine = video_upscale_engine(params)
+    if engine not in VIDEO_UPSCALE_ENGINES:
+        raise RuntimeError("comfy-upscale-video params.engine must be rtx-vsr or seedvr2.")
+
+    resolution = first_param_text(params, "resolution")
+    if not resolution:
+        raise RuntimeError("comfy-upscale-video requires params.resolution.")
+
+    processing_mode = video_upscale_processing_mode(params)
+    if processing_mode not in {"single", "long"}:
+        raise RuntimeError("comfy-upscale-video params.processingMode must be single or long.")
+
+    if engine == "seedvr2":
+        if resolution not in SEEDVR2_UPSCALE_RESOLUTIONS:
+            raise RuntimeError("comfy-upscale-video SeedVR2 params.resolution must be 720p, 1080p, 1440p, or 4k.")
+        command = [
+            "comfy-videogen",
+            "seedvr2-upscale",
+            "--input-video",
+            video_input,
+            "--resolution",
+            resolution,
+            "--models-dir",
+            str(repo_root() / SEEDVR2_MODELS_DIR),
+            "--out",
+            str(out_dir),
+        ]
+        cwd = write_run_comfy_config(out_dir.parent, capability="videogen.seedvr2-upscale", model_profile="seedvr2")
+        return command, cwd
+
+    if resolution not in RTX_UPSCALE_RESOLUTIONS:
+        raise RuntimeError("comfy-upscale-video RTX params.resolution must be 480p, 720p, 1080p, 1440p, 4k, or 8k.")
+
+    quality = first_param_text(params, "quality").upper()
+    if not quality:
+        raise RuntimeError("comfy-upscale-video requires params.quality for RTX VSR.")
+    if quality not in RTX_UPSCALE_QUALITIES:
+        raise RuntimeError("comfy-upscale-video params.quality must be LOW, MEDIUM, HIGH, or ULTRA.")
+
+    command = [
+        "comfy-videogen",
+        "rtx-upscale",
+        "--input-video",
+        video_input,
+        "--resolution",
+        resolution,
+        "--quality",
+        quality,
+        "--out",
+        str(out_dir),
+    ]
+    cwd = write_run_comfy_config(out_dir.parent, capability="videogen.rtx-upscale", model_profile="rtx-vsr")
+    return command, cwd
+
+
+def video_upscale_engine(params: dict[str, Any]) -> str:
+    value = first_text(params.get("engine"), params.get("upscaleEngine"), params.get("videoUpscaleEngine"))
+    if not value:
+        return "rtx-vsr"
+    normalized = value.strip().lower().replace("_", "-")
+    aliases = {
+        "rtx": "rtx-vsr",
+        "rtx-vsr": "rtx-vsr",
+        "rtx-upscale": "rtx-vsr",
+        "nvidia": "rtx-vsr",
+        "nvidia-rtx": "rtx-vsr",
+        "seedvr": "seedvr2",
+        "seedvr2": "seedvr2",
+        "seedvr2-upscale": "seedvr2",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def video_upscale_processing_mode(params: dict[str, Any]) -> str:
+    value = first_text(params.get("processingMode"), params.get("longVideoMode"), params.get("processLongVideo"))
+    if not value:
+        return "single"
+    normalized = value.strip().lower().replace("_", "-")
+    if normalized in {"single", "normal", "standard", "short", "false", "no", "0", "off"}:
+        return "single"
+    if normalized in {"long", "long-video", "chunked", "chunk", "chunks", "split", "true", "yes", "1", "on"}:
+        return "long"
+    return normalized
+
+
 def build_imagegen_command(
     *,
     mode: str,
@@ -1819,6 +1951,9 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
 
     if skill_id == "comfy-videoedit":
         return build_videoedit_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
+
+    if skill_id == "comfy-upscale-video":
+        return build_video_upscale_command(params=params, out_dir=out_dir, media=media)
 
     if skill_id == "ideogram4-image":
         return build_ideogram4_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
@@ -1983,15 +2118,176 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
     raise RuntimeError(f"Unsupported Comfy skill: {skill_id}")
 
 
-def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
-    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-    if should_enable_loki_sage_attention(command):
-        env["LOKI_COMFY_USE_SAGE_ATTENTION"] = "1"
-        env["PYTHONPATH"] = prepend_pythonpath(Path(__file__).resolve().parent, env.get("PYTHONPATH"))
-    validate_comfy_cuda(command, cwd, env)
-    timeout_seconds = int(os.environ.get("LOKI_COMFY_TIMEOUT_SECONDS", "0"))
+def is_rtx_upscale_command(command: list[str]) -> bool:
+    return len(command) >= 2 and Path(command[0]).name == "comfy-videogen" and command[1] == "rtx-upscale"
+
+
+def is_seedvr2_upscale_command(command: list[str]) -> bool:
+    return len(command) >= 2 and Path(command[0]).name == "comfy-videogen" and command[1] == "seedvr2-upscale"
+
+
+def is_video_upscale_command(command: list[str]) -> bool:
+    return is_rtx_upscale_command(command) or is_seedvr2_upscale_command(command)
+
+
+def parse_json_object(text: str) -> dict[str, Any] | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        parsed = json.loads(stripped)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def comfy_error_payload(process: subprocess.CompletedProcess[str]) -> dict[str, Any] | None:
+    return parse_json_object(process.stdout) or parse_json_object(process.stderr)
+
+
+def should_repair_rtx_upscale_dependencies(command: list[str], process: subprocess.CompletedProcess[str]) -> bool:
+    if not is_rtx_upscale_command(command):
+        return False
+    payload = comfy_error_payload(process)
+    if payload is None:
+        return False
+    return first_text(payload.get("error_type")) == "missing_dependency"
+
+
+def should_upgrade_for_seedvr2_upscale(command: list[str], process: subprocess.CompletedProcess[str]) -> bool:
+    if not is_seedvr2_upscale_command(command):
+        return False
+    payload = comfy_error_payload(process)
+    if payload is not None:
+        message = first_text(payload.get("error"), payload.get("message"))
+        if "unknown command" in message.lower() or "invalid choice" in message.lower():
+            return True
+    message = f"{process.stderr}\n{process.stdout}".lower()
+    return "seedvr2-upscale" in message and ("invalid choice" in message or "unknown command" in message)
+
+
+def should_repair_sage_attention_dependency(command: list[str], process: subprocess.CompletedProcess[str]) -> bool:
+    if not should_enable_loki_sage_attention(command):
+        return False
+    payload = comfy_error_payload(process)
+    message = ""
+    if payload is not None:
+        message = first_text(payload.get("error"), payload.get("message"))
+    if not message:
+        message = f"{process.stderr}\n{process.stdout}"
+    lowered = message.lower()
+    return "sageattention" in lowered and "loki_comfy_use_sage_attention=1" in lowered
+
+
+def rtx_missing_dependency_name(process: subprocess.CompletedProcess[str]) -> str:
+    payload = comfy_error_payload(process)
+    message = ""
+    if payload is not None:
+        message = first_text(payload.get("error"), payload.get("message"))
+    if not message:
+        message = f"{process.stderr}\n{process.stdout}"
+    lowered = message.lower()
+    if "nvidia-vfx" in lowered or "nvvfx" in lowered:
+        return "nvidia-vfx"
+    return ""
+
+
+def comfy_agent_tools_install_command(uv: str) -> list[str]:
+    return [
+        uv,
+        "tool",
+        "install",
+        "--force",
+        "--with",
+        "sageattention",
+        "--with",
+        "nvidia-vfx",
+        "git+https://github.com/quinteroac/comfy-agent-tools",
+    ]
+
+
+def repair_comfy_agent_tools(command: list[str], cwd: Path, env: dict[str, str]) -> str:
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("uv is required to repair comfy-agent-tools dependencies automatically, but uv was not found.")
+
+    repair_command = comfy_agent_tools_install_command(uv)
+
     process = subprocess.run(
+        repair_command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        detail = process.stderr.strip() or process.stdout.strip() or "dependency repair failed"
+        raise RuntimeError(f"Automatic comfy-agent-tools dependency repair failed: {detail}")
+    return " ".join(repair_command)
+
+
+def repair_sage_attention_dependency(cwd: Path, env: dict[str, str]) -> str:
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("uv is required to install sageattention for comfy-agent-tools automatically, but uv was not found.")
+
+    repair_command = comfy_agent_tools_install_command(uv)
+
+    process = subprocess.run(
+        repair_command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if process.returncode != 0:
+        detail = process.stderr.strip() or process.stdout.strip() or "dependency repair failed"
+        raise RuntimeError(f"Automatic sageattention dependency repair failed: {detail}")
+    return " ".join(repair_command)
+
+
+def repair_rtx_upscale_dependencies(command: list[str], cwd: Path, env: dict[str, str], process: subprocess.CompletedProcess[str]) -> str:
+    uv = shutil.which("uv")
+    if uv is None:
+        raise RuntimeError("uv is required to repair RTX VSR dependencies automatically, but uv was not found.")
+
+    dependency = rtx_missing_dependency_name(process)
+    if dependency == "nvidia-vfx":
+        repair_command = comfy_agent_tools_install_command(uv)
+    else:
+        repair_command = [uv, "tool", "upgrade", "comfy-agent-tools"]
+
+    repair_process = subprocess.run(
+        repair_command,
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if repair_process.returncode != 0:
+        detail = repair_process.stderr.strip() or repair_process.stdout.strip() or "dependency repair failed"
+        raise RuntimeError(f"Automatic RTX VSR dependency repair failed: {detail}")
+    return " ".join(repair_command)
+
+
+def ensure_comfy_cli(command: list[str], cwd: Path) -> None:
+    if not command or shutil.which(command[0]) is not None:
+        return
+    if is_video_upscale_command(command):
+        repair_comfy_agent_tools(command, cwd, {**os.environ, "PYTHONUNBUFFERED": "1"})
+        if shutil.which(command[0]) is not None:
+            return
+    raise RuntimeError(
+        f"Comfy CLI not found: {command[0]}. Install with `uv tool install git+https://github.com/quinteroac/comfy-agent-tools`."
+    )
+
+
+def run_comfy_subprocess(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    timeout_seconds = int(os.environ.get("LOKI_COMFY_TIMEOUT_SECONDS", "0"))
+    return subprocess.run(
         command,
         cwd=cwd,
         env=env,
@@ -2000,8 +2296,30 @@ def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
         timeout=timeout_seconds if timeout_seconds > 0 else None,
         check=False,
     )
+
+
+def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    if should_enable_loki_sage_attention(command):
+        env["LOKI_COMFY_USE_SAGE_ATTENTION"] = "1"
+        env["PYTHONPATH"] = prepend_pythonpath(Path(__file__).resolve().parent, env.get("PYTHONPATH"))
+    validate_comfy_cuda(command, cwd, env)
+    process = run_comfy_subprocess(command, cwd, env)
+    repair_command = ""
+    if process.returncode != 0 and should_repair_rtx_upscale_dependencies(command, process):
+        repair_command = repair_rtx_upscale_dependencies(command, cwd, env, process)
+        process = run_comfy_subprocess(command, cwd, env)
+    elif process.returncode != 0 and should_upgrade_for_seedvr2_upscale(command, process):
+        repair_command = repair_comfy_agent_tools(command, cwd, env)
+        process = run_comfy_subprocess(command, cwd, env)
+    elif process.returncode != 0 and should_repair_sage_attention_dependency(command, process):
+        repair_command = repair_sage_attention_dependency(cwd, env)
+        process = run_comfy_subprocess(command, cwd, env)
     if process.returncode != 0:
         message = process.stderr.strip() or process.stdout.strip() or "Comfy command failed"
+        if repair_command:
+            message = f"{message}\nAutomatic comfy-agent-tools repair already ran `{repair_command}` and the upscale command still failed."
         raise RuntimeError(message)
     try:
         parsed = json.loads(process.stdout)
@@ -2230,6 +2548,200 @@ def extract_bernini_image_artifact(payload: dict[str, Any], command: list[str]) 
     }
 
 
+def first_artifact_path(payload: dict[str, Any]) -> str:
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list):
+        return ""
+    for artifact in artifacts:
+        if isinstance(artifact, str) and artifact.strip():
+            return artifact.strip()
+        if isinstance(artifact, dict):
+            path = first_text(artifact.get("path"))
+            if path:
+                return path
+    return ""
+
+
+def ffmpeg_concat_file_line(path: Path) -> str:
+    escaped_path = str(path).replace("'", "'\\''")
+    return f"file '{escaped_path}'"
+
+
+def run_ffmpeg(command: list[str], error_message: str) -> None:
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg is required for comfy-upscale-video long video processing.")
+    process = subprocess.run(command, text=True, capture_output=True, check=False)
+    if process.returncode != 0:
+        detail = process.stderr.strip() or process.stdout.strip() or error_message
+        raise RuntimeError(detail)
+
+
+def split_video_for_upscale(input_video: Path, segments_dir: Path, duration_seconds: float, segment_seconds: int = 30) -> list[Path]:
+    segments_dir.mkdir(parents=True, exist_ok=True)
+    segment_count = max(1, math.ceil(duration_seconds / segment_seconds))
+    segments: list[Path] = []
+    for index in range(segment_count):
+        start_seconds = index * segment_seconds
+        remaining_seconds = max(0.0, duration_seconds - start_seconds)
+        clip_seconds = min(float(segment_seconds), remaining_seconds)
+        if clip_seconds <= 0:
+            continue
+        segment_path = segments_dir / f"segment-{index + 1:03d}.mp4"
+        run_ffmpeg(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_video),
+                "-ss",
+                format_seconds(float(start_seconds)),
+                "-t",
+                format_seconds(clip_seconds),
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-avoid_negative_ts",
+                "make_zero",
+                "-movflags",
+                "+faststart",
+                str(segment_path),
+            ],
+            f"Could not split video segment {index + 1}.",
+        )
+        if not segment_path.is_file():
+            raise RuntimeError(f"ffmpeg completed but did not create split segment {index + 1}.")
+        segments.append(segment_path)
+    return segments
+
+
+def video_upscale_mode(command: list[str]) -> str:
+    return command[1] if len(command) > 1 else ""
+
+
+def video_upscale_engine_from_command(command: list[str]) -> str:
+    mode = video_upscale_mode(command)
+    if mode == "seedvr2-upscale":
+        return "seedvr2"
+    if mode == "rtx-upscale":
+        return "rtx-vsr"
+    return mode or "unknown"
+
+
+def long_video_upscale_mode(command: list[str]) -> str:
+    mode = video_upscale_mode(command)
+    return f"{mode}-long" if mode else "upscale-long"
+
+
+def long_video_upscale_title(command: list[str]) -> str:
+    engine = video_upscale_engine_from_command(command)
+    if engine == "seedvr2":
+        return "SeedVR2 upscaled video"
+    if engine == "rtx-vsr":
+        return "RTX upscaled video"
+    return "Upscaled video"
+
+
+def concat_upscaled_video_segments(segment_artifacts: list[Path], out_dir: Path, command: list[str]) -> Path:
+    if not segment_artifacts:
+        raise RuntimeError("No upscaled video segments were produced.")
+    concat_file = out_dir / "upscaled-segments.txt"
+    concat_file.write_text("\n".join(ffmpeg_concat_file_line(path) for path in segment_artifacts) + "\n", encoding="utf-8")
+    final_name = "seedvr2-upscaled-long.mp4" if is_seedvr2_upscale_command(command) else "rtx-upscaled-long.mp4"
+    final_path = out_dir / final_name
+    run_ffmpeg(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_file),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            str(final_path),
+        ],
+        "Could not concatenate upscaled video segments.",
+    )
+    if not final_path.is_file():
+        raise RuntimeError("ffmpeg completed but did not create the concatenated upscale video.")
+    return final_path
+
+
+def run_chunked_video_upscale(command: list[str], cwd: Path, out_dir: Path, prompt: str) -> dict[str, Any]:
+    input_video_value = value_after_option(command, "--input-video")
+    if not input_video_value:
+        raise RuntimeError("comfy-upscale-video long mode requires --input-video.")
+    input_video = Path(input_video_value)
+    if not input_video.is_file():
+        raise RuntimeError("comfy-upscale-video long mode requires a local input video file.")
+
+    duration_seconds = video_duration_seconds(input_video)
+    if duration_seconds <= 30:
+        result = run_command(command, cwd)
+        return raw_result_from_cli(result, command, prompt)
+
+    split_dir = out_dir.parent / "long-video-segments"
+    segments = split_video_for_upscale(input_video, split_dir, duration_seconds)
+    base_command = command_without_options(command, {"--input-video", "--out"})
+    upscaled_segments: list[Path] = []
+    segment_payloads: list[dict[str, Any]] = []
+
+    for index, segment in enumerate(segments, start=1):
+        segment_out = out_dir / f"segment-{index:03d}"
+        segment_command = [*base_command, "--input-video", str(segment), "--out", str(segment_out)]
+        result = run_command(segment_command, cwd)
+        artifact_path = first_artifact_path(result)
+        if not artifact_path:
+            raise RuntimeError(f"comfy-upscale-video segment {index} completed without returning a video artifact.")
+        upscaled_artifact = Path(artifact_path)
+        if not upscaled_artifact.is_file():
+            raise RuntimeError(f"comfy-upscale-video segment {index} returned a missing artifact: {artifact_path}")
+        upscaled_segments.append(upscaled_artifact)
+        segment_payloads.append(
+            {
+                "segmentIndex": index,
+                "input": str(segment),
+                "artifact": str(upscaled_artifact),
+            }
+        )
+
+    final_path = concat_upscaled_video_segments(upscaled_segments, out_dir, command)
+    payload = {
+        "kind": "video",
+        "mode": long_video_upscale_mode(command),
+        "title": long_video_upscale_title(command),
+        "artifacts": [str(final_path)],
+        "sourceVideoArtifact": str(input_video),
+        "engine": video_upscale_engine_from_command(command),
+        "durationSeconds": duration_seconds,
+        "segmentDurationSeconds": 30,
+        "segmentCount": len(segments),
+        "segments": segment_payloads,
+        "resolution": value_after_option(command, "--resolution"),
+    }
+    quality = value_after_option(command, "--quality")
+    if quality:
+        payload["quality"] = quality
+    return raw_result_from_cli(payload, command, prompt)
+
+
 def combine_raw_results(results: list[dict[str, Any]]) -> dict[str, Any]:
     combined: dict[str, Any] = {
         "artifacts": [],
@@ -2300,12 +2812,16 @@ def main() -> None:
     run_dir = output_dir(payload)
     input_media = materialize_selected_media(payload, run_dir.parent / "inputs")
     command, cwd = build_cli_command(payload, run_dir, input_media)
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+    if first_text(payload.get("skillId")) == "comfy-upscale-video" and video_upscale_processing_mode(params) == "long":
+        ensure_comfy_cli(command, cwd)
+        raw = run_chunked_video_upscale(command, cwd, run_dir, base_prompt(payload))
+        print(json.dumps(raw))
+        return
+
     requested_mode = requested_video_mode_from_payload(payload)
     commands = storyboard_commands(command, cwd, command[1] if len(command) > 1 else "", run_dir, input_media)
-    if shutil.which(command[0]) is None:
-        raise RuntimeError(
-            f"Comfy CLI not found: {command[0]}. Install with `uv tool install git+https://github.com/quinteroac/comfy-agent-tools`."
-        )
+    ensure_comfy_cli(command, cwd)
     results: list[dict[str, Any]] = []
     segments = storyboard_image_segments(command[1] if len(command) > 1 else "", input_media.get("image", []))
 

@@ -10,7 +10,7 @@ metadata:
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
-      timeoutSeconds: 900
+      timeoutSeconds: 0
     output:
       packager: auto
       kind: image

@@ -32,7 +32,7 @@ metadata:
     action:
       type: cli-local
       command: [python3, scripts/split_audio.py]
-      timeoutSeconds: 900
+      timeoutSeconds: 0
     output:
       packager: auto
       kind: audio

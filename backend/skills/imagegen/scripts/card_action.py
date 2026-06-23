@@ -531,7 +531,7 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
         command.extend(["--image", str(image_path)])
     command.append("-")
 
-    timeout_seconds = int(os.environ.get("LOKI_IMAGEGEN_CODEX_TIMEOUT_SECONDS", "900"))
+    timeout_seconds = int(os.environ.get("LOKI_IMAGEGEN_CODEX_TIMEOUT_SECONDS", "0"))
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
     events_path = run_dir / "codex-events.jsonl"
@@ -567,7 +567,7 @@ def run_codex(payload: dict, run_dir: Path, selected_images: list[Path]) -> dict
             process.stdin.close()
         except BrokenPipeError as exc:
             raise RuntimeError("Codex closed stdin before receiving the image generation prompt") from exc
-        returncode = process.wait(timeout=timeout_seconds)
+        returncode = process.wait(timeout=timeout_seconds if timeout_seconds > 0 else None)
     except subprocess.TimeoutExpired as exc:
         process.kill()
         returncode = process.wait(timeout=10)

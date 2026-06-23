@@ -135,15 +135,9 @@ class SkillActionInvoker:
             stderr_thread = threading.Thread(target=read_stderr, daemon=True)
             stdout_thread.start()
             stderr_thread.start()
-            timeout_seconds = action.timeout_seconds if action.timeout_seconds > 0 else None
-            process.wait(timeout=timeout_seconds)
+            process.wait()
             stdout_thread.join(timeout=5)
             stderr_thread.join(timeout=5)
-        except subprocess.TimeoutExpired as exc:
-            self._terminate_process(process)
-            process.wait(timeout=10)
-            self._close_process_pipes(process)
-            raise SkillInvocationError(f"Skill action timed out after {action.timeout_seconds}s") from exc
         finally:
             if run_id:
                 self._processes.pop(run_id, None)

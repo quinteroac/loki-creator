@@ -18,7 +18,7 @@ SkillArtifactKind = Literal["image", "video", "audio", "html", "text", "json", "
 class SkillCardAction(BaseModel):
     type: Literal["cli-local"] = "cli-local"
     command: list[str] = Field(default_factory=list)
-    timeout_seconds: int = Field(default=30, alias="timeoutSeconds")
+    timeout_seconds: int = Field(default=0, alias="timeoutSeconds")
 
     model_config = ConfigDict(populate_by_name=True)
 

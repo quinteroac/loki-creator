@@ -41,7 +41,7 @@ metadata:
     action:
       type: cli-local
       command: [uv, run, python, scripts/card_action.py]
-      timeoutSeconds: 900
+      timeoutSeconds: 0
     output:
       packager: auto
       kind: image

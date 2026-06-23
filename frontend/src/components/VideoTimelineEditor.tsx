@@ -19,6 +19,7 @@ type VideoTimelineEditorProps = {
 };
 
 type DragMode = "scrub" | "start" | "end";
+type TrimInputField = "start" | "end";
 
 const TIMELINE_THUMBNAILS = 16;
 const MIN_TRIM_SECONDS = 0.1;
@@ -41,6 +42,13 @@ function formatSeconds(value: number) {
 function formatSecondsInput(value: number) {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
   return safeValue.toFixed(2);
+}
+
+function parseSecondsInput(value: string) {
+  const normalizedValue = value.trim().replace(",", ".");
+  if (!normalizedValue) return null;
+  const parsedValue = Number(normalizedValue);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
 }
 
 function stopEditorMouseEvent(event: MouseEvent<HTMLElement>) {
@@ -84,6 +92,9 @@ export function VideoTimelineEditor({
   const [selectedTime, setSelectedTime] = useState(0);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
+  const [trimStartInput, setTrimStartInput] = useState(formatSecondsInput(0));
+  const [trimEndInput, setTrimEndInput] = useState(formatSecondsInput(0));
+  const [activeTrimInput, setActiveTrimInput] = useState<TrimInputField | null>(null);
   const [error, setError] = useState("");
   const [action, setAction] = useState<"frame" | "bounds" | "trim" | null>(null);
   const isLoading = !timeline && !error;
@@ -177,6 +188,18 @@ export function VideoTimelineEditor({
     };
   }, [artifactUrl, selectedLutId, selectedEffectId]);
 
+  useEffect(() => {
+    if (activeTrimInput !== "start") {
+      setTrimStartInput(formatSecondsInput(trimStart));
+    }
+  }, [activeTrimInput, trimStart]);
+
+  useEffect(() => {
+    if (activeTrimInput !== "end") {
+      setTrimEndInput(formatSecondsInput(trimEnd));
+    }
+  }, [activeTrimInput, trimEnd]);
+
   function timeFromPointer(event: PointerEvent<HTMLElement>) {
     const filmstrip = filmstripRef.current;
     if (!filmstrip || duration <= 0) return 0;
@@ -205,20 +228,50 @@ export function VideoTimelineEditor({
     setSelectedTime(clamp(time, 0, duration));
   }
 
-  function handleTrimStartInput(value: string) {
-    const parsedValue = Number.parseFloat(value);
-    if (!Number.isFinite(parsedValue)) return;
+  function applyTrimStartInput(value: string) {
+    const parsedValue = parseSecondsInput(value);
+    if (parsedValue === null) return trimStart;
     const nextStart = clamp(parsedValue, 0, Math.max(0, trimEnd - MIN_TRIM_SECONDS));
     setTrimStart(nextStart);
     setSelectedTime(nextStart);
+    return nextStart;
   }
 
-  function handleTrimEndInput(value: string) {
-    const parsedValue = Number.parseFloat(value);
-    if (!Number.isFinite(parsedValue)) return;
+  function applyTrimEndInput(value: string) {
+    const parsedValue = parseSecondsInput(value);
+    if (parsedValue === null) return trimEnd;
     const nextEnd = clamp(parsedValue, Math.min(duration, trimStart + MIN_TRIM_SECONDS), duration);
     setTrimEnd(nextEnd);
     setSelectedTime(nextEnd);
+    return nextEnd;
+  }
+
+  function handleTrimStartInput(value: string) {
+    setTrimStartInput(value);
+    applyTrimStartInput(value);
+  }
+
+  function handleTrimEndInput(value: string) {
+    setTrimEndInput(value);
+    applyTrimEndInput(value);
+  }
+
+  function commitTrimInput(field: TrimInputField) {
+    if (field === "start") {
+      const nextStart = applyTrimStartInput(trimStartInput);
+      setTrimStartInput(formatSecondsInput(nextStart));
+      return;
+    }
+
+    const nextEnd = applyTrimEndInput(trimEndInput);
+    setTrimEndInput(formatSecondsInput(nextEnd));
+  }
+
+  function handleTrimInputKeyDown(field: TrimInputField, event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      commitTrimInput(field);
+      event.currentTarget.blur();
+    }
   }
 
   function handleTimelinePointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -456,9 +509,15 @@ export function VideoTimelineEditor({
                 min={0}
                 max={Math.max(0, trimEnd - MIN_TRIM_SECONDS)}
                 step="0.01"
-                type="number"
-                value={formatSecondsInput(trimStart)}
+                type="text"
+                value={trimStartInput}
                 onChange={(event) => handleTrimStartInput(event.target.value)}
+                onBlur={() => {
+                  commitTrimInput("start");
+                  setActiveTrimInput(null);
+                }}
+                onFocus={() => setActiveTrimInput("start")}
+                onKeyDown={(event) => handleTrimInputKeyDown("start", event)}
               />
             </label>
             <label>
@@ -470,9 +529,15 @@ export function VideoTimelineEditor({
                 min={Math.min(duration, trimStart + MIN_TRIM_SECONDS)}
                 max={duration}
                 step="0.01"
-                type="number"
-                value={formatSecondsInput(trimEnd)}
+                type="text"
+                value={trimEndInput}
                 onChange={(event) => handleTrimEndInput(event.target.value)}
+                onBlur={() => {
+                  commitTrimInput("end");
+                  setActiveTrimInput(null);
+                }}
+                onFocus={() => setActiveTrimInput("end")}
+                onKeyDown={(event) => handleTrimInputKeyDown("end", event)}
               />
             </label>
             <span>{formatSeconds(trimDuration)}</span>

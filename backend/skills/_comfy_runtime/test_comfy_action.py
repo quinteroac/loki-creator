@@ -52,6 +52,42 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(env["LOKI_COMFY_USE_SAGE_ATTENTION"], "1")
         self.assertIn(str(Path(comfy_action.__file__).resolve().parent), env["PYTHONPATH"])
 
+    def test_run_command_repairs_missing_sage_attention_and_retries(self) -> None:
+        calls: list[list[str]] = []
+
+        class Result:
+            def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+                self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
+
+        def fake_run(command: list[str], *args: object, **kwargs: object) -> Result:
+            calls.append(command)
+            if command[:2] == ["comfy-videogen", "wan22-i2v"] and len(calls) == 1:
+                return Result(
+                    stdout=(
+                        '{"ok": false, "error": "LOKI_COMFY_USE_SAGE_ATTENTION=1 requires '
+                        'the sageattention package inside the comfy-agent-tools uv tool environment."}'
+                    ),
+                    returncode=1,
+                )
+            if "tool" in command and "sageattention" in command:
+                return Result()
+            return Result(stdout='{"ok": true}')
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch.dict(comfy_action.os.environ, {}, clear=True),
+            patch("comfy_action.subprocess.run", fake_run),
+            patch("comfy_action.shutil.which", return_value="/usr/bin/uv"),
+        ):
+            result = comfy_action.run_command(["comfy-videogen", "wan22-i2v"], Path(tmpdir))
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(calls[0][:2], ["comfy-videogen", "wan22-i2v"])
+        self.assertIn("sageattention", calls[1])
+        self.assertEqual(calls[2][:2], ["comfy-videogen", "wan22-i2v"])
+
     def test_comfy_image_edit_bernini_builds_single_frame_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
             image = Path(tmpdir) / "input.png"
@@ -1110,6 +1146,358 @@ class ComfyActionTest(unittest.TestCase):
                     Path(tmpdir) / "outputs",
                     media={"image": [], "audio": [], "video": [Path(tmpdir) / "input.mp4"]},
                 )
+
+    def test_comfy_upscale_video_builds_rtx_vsr_command_from_selected_video(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            video = Path(tmpdir) / "input.mp4"
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-upscale-video",
+                    "params": {
+                        "resolution": "4k",
+                        "quality": "HIGH",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": [video]},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-videogen", "rtx-upscale"])
+        self.assertNotIn("--models-dir", command)
+        self.assertEqual(command[command.index("--input-video") + 1], str(video))
+        self.assertEqual(command[command.index("--resolution") + 1], "4k")
+        self.assertEqual(command[command.index("--quality") + 1], "HIGH")
+        self.assertEqual(command[command.index("--out") + 1], str(Path(tmpdir) / "outputs"))
+        self.assertIn('"videogen.rtx-upscale": "rtx-vsr"', config)
+
+    def test_comfy_upscale_video_accepts_input_video_path_param(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            video = Path(tmpdir) / "explicit.mp4"
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-upscale-video",
+                    "params": {
+                        "inputVideoPath": str(video),
+                        "resolution": "1080p",
+                        "quality": "ultra",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[:2], ["comfy-videogen", "rtx-upscale"])
+        self.assertEqual(command[command.index("--input-video") + 1], str(video))
+        self.assertEqual(command[command.index("--quality") + 1], "ULTRA")
+
+    def test_comfy_upscale_video_builds_seedvr2_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.repo_root", return_value=Path(tmpdir)):
+            video = Path(tmpdir) / "input.mp4"
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-upscale-video",
+                    "params": {
+                        "engine": "seedvr2",
+                        "inputVideoPath": str(video),
+                        "resolution": "1440p",
+                        "processingMode": "single",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-videogen", "seedvr2-upscale"])
+        self.assertNotIn("--quality", command)
+        self.assertEqual(command[command.index("--input-video") + 1], str(video))
+        self.assertEqual(command[command.index("--resolution") + 1], "1440p")
+        self.assertEqual(command[command.index("--models-dir") + 1], str(Path(tmpdir) / ".loki" / "models" / "comfyui" / "seedvr2"))
+        self.assertEqual(command[command.index("--out") + 1], str(Path(tmpdir) / "outputs"))
+        self.assertIn('"videogen.seedvr2-upscale": "seedvr2"', config)
+
+    def test_comfy_upscale_video_long_mode_splits_upscales_and_concats_segments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_video = Path(tmpdir) / "input.mp4"
+            input_video.write_bytes(b"video")
+            out_dir = Path(tmpdir) / "outputs"
+            out_dir.mkdir()
+            command = [
+                "comfy-videogen",
+                "rtx-upscale",
+                "--input-video",
+                str(input_video),
+                "--resolution",
+                "4k",
+                "--quality",
+                "HIGH",
+                "--out",
+                str(out_dir),
+            ]
+            ffmpeg_commands: list[list[str]] = []
+            upscale_commands: list[list[str]] = []
+
+            class Result:
+                def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+                    self.stdout = stdout
+                    self.stderr = stderr
+                    self.returncode = returncode
+
+            def fake_subprocess_run(command: list[str], **_kwargs: object) -> Result:
+                if command[0] == "ffprobe":
+                    return Result(stdout="65.2\n")
+                self.assertEqual(command[0], "ffmpeg")
+                ffmpeg_commands.append(command)
+                Path(command[-1]).parent.mkdir(parents=True, exist_ok=True)
+                Path(command[-1]).write_bytes(b"mp4")
+                return Result()
+
+            def fake_run_command(segment_command: list[str], _cwd: Path) -> dict[str, object]:
+                upscale_commands.append(segment_command)
+                segment_out = Path(segment_command[segment_command.index("--out") + 1])
+                segment_out.mkdir(parents=True, exist_ok=True)
+                artifact = segment_out / "upscaled.mp4"
+                artifact.write_bytes(b"upscaled")
+                return {"kind": "video", "artifacts": [str(artifact)]}
+
+            with (
+                patch("comfy_action.shutil.which", return_value="/usr/bin/tool"),
+                patch("comfy_action.subprocess.run", fake_subprocess_run),
+                patch("comfy_action.run_command", fake_run_command),
+            ):
+                raw = comfy_action.run_chunked_video_upscale(command, Path(tmpdir), out_dir, "Upscale this video")
+
+        self.assertEqual(len(upscale_commands), 3)
+        split_commands = [cmd for cmd in ffmpeg_commands if "-ss" in cmd]
+        self.assertEqual(len(split_commands), 3)
+        self.assertEqual([cmd[cmd.index("-ss") + 1] for cmd in split_commands], ["0", "30", "60"])
+        self.assertEqual([cmd[cmd.index("-t") + 1] for cmd in split_commands], ["30", "30", "5.201"])
+        for split_command in split_commands:
+            self.assertLess(split_command.index("-i"), split_command.index("-ss"))
+            self.assertNotIn("copy", split_command)
+            self.assertEqual(split_command[split_command.index("-c:v") + 1], "libx264")
+            self.assertEqual(split_command[split_command.index("-map") + 1], "0:v:0")
+            self.assertIn("0:a?", split_command)
+        self.assertEqual(len([cmd for cmd in ffmpeg_commands if "-f" in cmd and "concat" in cmd]), 1)
+        self.assertEqual(raw["artifacts"][0]["kind"], "video")
+        self.assertEqual(Path(raw["artifacts"][0]["path"]).name, "rtx-upscaled-long.mp4")
+        self.assertEqual(raw["artifacts"][0]["metadata"]["segmentCount"], 3)
+        for segment_command in upscale_commands:
+            self.assertEqual(segment_command[:2], ["comfy-videogen", "rtx-upscale"])
+            self.assertNotIn("--models-dir", segment_command)
+            self.assertEqual(segment_command[segment_command.index("--resolution") + 1], "4k")
+            self.assertEqual(segment_command[segment_command.index("--quality") + 1], "HIGH")
+
+    def test_comfy_upscale_video_seedvr2_long_mode_uses_same_chunk_pipeline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_video = Path(tmpdir) / "input.mp4"
+            input_video.write_bytes(b"video")
+            out_dir = Path(tmpdir) / "outputs"
+            out_dir.mkdir()
+            command = [
+                "comfy-videogen",
+                "seedvr2-upscale",
+                "--input-video",
+                str(input_video),
+                "--resolution",
+                "1080p",
+                "--models-dir",
+                str(Path(tmpdir) / "models" / "seedvr2"),
+                "--out",
+                str(out_dir),
+            ]
+            ffmpeg_commands: list[list[str]] = []
+            upscale_commands: list[list[str]] = []
+
+            class Result:
+                def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+                    self.stdout = stdout
+                    self.stderr = stderr
+                    self.returncode = returncode
+
+            def fake_subprocess_run(command: list[str], **_kwargs: object) -> Result:
+                if command[0] == "ffprobe":
+                    return Result(stdout="61\n")
+                self.assertEqual(command[0], "ffmpeg")
+                ffmpeg_commands.append(command)
+                Path(command[-1]).parent.mkdir(parents=True, exist_ok=True)
+                Path(command[-1]).write_bytes(b"mp4")
+                return Result()
+
+            def fake_run_command(segment_command: list[str], _cwd: Path) -> dict[str, object]:
+                upscale_commands.append(segment_command)
+                segment_out = Path(segment_command[segment_command.index("--out") + 1])
+                segment_out.mkdir(parents=True, exist_ok=True)
+                artifact = segment_out / "seedvr2.mp4"
+                artifact.write_bytes(b"seedvr2")
+                return {"kind": "video", "artifacts": [str(artifact)]}
+
+            with (
+                patch("comfy_action.shutil.which", return_value="/usr/bin/tool"),
+                patch("comfy_action.subprocess.run", fake_subprocess_run),
+                patch("comfy_action.run_command", fake_run_command),
+            ):
+                raw = comfy_action.run_chunked_video_upscale(command, Path(tmpdir), out_dir, "Upscale with SeedVR2")
+
+        self.assertEqual(len(upscale_commands), 3)
+        self.assertEqual(len([cmd for cmd in ffmpeg_commands if "-ss" in cmd]), 3)
+        self.assertEqual(raw["artifacts"][0]["kind"], "video")
+        self.assertEqual(Path(raw["artifacts"][0]["path"]).name, "seedvr2-upscaled-long.mp4")
+        self.assertEqual(raw["artifacts"][0]["metadata"]["mode"], "seedvr2-upscale-long")
+        self.assertEqual(raw["artifacts"][0]["metadata"]["engine"], "seedvr2")
+        self.assertEqual(raw["artifacts"][0]["metadata"]["segmentCount"], 3)
+        self.assertEqual(raw["artifacts"][0]["metadata"]["resolution"], "1080p")
+        self.assertNotIn("quality", raw["artifacts"][0]["metadata"])
+        for segment_command in upscale_commands:
+            self.assertEqual(segment_command[:2], ["comfy-videogen", "seedvr2-upscale"])
+            self.assertIn("--models-dir", segment_command)
+
+    def test_comfy_upscale_video_repairs_missing_dependency_and_retries(self) -> None:
+        calls: list[list[str]] = []
+
+        class Result:
+            def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+                self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
+
+        def fake_subprocess_run(command: list[str], **_kwargs: object) -> Result:
+            calls.append(command)
+            if command[:2] == ["comfy-videogen", "rtx-upscale"] and len(calls) == 1:
+                return Result(stdout='{"ok": false, "error_type": "missing_dependency", "error": "nvidia-vfx missing"}', returncode=1)
+            if command[:3] == ["/usr/bin/uv", "tool", "upgrade"]:
+                return Result(stdout="upgraded")
+            return Result(stdout='{"ok": true, "kind": "video", "artifacts": ["/tmp/upscaled.mp4"]}')
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("comfy_action.subprocess.run", fake_subprocess_run),
+        ):
+            result = comfy_action.run_command(["comfy-videogen", "rtx-upscale"], Path(tmpdir))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            calls[1],
+            [
+                "/usr/bin/uv",
+                "tool",
+                "install",
+                "--force",
+                "--with",
+                "sageattention",
+                "--with",
+                "nvidia-vfx",
+                "git+https://github.com/quinteroac/comfy-agent-tools",
+            ],
+        )
+        self.assertEqual(calls[2][:2], ["comfy-videogen", "rtx-upscale"])
+
+    def test_comfy_upscale_video_repairs_missing_seedvr2_subcommand_and_retries(self) -> None:
+        calls: list[list[str]] = []
+
+        class Result:
+            def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+                self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
+
+        def fake_subprocess_run(command: list[str], **_kwargs: object) -> Result:
+            calls.append(command)
+            if command[:2] == ["comfy-videogen", "seedvr2-upscale"] and len(calls) == 1:
+                return Result(stderr="argument command: invalid choice: 'seedvr2-upscale'", returncode=2)
+            if command[:3] == ["/usr/bin/uv", "tool", "upgrade"]:
+                return Result(stdout="upgraded")
+            return Result(stdout='{"ok": true, "kind": "video", "artifacts": ["/tmp/seedvr2.mp4"]}')
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("comfy_action.subprocess.run", fake_subprocess_run),
+        ):
+            result = comfy_action.run_command(["comfy-videogen", "seedvr2-upscale"], Path(tmpdir))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            calls[1],
+            [
+                "/usr/bin/uv",
+                "tool",
+                "install",
+                "--force",
+                "--with",
+                "sageattention",
+                "--with",
+                "nvidia-vfx",
+                "git+https://github.com/quinteroac/comfy-agent-tools",
+            ],
+        )
+        self.assertEqual(calls[2][:2], ["comfy-videogen", "seedvr2-upscale"])
+
+    def test_comfy_upscale_video_does_not_repair_hardware_required(self) -> None:
+        calls: list[list[str]] = []
+
+        class Result:
+            stdout = '{"ok": false, "error_type": "hardware_required", "error": "RTX GPU required"}'
+            stderr = ""
+            returncode = 1
+
+        def fake_subprocess_run(command: list[str], **_kwargs: object) -> Result:
+            calls.append(command)
+            return Result()
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("comfy_action.subprocess.run", fake_subprocess_run),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "hardware_required"):
+                comfy_action.run_command(["comfy-videogen", "rtx-upscale"], Path(tmpdir))
+
+        self.assertEqual(calls, [["comfy-videogen", "rtx-upscale"]])
+
+    def test_comfy_upscale_video_requires_video_resolution_and_quality(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            payload = {
+                "skillId": "comfy-upscale-video",
+                "params": {"resolution": "1080p", "quality": "ULTRA"},
+            }
+            with self.assertRaisesRegex(RuntimeError, "requires one input video"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {"quality": "ULTRA", "inputVideoPath": str(Path(tmpdir) / "input.mp4")}
+            with self.assertRaisesRegex(RuntimeError, "requires params.resolution"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {"resolution": "1080p", "inputVideoPath": str(Path(tmpdir) / "input.mp4")}
+            with self.assertRaisesRegex(RuntimeError, "requires params.quality"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {"resolution": "2160p", "quality": "ULTRA", "inputVideoPath": str(Path(tmpdir) / "input.mp4")}
+            with self.assertRaisesRegex(RuntimeError, "params.resolution"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {"resolution": "1080p", "quality": "BEST", "inputVideoPath": str(Path(tmpdir) / "input.mp4")}
+            with self.assertRaisesRegex(RuntimeError, "params.quality"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {"engine": "seedvr2", "resolution": "8k", "inputVideoPath": str(Path(tmpdir) / "input.mp4")}
+            with self.assertRaisesRegex(RuntimeError, "SeedVR2 params.resolution"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {"engine": "seedvr2", "resolution": "480p", "inputVideoPath": str(Path(tmpdir) / "input.mp4")}
+            with self.assertRaisesRegex(RuntimeError, "SeedVR2 params.resolution"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
+
+            payload["params"] = {
+                "resolution": "1080p",
+                "quality": "ULTRA",
+                "processingMode": "automatic",
+                "inputVideoPath": str(Path(tmpdir) / "input.mp4"),
+            }
+            with self.assertRaisesRegex(RuntimeError, "params.processingMode"):
+                comfy_action.build_cli_command(payload, Path(tmpdir) / "outputs", media={"image": [], "audio": [], "video": []})
 
     def test_videoedit_bernini_builds_reference_guided_command(self) -> None:
         with (
