@@ -216,3 +216,6 @@ Write a single-shot WAN motion prompt that describes the transition or image
 animation, subject motion, camera movement, atmosphere, and what should remain
 anchored to the selected image inputs. Do not ask for collages or merged
 candidates; previews return three separate video cards.
+If the agent does not already have a trusted visual description of the selected
+image inputs, call `describe_loki_image` first and use its concrete traits as
+the visual anchor.

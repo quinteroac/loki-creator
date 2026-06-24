@@ -96,6 +96,10 @@ boot, for example:
 LOKI_MODEL_CAPABILITIES=imagegen.generate,videogen.i2v
 ```
 
+`comfy-imagedescribe` expects the HuggingFace model directory
+`LLM/Qwen-VL/Qwen3-VL-2B-Instruct` under `/workspace/.loki/models/comfyui`.
+This Qwen3-VL directory is not auto-downloaded by `comfy-models`.
+
 ## Health Check
 
 Run:

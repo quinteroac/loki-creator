@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source /usr/local/lib/loki-runpod/common.sh
+loki-comfy-bootstrap
+exec "${LOKI_COMFY_TOOL_BIN_DIR}/comfy-imagedescribe" "$@"

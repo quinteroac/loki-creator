@@ -39,7 +39,7 @@ log "checking required CLIs"
 for command_name in pi codex grok agy runpodctl; do
   check_command "$command_name"
 done
-for command_name in comfy-imagegen comfy-videogen comfy-musicgen comfy-models; do
+for command_name in comfy-imagegen comfy-imagedescribe comfy-videogen comfy-musicgen comfy-models; do
   check_bootstrap_command "$command_name"
 done
 

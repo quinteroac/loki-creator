@@ -1,6 +1,6 @@
 ---
 name: comfy-tools-setup
-description: Bootstrap and validate the comfy-agent-tools Python CLIs for agent use. Use when the user asks to setup, install, update, or diagnose comfy-agent-tools; when a required CLI such as comfy-imagegen, comfy-videogen, comfy-musicgen, or comfy-models is missing; or before another comfy skill runs a CLI on a new machine.
+description: Bootstrap and validate the comfy-agent-tools Python CLIs for agent use. Use when the user asks to setup, install, update, or diagnose comfy-agent-tools; when a required CLI such as comfy-imagegen, comfy-imagedescribe, comfy-videogen, comfy-musicgen, or comfy-models is missing; or before another comfy skill runs a CLI on a new machine.
 metadata:
   loki:
     visibility: internal
@@ -64,6 +64,7 @@ Validate that the expected commands exist:
 
 ```bash
 command -v comfy-imagegen
+command -v comfy-imagedescribe
 command -v comfy-videogen
 command -v comfy-musicgen
 command -v comfy-models
@@ -104,6 +105,12 @@ If validation reports missing models, switch to `comfy-model-downloader` when th
 user is trying to run a supported built-in capability. Use
 `comfy-model-onboarding` for custom checkpoints, changed defaults, or unsupported
 profiles.
+
+`comfy-imagedescribe` uses a HuggingFace directory, not a single safetensors
+file. The expected default model folder is
+`LLM/Qwen-VL/Qwen3-VL-2B-Instruct` under the configured models directory. Do not
+auto-download it; if missing, tell the user to place `Qwen/Qwen3-VL-2B-Instruct`
+there.
 
 ## Skill Installation
 

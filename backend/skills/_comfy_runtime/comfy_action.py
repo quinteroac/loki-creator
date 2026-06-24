@@ -111,6 +111,17 @@ RTX_UPSCALE_RESOLUTIONS = {"480p", "720p", "1080p", "1440p", "4k", "8k"}
 SEEDVR2_UPSCALE_RESOLUTIONS = {"720p", "1080p", "1440p", "4k"}
 RTX_UPSCALE_QUALITIES = {"LOW", "MEDIUM", "HIGH", "ULTRA"}
 SEEDVR2_MODELS_DIR = Path(".loki") / "models" / "comfyui" / "seedvr2"
+DEFAULT_IMAGE_DESCRIBE_PROMPT = (
+    "Describe this image in detail, including subject, composition, style, lighting, "
+    "colors, pose, clothing/materials, background, visible text, and camera angle."
+)
+COMFY_AGENT_TOOL_COMMANDS = {
+    "comfy-imagegen",
+    "comfy-imagedescribe",
+    "comfy-videogen",
+    "comfy-musicgen",
+    "comfy-models",
+}
 
 
 def read_payload() -> dict[str, Any]:
@@ -140,6 +151,14 @@ def as_int(value: object) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def truthy_param(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
 
 
 def extension_for_mime(mime_type: str) -> str:
@@ -1898,6 +1917,36 @@ def build_imagegen_command(
     return command, cwd
 
 
+def build_imagedescribe_command(params: dict[str, Any], prompt: str, out_dir: Path, media: dict[str, list[Path]]) -> tuple[list[str], Path]:
+    image_input = first_text(params.get("inputPath"), params.get("imagePath")) or str(selected_input(media, "image") or "")
+    if not image_input:
+        raise RuntimeError("comfy-imagedescribe requires one selected or attached local image artifact.")
+
+    describe_prompt = first_text(prompt, params.get("describePrompt"), params.get("instruction")) or DEFAULT_IMAGE_DESCRIBE_PROMPT
+    command = [
+        "comfy-imagedescribe",
+        "describe",
+        "--models-dir",
+        str(models_dir()),
+        "--input",
+        image_input,
+        "--prompt",
+        describe_prompt,
+        "--out",
+        str(out_dir),
+        "--no-manifest",
+    ]
+    if as_int(params.get("maxLength")) is not None:
+        command.extend(["--max-length", str(as_int(params.get("maxLength")))])
+    if as_int(params.get("seed")) is not None:
+        command.extend(["--seed", str(as_int(params.get("seed")))])
+    if truthy_param(params.get("greedy")):
+        command.append("--greedy")
+
+    cwd = write_run_comfy_config(out_dir.parent, capability="imagedescribe.describe", model_profile="qwen3vl-2b-instruct")
+    return command, cwd
+
+
 def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, list[Path]]) -> tuple[list[str], Path]:
     skill_id = first_text(payload.get("skillId"))
     params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
@@ -1945,6 +1994,9 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             require_input_image=True,
             skill_label="comfy-image-upscale",
         )
+
+    if skill_id == "comfy-imagedescribe":
+        return build_imagedescribe_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
 
     if skill_id == "comfy-s2vidgen":
         return build_s2vidgen_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
@@ -2276,7 +2328,7 @@ def repair_rtx_upscale_dependencies(command: list[str], cwd: Path, env: dict[str
 def ensure_comfy_cli(command: list[str], cwd: Path) -> None:
     if not command or shutil.which(command[0]) is not None:
         return
-    if is_video_upscale_command(command):
+    if Path(command[0]).name in COMFY_AGENT_TOOL_COMMANDS:
         repair_comfy_agent_tools(command, cwd, {**os.environ, "PYTHONUNBUFFERED": "1"})
         if shutil.which(command[0]) is not None:
             return
@@ -2333,7 +2385,7 @@ def run_command(command: list[str], cwd: Path) -> dict[str, Any]:
 def validate_comfy_cuda(command: list[str], cwd: Path, env: dict[str, str]) -> None:
     if not env_value_enabled(env.get("LOKI_REQUIRE_COMFY_CUDA")):
         return
-    if not command or Path(command[0]).name not in {"comfy-imagegen", "comfy-videogen", "comfy-musicgen"}:
+    if not command or Path(command[0]).name not in {"comfy-imagegen", "comfy-imagedescribe", "comfy-videogen", "comfy-musicgen"}:
         return
 
     executable = shutil.which(command[0])
@@ -2479,6 +2531,18 @@ def raw_result_from_cli(payload: dict[str, Any], command: list[str], prompt: str
                 for path in artifacts
                 if isinstance(path, str)
             ]
+        }
+
+    description = first_text(payload.get("description"))
+    if first_text(payload.get("kind")) == "text" and description:
+        return {
+            "text": description,
+            "metadata": {
+                **payload,
+                "title": "Image description",
+                "imageDescription": description,
+                "tool": command[0] if command else "comfy-imagedescribe",
+            },
         }
 
     return {

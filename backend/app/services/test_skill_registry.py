@@ -21,6 +21,18 @@ class SkillRegistryTest(unittest.TestCase):
         self.assertIn("videoResolution", argument_ids)
         self.assertIn("aspectRatio", argument_ids)
 
+    def test_comfy_imagedescribe_skill_is_internal(self) -> None:
+        skill = SkillRegistry().get_skill("comfy-imagedescribe")
+
+        self.assertIsNotNone(skill)
+        assert skill is not None
+        self.assertEqual(skill.visibility, "internal")
+        self.assertEqual(skill.output.kind, "text")
+        self.assertIn("image-description", skill.capabilities)
+        self.assertIsNotNone(skill.action)
+        assert skill.action is not None
+        self.assertEqual(skill.action.command, ["python3", "../_comfy_runtime/comfy_action.py"])
+
 
 if __name__ == "__main__":
     unittest.main()

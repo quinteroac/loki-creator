@@ -88,6 +88,37 @@ class ComfyActionTest(unittest.TestCase):
         self.assertIn("sageattention", calls[1])
         self.assertEqual(calls[2][:2], ["comfy-videogen", "wan22-i2v"])
 
+    def test_ensure_comfy_cli_repairs_missing_imagedescribe(self) -> None:
+        which_calls = 0
+        repairs: list[list[str]] = []
+
+        def fake_which(command: str) -> str | None:
+            nonlocal which_calls
+            if command == "uv":
+                return "/usr/bin/uv"
+            which_calls += 1
+            return None if which_calls == 1 else f"/usr/bin/{command}"
+
+        def fake_run(command: list[str], *args: object, **kwargs: object) -> object:
+            repairs.append(command)
+
+            class Result:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return Result()
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", fake_which),
+            patch("comfy_action.subprocess.run", fake_run),
+        ):
+            comfy_action.ensure_comfy_cli(["comfy-imagedescribe", "describe"], Path(tmpdir))
+
+        self.assertEqual(repairs[0][:4], ["/usr/bin/uv", "tool", "install", "--force"])
+        self.assertIn("git+https://github.com/quinteroac/comfy-agent-tools", repairs[0])
+
     def test_comfy_image_edit_bernini_builds_single_frame_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
             image = Path(tmpdir) / "input.png"
@@ -539,6 +570,58 @@ class ComfyActionTest(unittest.TestCase):
             )
 
         self.assertEqual(raw["artifacts"][0]["prompt"], "Normal prompt")
+
+    def test_comfy_imagedescribe_builds_describe_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"image")
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-imagedescribe",
+                    "prompt": "Describe the character, wardrobe, lighting, and composition.",
+                    "params": {"maxLength": 256, "seed": 7, "greedy": True},
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagedescribe", "describe"])
+        self.assertEqual(command[command.index("--models-dir") + 1], str(Path(tmpdir) / "models"))
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[command.index("--prompt") + 1], "Describe the character, wardrobe, lighting, and composition.")
+        self.assertEqual(command[command.index("--out") + 1], str(Path(tmpdir) / "outputs"))
+        self.assertIn("--no-manifest", command)
+        self.assertEqual(command[command.index("--max-length") + 1], "256")
+        self.assertEqual(command[command.index("--seed") + 1], "7")
+        self.assertIn("--greedy", command)
+        self.assertIn('"imagedescribe.describe": "qwen3vl-2b-instruct"', config)
+
+    def test_comfy_imagedescribe_requires_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            with self.assertRaisesRegex(RuntimeError, "requires one selected or attached local image artifact"):
+                comfy_action.build_cli_command(
+                    {"skillId": "comfy-imagedescribe", "prompt": "Describe this image.", "params": {}},
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
+    def test_raw_result_converts_imagedescribe_description_to_text_metadata(self) -> None:
+        raw = comfy_action.raw_result_from_cli(
+            {
+                "ok": True,
+                "kind": "text",
+                "mode": "describe",
+                "input": "/tmp/input.png",
+                "description": "A portrait with warm studio lighting.",
+            },
+            ["comfy-imagedescribe", "describe"],
+            "Describe this image.",
+        )
+
+        self.assertEqual(raw["text"], "A portrait with warm studio lighting.")
+        self.assertEqual(raw["metadata"]["imageDescription"], "A portrait with warm studio lighting.")
+        self.assertEqual(raw["metadata"]["tool"], "comfy-imagedescribe")
 
     def test_anima_generation_preserves_natural_language_prompt(self) -> None:
         original_prompt = "Una chica samurai en un bosque lluvioso con luz cinematica"

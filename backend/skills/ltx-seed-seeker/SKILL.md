@@ -129,6 +129,9 @@ best to specific shot direction, so write one flowing present-tense paragraph
 with subject motion, camera movement, spatial layout, lighting, material detail,
 and atmosphere. Match the amount of detail to the selected duration; longer
 clips need enough action beats to fill the time.
+If the agent does not already have a trusted visual description of the selected
+image, call `describe_loki_image` first and use its concrete traits as the visual
+anchor.
 
 For image-to-video seed exploration, prioritize verbs and motion over static
 description:

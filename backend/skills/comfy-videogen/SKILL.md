@@ -281,6 +281,8 @@ Comfy image-conditioning input. Before invoking the skill action, describe the
 reference image in the final generation prompt: subject identity, composition,
 style, lighting, materials, palette, and any details the video should preserve.
 Then add the intended motion, camera behavior, temporal change, and audio cues.
+If the agent does not already have a trusted visual description, call
+`describe_loki_image` first and fold its concrete traits into the final prompt.
 
 Duration, WAN FPS, and WAN step choices:
 

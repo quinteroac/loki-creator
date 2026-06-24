@@ -196,6 +196,11 @@ LOKI_MODEL_CAPABILITIES=imagegen.generate,videogen.i2v
 Keep model downloads selective. The default image does not bake models into the
 container.
 
+`comfy-imagedescribe` expects the HuggingFace model directory
+`LLM/Qwen-VL/Qwen3-VL-2B-Instruct` under this models directory. It is not
+downloaded automatically by `comfy-models`; place `Qwen/Qwen3-VL-2B-Instruct`
+there when local image-description fallback is needed.
+
 ## Image Files
 
 The RunPod implementation lives in:

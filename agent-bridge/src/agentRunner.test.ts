@@ -12,6 +12,10 @@ import {
   parseSkillParamsJson,
   selectSkillsForAgent,
   skillParamsFromGrokBuildText,
+  selectDescribeImageReference,
+  shouldExposeDescribeLokiImageTool,
+  validateIdeogram4ParamsJson,
+  validateReferencePromptPlaceholders,
   validateSelectedBboxGuidePropagation,
 } from "./agentRunner";
 import { collectLocalMediaReferences, resolveLocalArtifactPath } from "./mediaReferences";
@@ -162,6 +166,43 @@ describe("agent bridge contracts", () => {
     expect(() => parseSkillParamsJson("[]")).toThrow("paramsJson must be a JSON object.");
   });
 
+  test("ideogram4 params validation rejects incomplete structured params", () => {
+    const errors = validateIdeogram4ParamsJson({
+      prompt: "Premium poster",
+      paramsJson: JSON.stringify({
+        mode: "t2i",
+        qualityProfile: "Default",
+        aspectRatio: "1:1",
+        styleArtStyle: "poster art",
+        background: "plain studio background",
+        objects: [{ bbox: [120, 120, 880, 880], description: "centered subject" }],
+      }),
+    });
+
+    expect(errors.join(" ")).toContain("styleAesthetics");
+    expect(errors.join(" ")).toContain("styleLighting");
+    expect(errors.join(" ")).toContain("styleMedium");
+  });
+
+  test("ideogram4 params validation accepts complete structured params", () => {
+    const errors = validateIdeogram4ParamsJson({
+      prompt: "Premium poster",
+      paramsJson: JSON.stringify({
+        mode: "t2i",
+        qualityProfile: "Default",
+        aspectRatio: "1:1",
+        styleAesthetics: "bold clean graphic design, high detail",
+        styleLighting: "flat even studio lighting",
+        styleMedium: "illustration",
+        styleArtStyle: "poster art",
+        background: "plain studio background",
+        objects: [{ bbox: [120, 120, 880, 880], description: "centered subject" }],
+      }),
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   test("direct Pi tool routing is explicit", () => {
     expect(directPiToolForSkill(makeSkill({ id: "imagegen" }))).toBeUndefined();
     expect(directPiToolForSkill(makeSkill({ id: "comfy-image-generate" }))).toBeUndefined();
@@ -209,6 +250,124 @@ describe("agent bridge contracts", () => {
 
     expect(prompt).toContain("The user selected these skills explicitly");
     expect(prompt).toContain("For imagegen, call loki_skill_imagegen");
+  });
+
+  test("explicit local Comfy image prompt does not steer adult requests into plain-text refusals", () => {
+    const request: AgentRunRequest = {
+      prompt: "create an adult fantasy pinup illustration",
+      agentId: "base-agent",
+      model: "GPT-5.4 mini (openai-codex)",
+      skills: ["comfy-image-generate"],
+      selectedCards: [],
+      context: {},
+    };
+
+    const prompt = buildAgentPrompt(
+      request,
+      [makeSkill({ id: "comfy-image-generate", name: "comfy-image-generate" })],
+      "pi-tools",
+    );
+
+    expect(prompt).toContain("adult/NSFW visual intent is a valid local model prompt");
+    expect(prompt).toContain("Do not answer with refusal text");
+    expect(prompt).toContain("do not replace it with a clothed or softer substitute");
+    expect(prompt).toContain("Otherwise invoke exactly one selected Loki skill tool");
+  });
+
+  test("agent prompt tells reference image skills to use describe_loki_image", () => {
+    const request: AgentRunRequest = {
+      prompt: "make a new image from this reference",
+      agentId: "base-agent",
+      model: "GPT-5.4 mini (openai-codex)",
+      skills: ["comfy-image-generate"],
+      selectedCards: ["card_1"],
+      context: {
+        localMediaReferences: [
+          {
+            kind: "image",
+            artifactUrl: "/api/artifacts/imports/reference.png",
+            path: "/home/victor/dev/loki-creator/.loki/imports/reference.png",
+            source: "selected-card-media-asset",
+            cardId: "card_1",
+          },
+        ],
+      },
+    };
+
+    const prompt = buildAgentPrompt(
+      request,
+      [makeSkill({ id: "comfy-image-generate", name: "comfy-image-generate" })],
+      "pi-tools",
+    );
+
+    expect(prompt).toContain("Image description fallback");
+    expect(prompt).toContain("call describe_loki_image");
+  });
+
+  test("describe_loki_image exposure and selection use local image references", () => {
+    const request: AgentRunRequest = {
+      prompt: "describe selected",
+      agentId: "base-agent",
+      model: "GPT-5.4 mini (openai-codex)",
+      skills: ["comfy-image-generate"],
+      selectedCards: ["card_1", "card_2"],
+      context: {
+        localMediaReferences: [
+          {
+            kind: "image",
+            artifactUrl: "/api/artifacts/imports/first.png",
+            path: "/home/victor/dev/loki-creator/.loki/imports/first.png",
+            source: "selected-card-media-asset",
+            cardId: "card_1",
+          },
+          {
+            kind: "image",
+            artifactUrl: "/api/artifacts/imports/second.png",
+            path: "/home/victor/dev/loki-creator/.loki/imports/second.png",
+            source: "selected-card-media-asset",
+            cardId: "card_2",
+          },
+        ],
+      },
+    };
+
+    expect(shouldExposeDescribeLokiImageTool(request)).toBe(true);
+    expect(selectDescribeImageReference(request, {})?.artifactUrl).toBe("/api/artifacts/imports/first.png");
+    expect(selectDescribeImageReference(request, { cardId: "card_2" })?.artifactUrl).toBe("/api/artifacts/imports/second.png");
+    expect(selectDescribeImageReference(request, { artifactUrl: "/api/artifacts/imports/second.png" })?.cardId).toBe("card_2");
+    expect(shouldExposeDescribeLokiImageTool({ ...request, context: { localMediaReferences: [] } })).toBe(false);
+  });
+
+  test("reference placeholder guard rejects ungrounded r2i prompts", () => {
+    const request: AgentRunRequest = {
+      prompt: "make a new image from this reference",
+      agentId: "base-agent",
+      model: "GPT-5.4 mini (openai-codex)",
+      skills: ["comfy-image-generate"],
+      selectedCards: ["card_1"],
+      context: {
+        localMediaReferences: [
+          {
+            kind: "image",
+            artifactUrl: "/api/artifacts/imports/reference.png",
+            path: "/home/victor/dev/loki-creator/.loki/imports/reference.png",
+            source: "selected-card-media-asset",
+            cardId: "card_1",
+          },
+        ],
+      },
+    };
+
+    const errors = validateReferencePromptPlaceholders(
+      request,
+      makeSkill({ id: "comfy-image-generate", name: "comfy-image-generate" }),
+      {
+        prompt: "Create a new image based on the selected image.",
+        paramsJson: JSON.stringify({ mode: "r2i" }),
+      },
+    );
+
+    expect(errors.join(" ")).toContain("Call describe_loki_image");
   });
 
   test("grok-build prompt asks for bridge-executable skill params", () => {

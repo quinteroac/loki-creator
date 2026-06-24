@@ -106,6 +106,8 @@ the user explicitly asks for them.
 
 For `r2i`, require at least one selected or attached local image artifact. Do
 not use inline previews, data URLs, or vague placeholders.
+If the agent does not already have a trusted visual description, call
+`describe_loki_image` before composing the structured Ideogram prompt.
 
 ## Required paramsJson
 
@@ -175,6 +177,8 @@ For reference-informed prompts:
 
 - Describe what is visibly present in the selected images: subject count, pose,
   materials, style, palette, camera angle, layout, text, and background.
+- If those traits are not already trusted context, call `describe_loki_image`
+  and use its description as the visual grounding source.
 - Write the final image prompt as a standalone visual description.
 - Do not include phrases such as `reference image`, `selected image`, `based on
   the image`, `imagen de referencia`, `imagen seleccionada`, `recrear la
