@@ -51,6 +51,7 @@ Only configure these architectures in v1:
 - `qwen-image-edit`: base profile `qwen-edit2511`, capabilities `imagegen.generate`, `imagegen.edit`.
 - `anima`: base profile `anima-base`, capability `imagegen.generate`.
 - `flux-klein`: base profile `flux-klein-9b-snofs`, capabilities `imagegen.generate`, `imagegen.edit`.
+- `krea2`: base profile `krea2-turbo`, capability `imagegen.krea2-generate`.
 - `upscale-model`: base profile `clear-reality`, capability `imagegen.upscale`.
 - `ltx23`: base profile `ltx23-10eros`, capabilities `videogen.t2v`, `videogen.i2v`, `videogen.flf2v`, `videogen.ia2av`.
 - `ace-step-1.5`: base profile `ace15-base`, capability `musicgen.generate`.
@@ -138,6 +139,20 @@ redistribute the weights, and do not use this profile for a public/commercial
 generation service without separate licensing. Flux Klein edits follow the
 official distilled image-edit workflow from `comfy-diffusion`.
 
+Krea2 Turbo:
+
+```bash
+uv run comfy-models download-profile krea2-turbo --dry-run
+uv run comfy-models download-profile krea2-turbo --yes
+uv run comfy-models validate-profile krea2-turbo
+uv run comfy-models set-default imagegen.krea2-generate krea2-turbo
+```
+
+This profile uses `diffusion_models/krea2_turbo_fp8_scaled.safetensors`,
+`text_encoders/qwen3vl_4b_fp8_scaled.safetensors`, and
+`vae/qwen_image_vae.safetensors`. It is image generation only and does not
+support `imagegen.edit` or ad hoc `--extra-lora` arguments.
+
 ACE-Step 1.5 variant:
 
 ```bash
@@ -152,6 +167,7 @@ uv run comfy-models set-default musicgen.generate my-ace15
 ## Smoke Tests
 
 - Image generate: `uv run comfy-imagegen generate --prompt "simple cinematic portrait" --width 512 --height 512`
+- Krea2 generate: `uv run comfy-imagegen krea2-generate --prompt "simple cinematic portrait" --width 512 --height 512`
 - Image edit: use a small existing PNG and a simple prompt.
 - Upscale: use a small existing PNG.
 - Video: use `--length 49 --fps 24`.

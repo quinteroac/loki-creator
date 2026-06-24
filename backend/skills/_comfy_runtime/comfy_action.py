@@ -122,6 +122,9 @@ COMFY_AGENT_TOOL_COMMANDS = {
     "comfy-musicgen",
     "comfy-models",
 }
+COMFY_REQUIRED_SUBCOMMANDS = {
+    ("comfy-imagegen", "krea2-generate"),
+}
 
 
 def read_payload() -> dict[str, Any]:
@@ -593,6 +596,11 @@ def normalize_model_profile(value: str) -> str:
         "qwen-edit-2511": "qwen-edit2511",
         "flux-klein-snofs": "flux-klein-9b-snofs",
         "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
+        "krea": "krea2-turbo",
+        "krea2": "krea2-turbo",
+        "krea-2": "krea2-turbo",
+        "krea2-fp8": "krea2-turbo",
+        "krea2-turbo-fp8": "krea2-turbo",
         "bernini": BERNINI_IMAGE_PROFILE,
         "wan22-bernini": BERNINI_IMAGE_PROFILE,
         "wan-bernini-image": BERNINI_IMAGE_PROFILE,
@@ -1013,6 +1021,8 @@ def maybe_adjust_imagegen_mode_for_profile(mode: str, model_profile: str) -> str
         return "grok-generate"
     if model_profile == "grok-imagine-api" and mode == "edit":
         return "grok-edit"
+    if model_profile == "krea2-turbo" and mode == "generate":
+        return "krea2-generate"
     return mode
 
 
@@ -1047,6 +1057,8 @@ def lora_architecture_for_profile(model_profile: str) -> str:
         return "qwen-image-edit"
     if model_profile == "flux-klein-9b-snofs":
         return "flux-klein"
+    if model_profile == "krea2-turbo":
+        return "krea2"
     return ""
 
 
@@ -1885,9 +1897,9 @@ def build_imagegen_command(
         )
 
     command = ["comfy-imagegen", mode, "--out", str(out_dir)]
-    if mode in {"generate", "edit", "upscale"}:
+    if mode in {"generate", "edit", "upscale", "krea2-generate"}:
         command.extend(["--models-dir", str(model_dir)])
-    if mode in {"generate", "edit", "grok-generate", "grok-edit"}:
+    if mode in {"generate", "edit", "grok-generate", "grok-edit", "krea2-generate"}:
         command.extend(["--prompt", prompt])
     if mode in {"edit", "upscale", "grok-edit"}:
         image_input = first_text(params.get("inputPath")) or str(selected_input(media, "image") or "")
@@ -1902,7 +1914,7 @@ def build_imagegen_command(
         input_width, input_height = image_dimensions(image_input_path)
         if input_width and input_height:
             width, height = divisible_by_16(input_width), divisible_by_16(input_height)
-    if width and height and mode == "generate":
+    if width and height and mode in {"generate", "krea2-generate"}:
         command.extend(["--width", str(width), "--height", str(height)])
     if width and height and mode == "edit" and model_profile == "flux-klein-9b-snofs":
         command.extend(["--width", str(width), "--height", str(height)])
@@ -2326,15 +2338,35 @@ def repair_rtx_upscale_dependencies(command: list[str], cwd: Path, env: dict[str
 
 
 def ensure_comfy_cli(command: list[str], cwd: Path) -> None:
-    if not command or shutil.which(command[0]) is not None:
+    if not command:
+        return
+    executable = shutil.which(command[0])
+    if executable is not None and not comfy_cli_needs_upgrade(command, cwd, {**os.environ, "PYTHONUNBUFFERED": "1"}):
         return
     if Path(command[0]).name in COMFY_AGENT_TOOL_COMMANDS:
         repair_comfy_agent_tools(command, cwd, {**os.environ, "PYTHONUNBUFFERED": "1"})
-        if shutil.which(command[0]) is not None:
+        if shutil.which(command[0]) is not None and not comfy_cli_needs_upgrade(command, cwd, {**os.environ, "PYTHONUNBUFFERED": "1"}):
             return
     raise RuntimeError(
         f"Comfy CLI not found: {command[0]}. Install with `uv tool install git+https://github.com/quinteroac/comfy-agent-tools`."
     )
+
+
+def comfy_cli_needs_upgrade(command: list[str], cwd: Path, env: dict[str, str]) -> bool:
+    if len(command) < 2:
+        return False
+    required = (Path(command[0]).name, command[1])
+    if required not in COMFY_REQUIRED_SUBCOMMANDS:
+        return False
+    check = subprocess.run(
+        [command[0], "--help"],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return check.returncode != 0 or command[1] not in f"{check.stdout}\n{check.stderr}"
 
 
 def run_comfy_subprocess(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:

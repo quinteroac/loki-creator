@@ -78,7 +78,7 @@ export type ComfyImageMode = "generate" | "r2i" | "edit" | "upscale";
 
 export type ComfyVideoMode = "t2v" | "i2v" | "flf2v" | "wan22-i2v" | "wan22-flf2v";
 
-export type ComfyImageProfile = "anima-base" | "qwen-edit2511" | "flux-klein-9b-snofs" | "wan22-bernini-image" | "";
+export type ComfyImageProfile = "anima-base" | "qwen-edit2511" | "flux-klein-9b-snofs" | "krea2-turbo" | "wan22-bernini-image" | "";
 
 export type ComfyVideoProfile =
   | "ltx23-10eros"

@@ -85,6 +85,7 @@ Models are downloaded on demand into `/workspace/.loki/models/comfyui`.
 ```bash
 scripts/runpod/models.sh <pod-id> list
 scripts/runpod/models.sh <pod-id> download imagegen.generate
+scripts/runpod/models.sh <pod-id> download imagegen.krea2-generate
 scripts/runpod/models.sh <pod-id> download videogen.i2v
 scripts/runpod/models.sh <pod-id> validate
 ```
@@ -93,7 +94,7 @@ You can also set `LOKI_MODEL_CAPABILITIES` in `runpod.config.env` for first
 boot, for example:
 
 ```env
-LOKI_MODEL_CAPABILITIES=imagegen.generate,videogen.i2v
+LOKI_MODEL_CAPABILITIES=imagegen.generate,imagegen.krea2-generate,videogen.i2v
 ```
 
 `comfy-imagedescribe` expects the HuggingFace model directory

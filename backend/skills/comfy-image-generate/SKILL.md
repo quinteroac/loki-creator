@@ -1,6 +1,6 @@
 ---
 name: comfy-image-generate
-description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
+description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Krea2 Turbo, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
     visibility: user
@@ -39,6 +39,9 @@ metadata:
           - value: flux-klein-9b-snofs
             label: FLUX Klein SNOFS
             description: FLUX.2 Klein 9B FP8 + SNOFS LoRA for local image generation.
+          - value: krea2-turbo
+            label: Krea2 Turbo
+            description: Krea2 Turbo FP8 local text-to-image generation.
           - value: qwen-edit2511
             label: Qwen Image Edit
             description: Qwen Image Edit 2511 used as a generation profile.
@@ -119,16 +122,18 @@ Common generation profiles:
 - `anima-base`: Anima Base v1.0 + Turbo LoRA, anime/illustration generation.
 - `anima-preview3-turbo`: Anima Preview3 + Turbo LoRA, anime/illustration generation.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 + SNOFS LoRA, image generation.
+- `krea2-turbo`: Krea2 Turbo FP8, fast high-fidelity prompt-following generation.
 - `qwen-edit2511`: Qwen Image Edit 2511, image generation.
 - `grok-imagine-api`: remote Grok Imagine generation, only when the API key is configured.
 
 If model validation fails with `missing_model_file`, use
-`comfy-model-downloader` with `imagegen.generate` for the active generation
-profile.
+`comfy-model-downloader` with `imagegen.krea2-generate` for Krea2 Turbo, or
+`imagegen.generate` for other active local generation profiles.
 
-If the user asks to use or organize a LoRA by name or purpose, use
-`comfy-lora-onboarding` to search `loras/<architecture>/` first and pass the
-chosen file with `--extra-lora`.
+If the user asks to use or organize a LoRA by name or purpose for Anima, Qwen,
+or FLUX profiles, use `comfy-lora-onboarding` to search
+`loras/<architecture>/` first and pass the chosen file with `--extra-lora`.
+Do not pass `--extra-lora` to Krea2 Turbo.
 
 ## Commands
 
@@ -141,6 +146,17 @@ uv run comfy-imagegen generate \
   --height 1024 \
   --seed 42 \
   --extra-lora .loki/models/comfyui/loras/anima/realism-portrait.safetensors:0.8:0.0 \
+  --out outputs
+```
+
+Krea2 Turbo generation:
+
+```bash
+uv run comfy-imagegen krea2-generate \
+  --prompt "a cinematic portrait of an astronaut floating in a nebula, dramatic rim light" \
+  --width 1024 \
+  --height 1024 \
+  --seed 42 \
   --out outputs
 ```
 
@@ -253,6 +269,12 @@ generation is allowed, generated images may be sold, but public/commercial
 generation services, derivative model creation, and weight redistribution are
 not allowed without a separate license.
 
+Krea2 Turbo uses natural-language prompts through `comfy-imagegen
+krea2-generate`, capability `imagegen.krea2-generate`, and profile
+`krea2-turbo`. It does not accept `--extra-lora` in v1. Keep the prompt as a
+standalone visual description; for `r2i`, fold the returned image description
+into the final prompt before invoking the action.
+
 ## Defaults
 
 - Models directory: declared in Loki metadata as `.loki/models/comfyui`
@@ -263,6 +285,11 @@ not allowed without a separate license.
 - Anima params: `steps=8`, `cfg=1.0`, `seed=0`
 - FLUX profile: `flux-klein-9b-snofs`
 - FLUX params: `steps=4`, `cfg=1.0`, `sampler=euler`, `seed=0`
+- Krea2 profile: `krea2-turbo`
+- Krea2 diffusion model: `diffusion_models/krea2_turbo_fp8_scaled.safetensors`
+- Krea2 text encoder: `text_encoders/qwen3vl_4b_fp8_scaled.safetensors`
+- Krea2 VAE: `vae/qwen_image_vae.safetensors`
+- Krea2 params: `steps=8`, `cfg=1.0`, `sampler=euler`, `scheduler=simple`, `rebalance_multiplier=4.0`, `seed=0`
 - Grok profile: `grok-imagine-api`
 - Grok provider: `comfy-api`
 - Grok model: `grok-imagine-image`

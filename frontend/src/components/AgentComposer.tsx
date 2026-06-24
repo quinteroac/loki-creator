@@ -869,6 +869,7 @@ export function AgentComposer({
                           <option value="anima-base">Anima</option>
                           <option value="qwen-edit2511">Qwen Edit</option>
                           <option value="flux-klein-9b-snofs">Flux Klein</option>
+                          <option value="krea2-turbo">Krea2 Turbo</option>
                           <option value="wan22-bernini-image">Bernini Image</option>
                         </select>
                       </label>

@@ -85,6 +85,7 @@ VIDEO_DIMENSIONS = {
 }
 WAN_FPS = 16
 BERNINI_IMAGE_PROFILE = "wan22-bernini-image"
+KREA2_IMAGE_PROFILE = "krea2-turbo"
 BERNINI_MODEL_OVERRIDES = {
     "unet-high": "diffusion_models/Wan22_Bernini_HIGH_mxfp8.safetensors",
     "unet-low": "diffusion_models/Wan22_Bernini_LOW_mxfp8.safetensors",
@@ -112,6 +113,11 @@ def normalize_image_profile(value: str) -> str:
         "qwen-edit-2511": "qwen-edit2511",
         "flux-klein-snofs": "flux-klein-9b-snofs",
         "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
+        "krea": KREA2_IMAGE_PROFILE,
+        "krea2": KREA2_IMAGE_PROFILE,
+        "krea-2": KREA2_IMAGE_PROFILE,
+        "krea2-fp8": KREA2_IMAGE_PROFILE,
+        "krea2-turbo-fp8": KREA2_IMAGE_PROFILE,
         "bernini": BERNINI_IMAGE_PROFILE,
         "wan22-bernini": BERNINI_IMAGE_PROFILE,
         "wan-bernini-image": BERNINI_IMAGE_PROFILE,
@@ -136,6 +142,14 @@ def normalize_video_profile(value: str) -> str:
         "boundbite": "wan22-dasiwa-boundbite-i2v",
     }
     return aliases.get(value.strip(), value.strip())
+
+
+def image_cli_mode(image_mode: str, profile: str) -> str:
+    if image_mode == "r2i":
+        return "krea2-generate" if profile == KREA2_IMAGE_PROFILE else "generate"
+    if image_mode == "generate" and profile == KREA2_IMAGE_PROFILE:
+        return "krea2-generate"
+    return image_mode
 
 
 def divisible_by_16(value: int) -> int:
@@ -338,11 +352,13 @@ class ComfyGenerationService:
             raise ComfyGenerationError(f"Comfy image {payload.image_mode} requires one selected or attached image.")
         if payload.image_mode == "r2i":
             reject_reference_language(prompt)
+        if profile == KREA2_IMAGE_PROFILE and payload.image_mode not in {"generate", "r2i"}:
+            raise ComfyGenerationError("Krea2 Turbo only supports Comfy image generate and r2i modes.")
 
         if payload.image_mode == "edit" and profile == BERNINI_IMAGE_PROFILE:
             return self.build_bernini_image_command(payload, prompt, out_dir, media)
 
-        cli_mode = "generate" if payload.image_mode == "r2i" else payload.image_mode
+        cli_mode = image_cli_mode(payload.image_mode, profile)
         command = [self.executable("comfy-imagegen"), cli_mode, "--out", str(out_dir)]
         if payload.image_mode in {"generate", "r2i", "edit", "upscale"}:
             command.extend(["--models-dir", str(self.models_dir())])

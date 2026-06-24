@@ -26,6 +26,7 @@ prefer `uv run comfy-models`; outside the repo, use the installed CLI.
 ## Capability Mapping
 
 - Image generation: `imagegen.generate`
+- Krea2 Turbo image generation: `imagegen.krea2-generate`
 - Image editing: `imagegen.edit`
 - Image upscale: `imagegen.upscale`
 - Text to video: `videogen.t2v`
@@ -70,6 +71,7 @@ uv run comfy-models validate-profile anima-base
 - `anima-base`: Anima Base v1.0 image generation with the turbo LoRA.
 - `qwen-edit2511`: Qwen Image Edit 2511 generation/editing.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 generation/editing with SNOFS.
+- `krea2-turbo`: Krea2 Turbo FP8 image generation.
 - `clear-reality`: ClearReality image upscaling.
 - `ltx23-10eros`: LTX 2.3 video and IA2AV.
 - `wan22-bernini`: WAN 2.2 Bernini reference-guided video and single-frame

@@ -70,6 +70,17 @@ command -v comfy-musicgen
 command -v comfy-models
 ```
 
+Validate that `comfy-imagegen` is new enough for Loki's supported image
+profiles:
+
+```bash
+comfy-imagegen --help | grep krea2-generate
+```
+
+If `krea2-generate` is missing, upgrade the tool with `uv tool upgrade
+comfy-agent-tools` or reinstall it with `uv tool install --force
+git+https://github.com/quinteroac/comfy-agent-tools`.
+
 ## Model Config
 
 If `.comfy-agent-tools.json` is missing in the current project, ask the user

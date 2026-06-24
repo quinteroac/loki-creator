@@ -119,6 +119,35 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(repairs[0][:4], ["/usr/bin/uv", "tool", "install", "--force"])
         self.assertIn("git+https://github.com/quinteroac/comfy-agent-tools", repairs[0])
 
+    def test_ensure_comfy_cli_repairs_stale_imagegen_without_krea2(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], *args: object, **kwargs: object) -> object:
+            calls.append(command)
+
+            class Result:
+                returncode = 0
+                stderr = ""
+                stdout = "usage: comfy-imagegen {generate,edit}\n" if len(calls) == 1 else "usage: comfy-imagegen {generate,krea2-generate}\n"
+
+            return Result()
+
+        def fake_which(command: str) -> str | None:
+            if command in {"uv", "comfy-imagegen"}:
+                return f"/usr/bin/{command}"
+            return None
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", fake_which),
+            patch("comfy_action.subprocess.run", fake_run),
+        ):
+            comfy_action.ensure_comfy_cli(["comfy-imagegen", "krea2-generate"], Path(tmpdir))
+
+        self.assertEqual(calls[0], ["comfy-imagegen", "--help"])
+        self.assertEqual(calls[1][:4], ["/usr/bin/uv", "tool", "install", "--force"])
+        self.assertEqual(calls[2], ["comfy-imagegen", "--help"])
+
     def test_comfy_image_edit_bernini_builds_single_frame_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
             image = Path(tmpdir) / "input.png"
@@ -717,6 +746,57 @@ class ComfyActionTest(unittest.TestCase):
         self.assertNotIn("--input", command)
         self.assertEqual(command[command.index("--prompt") + 1], "masterpiece, best quality, anime illustration, 1girl, solo, black hair, red jacket")
         self.assertIn('"imagegen.generate": "anima-base"', config)
+
+    def test_comfy_image_generate_krea2_builds_krea2_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-image-generate",
+                    "prompt": "cinematic portrait, dramatic rim light",
+                    "params": {
+                        "mode": "t2i",
+                        "modelProfile": "krea2-turbo",
+                        "aspectRatio": "16:9",
+                        "seed": 99,
+                        "extraLora": "loras/krea2/style.safetensors:0.8",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "krea2-generate"])
+        self.assertEqual(command[command.index("--models-dir") + 1], str(Path(tmpdir) / "models"))
+        self.assertEqual(command[command.index("--prompt") + 1], "cinematic portrait, dramatic rim light")
+        self.assertEqual(command[command.index("--width") + 1], "1344")
+        self.assertEqual(command[command.index("--height") + 1], "768")
+        self.assertEqual(command[command.index("--seed") + 1], "99")
+        self.assertNotIn("--extra-lora", command)
+        self.assertIn('"imagegen.krea2-generate": "krea2-turbo"', config)
+
+    def test_comfy_image_generate_krea2_r2i_maps_to_krea2_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"png")
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-image-generate",
+                    "prompt": "cinematic portrait of a woman in a red jacket, rain-lit alley, shallow depth of field",
+                    "params": {
+                        "mode": "r2i",
+                        "modelProfile": "krea2-turbo",
+                        "aspectRatio": "1:1",
+                    },
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "krea2-generate"])
+        self.assertNotIn("--input", command)
+        self.assertIn('"imagegen.krea2-generate": "krea2-turbo"', config)
 
     def test_comfy_image_generate_r2i_rejects_reference_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
