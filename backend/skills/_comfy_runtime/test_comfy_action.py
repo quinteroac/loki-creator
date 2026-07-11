@@ -148,6 +148,39 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(calls[1][:4], ["/usr/bin/uv", "tool", "install", "--force"])
         self.assertEqual(calls[2], ["comfy-imagegen", "--help"])
 
+    def test_ensure_comfy_cli_repairs_stale_imagegen_without_rtx_upscale(self) -> None:
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], *args: object, **kwargs: object) -> object:
+            calls.append(command)
+
+            class Result:
+                returncode = 0
+                stderr = ""
+                stdout = (
+                    "usage: comfy-imagegen {generate,krea2-generate}\n"
+                    if len(calls) == 1
+                    else "usage: comfy-imagegen {generate,krea2-generate,rtx-upscale}\n"
+                )
+
+            return Result()
+
+        def fake_which(command: str) -> str | None:
+            if command in {"uv", "comfy-imagegen"}:
+                return f"/usr/bin/{command}"
+            return None
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", fake_which),
+            patch("comfy_action.subprocess.run", fake_run),
+        ):
+            comfy_action.ensure_comfy_cli(["comfy-imagegen", "rtx-upscale"], Path(tmpdir))
+
+        self.assertEqual(calls[0], ["comfy-imagegen", "--help"])
+        self.assertEqual(calls[1][:4], ["/usr/bin/uv", "tool", "install", "--force"])
+        self.assertEqual(calls[2], ["comfy-imagegen", "--help"])
+
     def test_comfy_image_edit_bernini_builds_single_frame_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
             image = Path(tmpdir) / "input.png"
@@ -277,6 +310,29 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--mu") + 1], "0.5")
         self.assertEqual(command[command.index("--std") + 1], "1.75")
         self.assertEqual(command[command.index("--style-art-style") + 1], "vector poster art")
+
+    def test_ideogram4_rejects_boolean_style_selector_with_actionable_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "stylePhoto must be a descriptive string"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "ideogram4-image",
+                        "prompt": "Cinematic portrait",
+                        "params": {
+                            "mode": "t2i",
+                            "qualityProfile": "Turbo",
+                            "aspectRatio": "9:16",
+                            "styleAesthetics": "cinematic, high detail",
+                            "styleLighting": "soft romantic key light",
+                            "styleMedium": "photograph",
+                            "stylePhoto": True,
+                            "background": "warm soft-focus background",
+                            "objects": [{"bbox": [120, 120, 880, 880], "description": "two adult women kissing romantically"}],
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
 
     def test_ideogram4_applies_single_default_lora_at_half_strength(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
@@ -747,15 +803,31 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[command.index("--prompt") + 1], "masterpiece, best quality, anime illustration, 1girl, solo, black hair, red jacket")
         self.assertIn('"imagegen.generate": "anima-base"', config)
 
-    def test_comfy_image_generate_krea2_builds_krea2_command(self) -> None:
+    def test_comfy_image_generate_rejects_krea2_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            with self.assertRaisesRegex(RuntimeError, "dedicated comfy-krea2-image skill"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "comfy-image-generate",
+                        "prompt": "cinematic portrait, dramatic rim light",
+                        "params": {
+                            "mode": "t2i",
+                            "modelProfile": "krea2-turbo",
+                            "aspectRatio": "16:9",
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
+
+    def test_comfy_krea2_image_builds_krea2_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
             command, cwd = comfy_action.build_cli_command(
                 {
-                    "skillId": "comfy-image-generate",
+                    "skillId": "comfy-krea2-image",
                     "prompt": "cinematic portrait, dramatic rim light",
                     "params": {
                         "mode": "t2i",
-                        "modelProfile": "krea2-turbo",
                         "aspectRatio": "16:9",
                         "seed": 99,
                         "extraLora": "loras/krea2/style.safetensors:0.8",
@@ -775,17 +847,16 @@ class ComfyActionTest(unittest.TestCase):
         self.assertNotIn("--extra-lora", command)
         self.assertIn('"imagegen.krea2-generate": "krea2-turbo"', config)
 
-    def test_comfy_image_generate_krea2_r2i_maps_to_krea2_command(self) -> None:
+    def test_comfy_krea2_image_r2i_maps_to_krea2_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
             image = Path(tmpdir) / "input.png"
             image.write_bytes(b"png")
             command, cwd = comfy_action.build_cli_command(
                 {
-                    "skillId": "comfy-image-generate",
+                    "skillId": "comfy-krea2-image",
                     "prompt": "cinematic portrait of a woman in a red jacket, rain-lit alley, shallow depth of field",
                     "params": {
                         "mode": "r2i",
-                        "modelProfile": "krea2-turbo",
                         "aspectRatio": "1:1",
                     },
                 },
@@ -797,6 +868,22 @@ class ComfyActionTest(unittest.TestCase):
         self.assertEqual(command[:2], ["comfy-imagegen", "krea2-generate"])
         self.assertNotIn("--input", command)
         self.assertIn('"imagegen.krea2-generate": "krea2-turbo"', config)
+
+    def test_comfy_krea2_image_r2i_requires_local_image_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
+            with self.assertRaisesRegex(RuntimeError, "r2i requires"):
+                comfy_action.build_cli_command(
+                    {
+                        "skillId": "comfy-krea2-image",
+                        "prompt": "cinematic portrait, dramatic rim light",
+                        "params": {
+                            "mode": "r2i",
+                            "aspectRatio": "1:1",
+                        },
+                    },
+                    Path(tmpdir) / "outputs",
+                    media={"image": [], "audio": [], "video": []},
+                )
 
     def test_comfy_image_generate_r2i_rejects_reference_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir)):
@@ -813,6 +900,64 @@ class ComfyActionTest(unittest.TestCase):
                     },
                     Path(tmpdir) / "outputs",
                     media={"image": [Path(tmpdir) / "input.png"], "audio": [], "video": []},
+                )
+
+    def test_comfy_image_upscale_defaults_to_clear_reality_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch("comfy_action.models_dir", return_value=Path(tmpdir) / "models"):
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"png")
+            command, _cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-image-upscale",
+                    "prompt": "",
+                    "params": {},
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "upscale"])
+        self.assertEqual(command[command.index("--models-dir") + 1], str(Path(tmpdir) / "models"))
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertNotIn("--quality", command)
+
+    def test_comfy_image_upscale_rtx_builds_rtx_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"png")
+            command, cwd = comfy_action.build_cli_command(
+                {
+                    "skillId": "comfy-image-upscale",
+                    "prompt": "",
+                    "params": {"engine": "rtx-vsr", "resolution": "4k", "quality": "HIGH"},
+                },
+                Path(tmpdir) / "outputs",
+                media={"image": [image], "audio": [], "video": []},
+            )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "rtx-upscale"])
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[command.index("--resolution") + 1], "4k")
+        self.assertEqual(command[command.index("--quality") + 1], "HIGH")
+        self.assertNotIn("--models-dir", command)
+        self.assertIn('"imagegen.rtx-upscale": "rtx-vsr"', config)
+
+    def test_comfy_image_upscale_rtx_rejects_invalid_resolution_or_quality(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image = Path(tmpdir) / "input.png"
+            image.write_bytes(b"png")
+            with self.assertRaisesRegex(RuntimeError, "params.resolution"):
+                comfy_action.build_cli_command(
+                    {"skillId": "comfy-image-upscale", "params": {"engine": "rtx-vsr", "resolution": "999p"}},
+                    Path(tmpdir) / "outputs",
+                    media={"image": [image], "audio": [], "video": []},
+                )
+            with self.assertRaisesRegex(RuntimeError, "params.quality"):
+                comfy_action.build_cli_command(
+                    {"skillId": "comfy-image-upscale", "params": {"engine": "rtx-vsr", "quality": "MAX"}},
+                    Path(tmpdir) / "outputs",
+                    media={"image": [image], "audio": [], "video": []},
                 )
 
     def test_anima_generation_resolves_extra_lora_name(self) -> None:
@@ -1556,6 +1701,34 @@ class ComfyActionTest(unittest.TestCase):
             ],
         )
         self.assertEqual(calls[2][:2], ["comfy-videogen", "rtx-upscale"])
+
+    def test_comfy_image_rtx_upscale_repairs_missing_dependency_and_retries(self) -> None:
+        calls: list[list[str]] = []
+
+        class Result:
+            def __init__(self, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+                self.stdout = stdout
+                self.stderr = stderr
+                self.returncode = returncode
+
+        def fake_subprocess_run(command: list[str], **_kwargs: object) -> Result:
+            calls.append(command)
+            if command[:2] == ["comfy-imagegen", "rtx-upscale"] and len(calls) == 1:
+                return Result(stdout='{"ok": false, "error_type": "missing_dependency", "error": "nvidia-vfx missing"}', returncode=1)
+            if command[:3] == ["/usr/bin/uv", "tool", "upgrade"]:
+                return Result(stdout="upgraded")
+            return Result(stdout='{"ok": true, "kind": "image", "artifacts": ["/tmp/upscaled.png"]}')
+
+        with (
+            tempfile.TemporaryDirectory() as tmpdir,
+            patch("comfy_action.shutil.which", side_effect=lambda name: f"/usr/bin/{name}"),
+            patch("comfy_action.subprocess.run", fake_subprocess_run),
+        ):
+            result = comfy_action.run_command(["comfy-imagegen", "rtx-upscale"], Path(tmpdir))
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls[1][:10], ["/usr/bin/uv", "tool", "install", "--force", "--with", "sageattention", "--with", "nvidia-vfx", "git+https://github.com/quinteroac/comfy-agent-tools"])
+        self.assertEqual(calls[2][:2], ["comfy-imagegen", "rtx-upscale"])
 
     def test_comfy_upscale_video_repairs_missing_seedvr2_subcommand_and_retries(self) -> None:
         calls: list[list[str]] = []

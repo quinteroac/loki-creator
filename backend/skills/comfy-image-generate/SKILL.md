@@ -1,6 +1,6 @@
 ---
 name: comfy-image-generate
-description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Krea2 Turbo, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
+description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for Krea2 Turbo, editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
     visibility: user
@@ -39,9 +39,6 @@ metadata:
           - value: flux-klein-9b-snofs
             label: FLUX Klein SNOFS
             description: FLUX.2 Klein 9B FP8 + SNOFS LoRA for local image generation.
-          - value: krea2-turbo
-            label: Krea2 Turbo
-            description: Krea2 Turbo FP8 local text-to-image generation.
           - value: qwen-edit2511
             label: Qwen Image Edit
             description: Qwen Image Edit 2511 used as a generation profile.
@@ -79,10 +76,13 @@ metadata:
 
 # comfy-image-generate
 
-Use this skill only for creating new images through the `comfy-imagegen` CLI.
+Use this skill only for creating new non-Krea2 images through the
+`comfy-imagegen` CLI.
 Local modes use the models directory declared in this skill's Loki metadata.
 If a supported built-in model is missing, use `comfy-model-downloader` to fetch
 only the requested capability before running inference.
+
+Use `comfy-krea2-image` for Krea2 Turbo.
 
 The CLI is quiet by default and prints only final JSON. Use `--verbose` only when
 debugging ComfyUI runtime output, warnings, or progress bars.
@@ -97,16 +97,17 @@ checkpoint/fine-tune/default, use `comfy-model-onboarding` first.
 ## Modes
 
 - `t2i`: transform the user's text into the final model prompt.
-- `r2i`: inspect selected or attached image artifacts, describe visible
-  subjects, style, layout, colors, pose, crop, background, and lighting, then
-  combine that with the user's prompt. The CLI has no image-conditioning flag in
-  this mode; the selected image is interpreted by the agent before invoking the
-  skill.
+- `r2i`: in agent mode, use `read_loki_visual` on selected or attached local image
+  artifacts, describe visible subjects, style, layout, colors, pose, crop,
+  background, and lighting, then combine that with the user's prompt. The CLI
+  has no image-conditioning flag in this mode; the selected image is
+  interpreted by the agent before invoking the skill.
 
 For `r2i`, require at least one selected or attached local image artifact. Do
 not use inline previews, data URLs, or vague placeholders.
-If the agent does not already have a trusted visual description, call
-`describe_loki_image` before composing the final prompt.
+In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+selected local image and compose the final prompt from concrete visible
+traits before invoking this skill.
 
 ## Required Arguments
 
@@ -122,18 +123,16 @@ Common generation profiles:
 - `anima-base`: Anima Base v1.0 + Turbo LoRA, anime/illustration generation.
 - `anima-preview3-turbo`: Anima Preview3 + Turbo LoRA, anime/illustration generation.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 + SNOFS LoRA, image generation.
-- `krea2-turbo`: Krea2 Turbo FP8, fast high-fidelity prompt-following generation.
 - `qwen-edit2511`: Qwen Image Edit 2511, image generation.
 - `grok-imagine-api`: remote Grok Imagine generation, only when the API key is configured.
 
 If model validation fails with `missing_model_file`, use
-`comfy-model-downloader` with `imagegen.krea2-generate` for Krea2 Turbo, or
-`imagegen.generate` for other active local generation profiles.
+`comfy-model-downloader` with `imagegen.generate` for active local generation
+profiles. Krea2 downloads belong to `comfy-krea2-image`.
 
 If the user asks to use or organize a LoRA by name or purpose for Anima, Qwen,
 or FLUX profiles, use `comfy-lora-onboarding` to search
 `loras/<architecture>/` first and pass the chosen file with `--extra-lora`.
-Do not pass `--extra-lora` to Krea2 Turbo.
 
 ## Commands
 
@@ -146,17 +145,6 @@ uv run comfy-imagegen generate \
   --height 1024 \
   --seed 42 \
   --extra-lora .loki/models/comfyui/loras/anima/realism-portrait.safetensors:0.8:0.0 \
-  --out outputs
-```
-
-Krea2 Turbo generation:
-
-```bash
-uv run comfy-imagegen krea2-generate \
-  --prompt "a cinematic portrait of an astronaut floating in a nebula, dramatic rim light" \
-  --width 1024 \
-  --height 1024 \
-  --seed 42 \
   --out outputs
 ```
 
@@ -244,8 +232,9 @@ For reference-informed prompts:
 - Describe what is visibly present in the selected images: subject count, pose,
   clothing, materials, style, palette, camera angle, layout, text, background,
   linework, and lighting.
-- If those traits are not already trusted context, call `describe_loki_image`
-  and use its description as the visual grounding source.
+- Use `read_loki_visual` on the selected local image as the visual
+  grounding source when the agent model has vision. If visual reading is
+  unavailable, ask for the missing visual details instead of inventing them.
 - Write the final image prompt as a standalone visual description or, for Anima,
   as standalone visual tags.
 - Do not include phrases such as `reference image`, `selected image`, `based on
@@ -269,12 +258,6 @@ generation is allowed, generated images may be sold, but public/commercial
 generation services, derivative model creation, and weight redistribution are
 not allowed without a separate license.
 
-Krea2 Turbo uses natural-language prompts through `comfy-imagegen
-krea2-generate`, capability `imagegen.krea2-generate`, and profile
-`krea2-turbo`. It does not accept `--extra-lora` in v1. Keep the prompt as a
-standalone visual description; for `r2i`, fold the returned image description
-into the final prompt before invoking the action.
-
 ## Defaults
 
 - Models directory: declared in Loki metadata as `.loki/models/comfyui`
@@ -285,11 +268,6 @@ into the final prompt before invoking the action.
 - Anima params: `steps=8`, `cfg=1.0`, `seed=0`
 - FLUX profile: `flux-klein-9b-snofs`
 - FLUX params: `steps=4`, `cfg=1.0`, `sampler=euler`, `seed=0`
-- Krea2 profile: `krea2-turbo`
-- Krea2 diffusion model: `diffusion_models/krea2_turbo_fp8_scaled.safetensors`
-- Krea2 text encoder: `text_encoders/qwen3vl_4b_fp8_scaled.safetensors`
-- Krea2 VAE: `vae/qwen_image_vae.safetensors`
-- Krea2 params: `steps=8`, `cfg=1.0`, `sampler=euler`, `scheduler=simple`, `rebalance_multiplier=4.0`, `seed=0`
 - Grok profile: `grok-imagine-api`
 - Grok provider: `comfy-api`
 - Grok model: `grok-imagine-image`

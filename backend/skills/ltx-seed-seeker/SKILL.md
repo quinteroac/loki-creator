@@ -129,9 +129,10 @@ best to specific shot direction, so write one flowing present-tense paragraph
 with subject motion, camera movement, spatial layout, lighting, material detail,
 and atmosphere. Match the amount of detail to the selected duration; longer
 clips need enough action beats to fill the time.
-If the agent does not already have a trusted visual description of the selected
-image, call `describe_loki_image` first and use its concrete traits as the visual
-anchor.
+In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+selected local image, then use its concrete subject, composition, style,
+lighting, materials, and palette traits as the visual anchor. If visual reading
+is unavailable, ask for the missing visual details instead of inventing them.
 
 For image-to-video seed exploration, prioritize verbs and motion over static
 description:

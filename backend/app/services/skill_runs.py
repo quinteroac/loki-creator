@@ -88,6 +88,7 @@ class SkillRunService:
                 "status": "succeeded",
                 "updated_at": datetime.now(timezone.utc),
                 "result": result,
+                "raw_result": payload.raw_result,
                 "error": None,
             },
         )
@@ -159,6 +160,7 @@ class SkillRunService:
                 "status": "succeeded",
                 "updated_at": now,
                 "result": self._merge_results(current_run.result, result),
+                "raw_result": raw_result,
                 "error": None,
             },
         )

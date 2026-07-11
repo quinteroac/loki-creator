@@ -106,6 +106,7 @@ MUSIC_QUALITY_DEFAULTS = {
     "cfg": "7.0",
 }
 CHANGE_ASPECT_RATIOS = set(ASPECT_DIMENSIONS)
+IMAGE_UPSCALE_ENGINES = {"clear-reality", "rtx-vsr"}
 VIDEO_UPSCALE_ENGINES = {"rtx-vsr", "seedvr2"}
 RTX_UPSCALE_RESOLUTIONS = {"480p", "720p", "1080p", "1440p", "4k", "8k"}
 SEEDVR2_UPSCALE_RESOLUTIONS = {"720p", "1080p", "1440p", "4k"}
@@ -124,6 +125,7 @@ COMFY_AGENT_TOOL_COMMANDS = {
 }
 COMFY_REQUIRED_SUBCOMMANDS = {
     ("comfy-imagegen", "krea2-generate"),
+    ("comfy-imagegen", "rtx-upscale"),
 }
 
 
@@ -152,6 +154,15 @@ def as_int(value: object) -> int | None:
         if value is None or value == "":
             return None
         return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def as_float(value: object) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
     except (TypeError, ValueError):
         return None
 
@@ -1389,8 +1400,12 @@ def build_ideogram4_command(
     background = first_param_text(params, "background")
     if not style_aesthetics or not style_lighting or not style_medium:
         raise RuntimeError("ideogram4-image requires styleAesthetics, styleLighting, and styleMedium in paramsJson.")
+    if any(isinstance(params.get(key), bool) for key in ("stylePhoto", "style_photo", "photo")):
+        raise RuntimeError('ideogram4-image stylePhoto must be a descriptive string such as "editorial portrait photography", not a boolean.')
+    if any(isinstance(params.get(key), bool) for key in ("styleArtStyle", "style_art_style", "artStyle", "art_style")):
+        raise RuntimeError('ideogram4-image styleArtStyle must be a descriptive string such as "cinematic digital painting", not a boolean.')
     if bool(style_photo) == bool(style_art_style):
-        raise RuntimeError("ideogram4-image requires exactly one of stylePhoto or styleArtStyle in paramsJson.")
+        raise RuntimeError("ideogram4-image requires exactly one of stylePhoto or styleArtStyle as a non-empty descriptive string in paramsJson.")
     if not background:
         raise RuntimeError("ideogram4-image requires background in paramsJson.")
 
@@ -1845,6 +1860,76 @@ def video_upscale_engine(params: dict[str, Any]) -> str:
     return aliases.get(normalized, normalized)
 
 
+def image_upscale_engine(params: dict[str, Any]) -> str:
+    value = first_text(params.get("engine"), params.get("upscaleEngine"), params.get("imageUpscaleEngine"))
+    if not value:
+        return "clear-reality"
+    normalized = value.strip().lower().replace("_", "-").replace(" ", "-")
+    aliases = {
+        "clear": "clear-reality",
+        "clear-reality": "clear-reality",
+        "clearreality": "clear-reality",
+        "clear-reality-upscale": "clear-reality",
+        "upscale": "clear-reality",
+        "rtx": "rtx-vsr",
+        "rtx-vsr": "rtx-vsr",
+        "rtx-upscale": "rtx-vsr",
+        "nvidia": "rtx-vsr",
+        "nvidia-rtx": "rtx-vsr",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def build_image_rtx_upscale_command(
+    *,
+    params: dict[str, Any],
+    out_dir: Path,
+    media: dict[str, list[Path]],
+    skill_label: str,
+) -> tuple[list[str], Path]:
+    image_input = first_param_text(params, "inputPath", "imagePath") or str(selected_input(media, "image") or "")
+    if not image_input:
+        raise RuntimeError(f"{skill_label} requires an input image from params.inputPath or a selected card snapshot.")
+
+    resolution = first_param_text(params, "resolution", "upscaleResolution", "imageUpscaleResolution")
+    scale_text = first_scalar_text(params.get("scale"), params.get("upscaleScale"), params.get("imageUpscaleScale"))
+    scale = as_float(scale_text)
+    if scale_text and scale is None:
+        raise RuntimeError(f"{skill_label} RTX params.scale must be a number.")
+    width = as_int(params.get("width"))
+    height = as_int(params.get("height"))
+    has_size = width is not None or height is not None
+    if has_size and (width is None or height is None):
+        raise RuntimeError(f"{skill_label} RTX params.width and params.height must be provided together.")
+    if width is not None and width <= 0 or height is not None and height <= 0:
+        raise RuntimeError(f"{skill_label} RTX params.width and params.height must be greater than 0.")
+
+    target_count = sum(1 for selected in (bool(resolution), scale is not None, has_size) if selected)
+    if target_count > 1:
+        raise RuntimeError(f"{skill_label} RTX accepts only one target: resolution, scale, or width/height.")
+
+    quality = first_param_text(params, "quality", "upscaleQuality", "imageUpscaleQuality").upper() or "ULTRA"
+    if quality not in RTX_UPSCALE_QUALITIES:
+        raise RuntimeError(f"{skill_label} RTX params.quality must be LOW, MEDIUM, HIGH, or ULTRA.")
+
+    command = ["comfy-imagegen", "rtx-upscale", "--input", image_input, "--out", str(out_dir)]
+    if has_size:
+        command.extend(["--width", str(width), "--height", str(height)])
+    elif scale is not None:
+        if scale <= 0:
+            raise RuntimeError(f"{skill_label} RTX params.scale must be greater than 0.")
+        command.extend(["--scale", str(scale)])
+    else:
+        resolution = resolution or "1080p"
+        if resolution not in RTX_UPSCALE_RESOLUTIONS:
+            raise RuntimeError(f"{skill_label} RTX params.resolution must be 480p, 720p, 1080p, 1440p, 4k, or 8k.")
+        command.extend(["--resolution", resolution])
+    command.extend(["--quality", quality])
+
+    cwd = write_run_comfy_config(out_dir.parent, capability="imagegen.rtx-upscale", model_profile="rtx-vsr")
+    return command, cwd
+
+
 def video_upscale_processing_mode(params: dict[str, Any]) -> str:
     value = first_text(params.get("processingMode"), params.get("longVideoMode"), params.get("processLongVideo"))
     if not value:
@@ -1895,6 +1980,12 @@ def build_imagegen_command(
             media=media,
             skill_label=skill_label,
         )
+    if mode == "upscale":
+        engine = image_upscale_engine(params)
+        if engine not in IMAGE_UPSCALE_ENGINES:
+            raise RuntimeError(f"{skill_label} params.engine must be clear-reality or rtx-vsr.")
+        if engine == "rtx-vsr":
+            return build_image_rtx_upscale_command(params=params, out_dir=out_dir, media=media, skill_label=skill_label)
 
     command = ["comfy-imagegen", mode, "--out", str(out_dir)]
     if mode in {"generate", "edit", "upscale", "krea2-generate"}:
@@ -1969,6 +2060,9 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         requested_mode = normalize_imagegen_mode(command_from_params(params, "t2i"))
         if requested_mode not in {"t2i", "r2i"}:
             raise RuntimeError("comfy-image-generate params.mode must be t2i or r2i.")
+        model_profile = normalize_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
+        if model_profile == "krea2-turbo":
+            raise RuntimeError("Krea2 Turbo now uses the dedicated comfy-krea2-image skill, not comfy-image-generate.")
         return build_imagegen_command(
             mode="r2i" if requested_mode == "r2i" else "generate",
             params=params,
@@ -1979,6 +2073,23 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
             require_aspect_ratio=True,
             require_input_image=False,
             skill_label="comfy-image-generate",
+        )
+
+    if skill_id == "comfy-krea2-image":
+        requested_mode = normalize_imagegen_mode(command_from_params(params, "t2i"))
+        if requested_mode not in {"t2i", "r2i"}:
+            raise RuntimeError("comfy-krea2-image params.mode must be t2i or r2i.")
+        krea2_params = {**params, "modelProfile": "krea2-turbo"}
+        return build_imagegen_command(
+            mode="r2i" if requested_mode == "r2i" else "generate",
+            params=krea2_params,
+            prompt=prompt,
+            out_dir=out_dir,
+            media=media,
+            require_model_profile=True,
+            require_aspect_ratio=True,
+            require_input_image=False,
+            skill_label="comfy-krea2-image",
         )
 
     if skill_id == "comfy-image-edit":
@@ -2183,7 +2294,11 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
 
 
 def is_rtx_upscale_command(command: list[str]) -> bool:
-    return len(command) >= 2 and Path(command[0]).name == "comfy-videogen" and command[1] == "rtx-upscale"
+    return (
+        len(command) >= 2
+        and Path(command[0]).name in {"comfy-imagegen", "comfy-videogen"}
+        and command[1] == "rtx-upscale"
+    )
 
 
 def is_seedvr2_upscale_command(command: list[str]) -> bool:

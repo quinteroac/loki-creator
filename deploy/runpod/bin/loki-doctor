@@ -35,16 +35,17 @@ check_bootstrap_command() {
   fi
 }
 
-check_comfy_imagegen_krea2() {
+check_comfy_imagegen_subcommand() {
+  local subcommand="$1"
   local imagegen_bin="${LOKI_COMFY_TOOL_BIN_DIR}/comfy-imagegen"
   if [[ ! -x "$imagegen_bin" ]]; then
-    printf 'comfy-imagegen krea2-generate: runtime not installed yet\n\n'
+    printf 'comfy-imagegen %s: runtime not installed yet\n\n' "$subcommand"
     return
   fi
-  if "$imagegen_bin" --help 2>&1 | grep -q 'krea2-generate'; then
-    printf 'comfy-imagegen krea2-generate: ok\n\n'
+  if "$imagegen_bin" --help 2>&1 | grep -q "$subcommand"; then
+    printf 'comfy-imagegen %s: ok\n\n' "$subcommand"
   else
-    warn "installed comfy-imagegen is stale and does not expose krea2-generate"
+    warn "installed comfy-imagegen is stale and does not expose ${subcommand}"
     failures=$((failures + 1))
   fi
 }
@@ -56,7 +57,8 @@ done
 for command_name in comfy-imagegen comfy-imagedescribe comfy-videogen comfy-musicgen comfy-models; do
   check_bootstrap_command "$command_name"
 done
-check_comfy_imagegen_krea2
+check_comfy_imagegen_subcommand krea2-generate
+check_comfy_imagegen_subcommand rtx-upscale
 
 log "checking frei0r video effects"
 if ffmpeg -hide_banner -filters 2>/dev/null | grep -q ' frei0r '; then

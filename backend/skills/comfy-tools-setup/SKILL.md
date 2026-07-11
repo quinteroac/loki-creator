@@ -75,11 +75,12 @@ profiles:
 
 ```bash
 comfy-imagegen --help | grep krea2-generate
+comfy-imagegen --help | grep rtx-upscale
 ```
 
-If `krea2-generate` is missing, upgrade the tool with `uv tool upgrade
-comfy-agent-tools` or reinstall it with `uv tool install --force
-git+https://github.com/quinteroac/comfy-agent-tools`.
+If `krea2-generate` or `rtx-upscale` is missing, upgrade the tool with
+`uv tool upgrade comfy-agent-tools` or reinstall it with `uv tool install
+--force git+https://github.com/quinteroac/comfy-agent-tools`.
 
 ## Model Config
 

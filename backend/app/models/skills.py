@@ -137,6 +137,7 @@ class SkillRun(BaseModel):
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
     result: SkillResult | None = None
+    raw_result: SkillRawResult | None = Field(default=None, alias="rawResult")
     error: str | None = None
 
     model_config = ConfigDict(populate_by_name=True)

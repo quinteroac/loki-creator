@@ -101,6 +101,10 @@ LOKI_MODEL_CAPABILITIES=imagegen.generate,imagegen.krea2-generate,videogen.i2v
 `LLM/Qwen-VL/Qwen3-VL-2B-Instruct` under `/workspace/.loki/models/comfyui`.
 This Qwen3-VL directory is not auto-downloaded by `comfy-models`.
 
+NVIDIA RTX image/video upscaling uses the `rtx-vsr` profile and does not
+download model files. It requires the Comfy tool runtime to include the NVIDIA
+RTX/CUDA dependencies, including `nvidia-vfx`.
+
 ## Health Check
 
 Run:

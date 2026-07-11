@@ -59,6 +59,9 @@ import type {
   ComfyDuration,
   ComfyImageMode,
   ComfyImageProfile,
+  ComfyImageUpscaleEngine,
+  ComfyImageUpscaleQuality,
+  ComfyImageUpscaleResolution,
   ComfyResolution,
   ComfyTool,
   ComfyVideoMode,
@@ -128,6 +131,9 @@ export function App() {
   const [comfyTool, setComfyTool] = useState<ComfyTool>("image");
   const [comfyImageMode, setComfyImageMode] = useState<ComfyImageMode>("generate");
   const [comfyImageProfile, setComfyImageProfile] = useState<ComfyImageProfile>("anima-base");
+  const [comfyImageUpscaleEngine, setComfyImageUpscaleEngine] = useState<ComfyImageUpscaleEngine>("clear-reality");
+  const [comfyImageUpscaleResolution, setComfyImageUpscaleResolution] = useState<ComfyImageUpscaleResolution>("1080p");
+  const [comfyImageUpscaleQuality, setComfyImageUpscaleQuality] = useState<ComfyImageUpscaleQuality>("ULTRA");
   const [comfyVideoMode, setComfyVideoMode] = useState<ComfyVideoMode>("i2v");
   const [comfyVideoProfile, setComfyVideoProfile] = useState<ComfyVideoProfile>("ltx23-10eros");
   const [comfyAspectRatio, setComfyAspectRatio] = useState<ComfyAspectRatio>("16:9");
@@ -910,6 +916,9 @@ export function App() {
                     : comfyVideoProfile,
                   aspectRatio: comfyAspectRatio,
                   resolution: comfyResolution,
+                  imageUpscaleEngine: comfyImageUpscaleEngine,
+                  imageUpscaleResolution: comfyImageUpscaleResolution,
+                  imageUpscaleQuality: comfyImageUpscaleQuality,
                   duration: comfyDuration,
                   selectedCardSnapshots,
                   attachments,
@@ -1393,6 +1402,9 @@ export function App() {
         comfyDuration={comfyDuration}
         comfyImageMode={comfyImageMode}
         comfyImageProfile={comfyImageProfile}
+        comfyImageUpscaleEngine={comfyImageUpscaleEngine}
+        comfyImageUpscaleQuality={comfyImageUpscaleQuality}
+        comfyImageUpscaleResolution={comfyImageUpscaleResolution}
         comfyResolution={comfyResolution}
         comfyTool={comfyTool}
         comfyVideoMode={comfyVideoMode}
@@ -1413,6 +1425,9 @@ export function App() {
         onComfyDurationChange={setComfyDuration}
         onComfyImageModeChange={setComfyImageMode}
         onComfyImageProfileChange={setComfyImageProfile}
+        onComfyImageUpscaleEngineChange={setComfyImageUpscaleEngine}
+        onComfyImageUpscaleQualityChange={setComfyImageUpscaleQuality}
+        onComfyImageUpscaleResolutionChange={setComfyImageUpscaleResolution}
         onComfyResolutionChange={setComfyResolution}
         onComfyToolChange={setComfyTool}
         onComfyVideoModeChange={setComfyVideoMode}

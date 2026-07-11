@@ -216,6 +216,7 @@ Write a single-shot WAN motion prompt that describes the transition or image
 animation, subject motion, camera movement, atmosphere, and what should remain
 anchored to the selected image inputs. Do not ask for collages or merged
 candidates; previews return three separate video cards.
-If the agent does not already have a trusted visual description of the selected
-image inputs, call `describe_loki_image` first and use its concrete traits as
-the visual anchor.
+In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+selected local image(s), then use their concrete subject, composition, style,
+lighting, materials, and palette traits as the visual anchor. If visual reading
+is unavailable, ask for the missing visual details instead of inventing them.

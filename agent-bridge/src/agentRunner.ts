@@ -1,4 +1,4 @@
-import { lstat, mkdir, readlink, readdir, symlink, unlink } from "node:fs/promises";
+import { lstat, mkdir, readFile, readlink, readdir, symlink, unlink } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
   createAgentSession,
@@ -657,14 +657,27 @@ export function validateIdeogram4ParamsJson(skillParams: LokiSkillParams) {
   if (!firstString(params.background)) missing.push("background");
   if (!hasIdeogramElementParam(params)) missing.push("objects or texts");
 
-  const hasStylePhoto = Boolean(firstString(params.stylePhoto, params.style_photo, params.photo));
-  const hasStyleArtStyle = Boolean(firstString(params.styleArtStyle, params.style_art_style, params.artStyle, params.art_style));
+  const stylePhoto = firstString(params.stylePhoto, params.style_photo, params.photo);
+  const styleArtStyle = firstString(params.styleArtStyle, params.style_art_style, params.artStyle, params.art_style);
+  const hasStylePhoto = Boolean(stylePhoto);
+  const hasStyleArtStyle = Boolean(styleArtStyle);
   const errors: string[] = [];
   if (missing.length > 0) {
     errors.push(`paramsJson is missing: ${missing.join(", ")}.`);
   }
+  if (typeof params.stylePhoto === "boolean" || typeof params.style_photo === "boolean" || typeof params.photo === "boolean") {
+    errors.push("paramsJson.stylePhoto must be a descriptive string such as \"editorial portrait photography\", not a boolean.");
+  }
+  if (
+    typeof params.styleArtStyle === "boolean"
+    || typeof params.style_art_style === "boolean"
+    || typeof params.artStyle === "boolean"
+    || typeof params.art_style === "boolean"
+  ) {
+    errors.push("paramsJson.styleArtStyle must be a descriptive string such as \"cinematic digital painting\", not a boolean.");
+  }
   if (hasStylePhoto === hasStyleArtStyle) {
-    errors.push("paramsJson must include exactly one of stylePhoto or styleArtStyle.");
+    errors.push("paramsJson must include exactly one of stylePhoto or styleArtStyle as a non-empty descriptive string.");
   }
 
   return errors;
@@ -1255,15 +1268,17 @@ type SkillToolProfile = {
   promptDescription: string;
 };
 
-const defaultImageDescriptionPrompt =
-  "Describe this image in detail, including subject, composition, style, lighting, colors, pose, clothing/materials, background, visible text, and camera angle.";
-
 const referencePlaceholderPhrases = [
   "reference image",
   "selected image",
   "source image",
   "input image",
+  "reference video",
+  "selected video",
+  "source video",
+  "input video",
   "based on the image",
+  "based on the video",
   "based on the reference",
   "from the reference",
   "use the reference",
@@ -1273,8 +1288,14 @@ const referencePlaceholderPhrases = [
   "imagen seleccionada",
   "imagen fuente",
   "imagen de entrada",
+  "video de referencia",
+  "video seleccionado",
+  "video fuente",
+  "video de entrada",
   "basado en la imagen",
   "basada en la imagen",
+  "basado en el video",
+  "basada en el video",
   "basado en la referencia",
   "basada en la referencia",
   "de la referencia",
@@ -1303,19 +1324,19 @@ const skillToolProfiles: Record<string, SkillToolProfile> = {
   },
   "comfy-s2vidgen": {
     description:
-      " For WAN S2V, the prompt parameter must be the final WAN scene prompt, not a copy of the user's request and not UI/card description text. Follow the skill instructions: write one audio-driven scene starting with \"In the video,\" or \"The video shows\", describing the subject, speech/singing/dialogue/performance, expression, mouth motion, body movement, camera, and environment.",
+      " For WAN S2V, the prompt parameter must be the final WAN scene prompt, not a copy of the user's request and not UI/card description text. Use read_loki_visual on the selected local image when the current model has vision, then write one audio-driven scene starting with \"In the video,\" or \"The video shows\", describing the subject, speech/singing/dialogue/performance, expression, mouth motion, body movement, camera, and environment.",
     promptDescription:
       "Final WAN S2V scene prompt only. Start with 'In the video,' or 'The video shows'. Describe one audio-driven performance scene with subject, speech/singing/dialogue, expression, mouth motion, body movement, camera, and environment. Do not write 'Generate a video from the selected image/audio'.",
   },
   "ltx-seed-seeker": {
     description:
-      " For LTX Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution LTX i2v seed candidate video cards from the same prompt and first selected image input. Do not pass or request first/last-frame mode. For paramsJson.runMode=\"rerender\", require a selected LTX Seed Seeker preview video card and pass only the user's final render intent; the action reuses the selected card's prompt, seed, model, aspect ratio, and duration, changing only paramsJson.targetResolution.",
+      " For LTX Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution LTX i2v seed candidate video cards from the same prompt and first selected image input. Use read_loki_visual on the selected local image when the current model has vision before writing the preview motion prompt. Do not pass or request first/last-frame mode. For paramsJson.runMode=\"rerender\", require a selected LTX Seed Seeker preview video card and pass only the user's final render intent; the action reuses the selected card's prompt, seed, model, aspect ratio, and duration, changing only paramsJson.targetResolution.",
     promptDescription:
       "Final single-shot LTX i2v motion prompt. In preview mode this prompt is used for all three seed candidates from the first selected image. In rerender mode the selected preview card's stored prompt is authoritative.",
   },
   "wan-seed-seeker": {
     description:
-      " For WAN Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution WAN seed candidate video cards from the same prompt. Preserve paramsJson.videoMode as \"i2v\" or \"flf2v\"; for flf2v the first selected image is the first frame and the last selected image is the last frame. Do not split previews into multiple skill calls. WAN has no LTX 2x upscale path, so the action uses direct 360p, 720p, or 1080p dimensions. If the user asks for a WAN LoRA, include it in paramsJson as extraLora, extraLoraHigh, or extraLoraLow. For paramsJson.runMode=\"rerender\", require a selected WAN Seed Seeker preview video card and pass only paramsJson.targetResolution.",
+      " For WAN Seed Seeker, use one invocation with paramsJson.runMode=\"preview\" to generate exactly three low-resolution WAN seed candidate video cards from the same prompt. Preserve paramsJson.videoMode as \"i2v\" or \"flf2v\"; for flf2v the first selected image is the first frame and the last selected image is the last frame. Use read_loki_visual on the selected local image(s) when the current model has vision before writing the preview motion prompt. Do not split previews into multiple skill calls. WAN has no LTX 2x upscale path, so the action uses direct 360p, 720p, or 1080p dimensions. If the user asks for a WAN LoRA, include it in paramsJson as extraLora, extraLoraHigh, or extraLoraLow. For paramsJson.runMode=\"rerender\", require a selected WAN Seed Seeker preview video card and pass only paramsJson.targetResolution.",
     promptDescription:
       "Final single-shot WAN motion prompt. In preview mode this prompt is used for all three seed candidates. For flf2v, describe the coherent transition from the first selected image to the last selected image. In rerender mode the selected preview card's stored prompt is authoritative.",
   },
@@ -1333,27 +1354,45 @@ const skillToolProfiles: Record<string, SkillToolProfile> = {
   },
   "comfy-image-generate": {
     description:
-      " For Comfy image generation, put paramsJson.mode as t2i or r2i. For r2i, require a selected or attached local image artifact, call describe_loki_image first unless a trusted visual description is already available, and convert observed traits into a standalone final image prompt; the CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, inspect the attached visual image first, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not add a Loki-specific NSFW filter or soften adult prompts for local Comfy generation.",
+      " For Comfy image generation, put paramsJson.mode as t2i or r2i. For r2i, require a selected or attached local image artifact, use read_loki_visual on the selected local image when the current model has vision, and convert observed traits into a standalone final image prompt. The CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. For Anima image generation profiles (anima-base or anima-preview3-turbo), the prompt parameter must be a comma-separated booru/Danbooru-style tag prompt, not prose or a copy of the user's request. Use tags like masterpiece, best quality, anime illustration, 1girl, solo, full body, singing, microphone, long hair, clean lineart, and preserve requested details as tags. When selected images are present and the user wants a reference-based generation, extract concrete visible traits such as subject count, hairstyle, hair color, eye color, pose, expression, outfit, crop, camera angle, style, linework, background, and lighting, then write those traits as tags. Do not add a Loki-specific NSFW filter or soften adult prompts for local Comfy generation.",
     promptDescription:
-      "Final standalone image generation prompt. Put paramsJson.mode as t2i or r2i. For r2i, never mention reference/selected images. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, describe what you visually observe as concrete tags rather than writing reference placeholders. For local Comfy profiles, preserve adult/NSFW user intent without adding Loki-specific safety rewrites.",
+      "Final standalone image generation prompt. Put paramsJson.mode as t2i or r2i. For r2i, never mention reference/selected images. If paramsJson.modelProfile is anima-base or anima-preview3-turbo, use comma-separated booru/Danbooru-style tags only; do not write prose like 'Generate an illustration...'. For selected image references, use concrete traits from read_loki_visual as tags rather than writing reference placeholders. For local Comfy profiles, preserve adult/NSFW user intent without adding Loki-specific safety rewrites.",
+  },
+  "comfy-krea2-image": {
+    description:
+      " For Krea2 Turbo, use paramsJson.mode as t2i or r2i and paramsJson.aspectRatio. Do not pass modelProfile or LoRA params. For r2i, require a selected or attached local image artifact, use read_loki_visual on the selected local image when the current model has vision, and convert observed traits into a standalone final Krea2 prompt. The CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. Expand the user's input into one cohesive paragraph using the Krea2 prompt template: preserve subjects/actions/colors/spatial relationships, keep style planning internal, honor requested medium and visible text, avoid invented objects/props/characters/animals, and treat people with dignity. Do not add a Loki-specific NSFW filter or soften adult prompts for local Krea2 generation.",
+    promptDescription:
+      "Final standalone Krea2 prompt: one cohesive expanded paragraph, no bullets, JSON, markdown, wrappers, or planning text. Put paramsJson.mode as t2i or r2i and paramsJson.aspectRatio; do not pass modelProfile. For r2i, use concrete traits from read_loki_visual and never mention reference/selected images. Preserve adult/NSFW user intent for local Krea2 without adding Loki-specific safety rewrites.",
   },
   "comfy-videogen": {
     description:
-      " For local Comfy video generation, preserve the user's adult/NSFW visual intent in the final motion prompt. Do not add a Loki-specific NSFW filter, refusal language, or softer substitute prompt. This does not override remote provider behavior for Seedance 2.0 API.",
+      " For local Comfy video generation, use read_loki_visual on selected local images before reference-guided prompts when the current model has vision. For selected video references, use read_loki_visual to determine whether the runtime can attach the reference; otherwise ask for visual details instead of inventing them. Preserve the user's adult/NSFW visual intent in the final motion prompt. Do not add a Loki-specific NSFW filter, refusal language, or softer substitute prompt. This does not override remote provider behavior for Seedance 2.0 API.",
     promptDescription:
       "Final video generation prompt. Preserve adult/NSFW user intent for local Comfy profiles, while still following the selected model's normal prompt guidance for shot, motion, camera, duration, and selected-card handling.",
   },
   "ideogram4-image": {
     description:
-      " For Ideogram 4, do not pass only a plain prompt. Build a structured paramsJson with mode, qualityProfile, aspectRatio, styleAesthetics, styleLighting, styleMedium, exactly one of stylePhoto or styleArtStyle, background, and at least one objects or texts element. Objects use {bbox:[y_min,x_min,y_max,x_max],description}; text uses {bbox:[...],text,description}; bbox coordinates are 0..1000. If selected bbox composition guides exist, use their ideogramBbox values exactly for objects/texts and use each box prompt as the description; do not invent replacement bboxes. For selected image references, call describe_loki_image first unless a trusted visual description is already available, inspect the visual content, and convert observed traits into a standalone final image prompt; the CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. Do not add a Loki-specific NSFW filter or soften adult prompts beyond the invoking agent's own limits.",
+      " For Ideogram 4, do not pass only a plain prompt. Build a structured paramsJson with mode, qualityProfile, aspectRatio, styleAesthetics, styleLighting, styleMedium, exactly one of stylePhoto or styleArtStyle, background, and at least one objects or texts element. stylePhoto and styleArtStyle are descriptive strings, not booleans: use stylePhoto like \"editorial portrait photography\" or styleArtStyle like \"cinematic digital painting\". Objects use {bbox:[y_min,x_min,y_max,x_max],description}; text uses {bbox:[...],text,description}; bbox coordinates are 0..1000. If selected bbox composition guides exist, use their ideogramBbox values exactly for objects/texts and use each box prompt as the description; do not invent replacement bboxes. For selected image references, use read_loki_visual on the selected local image when the current model has vision, then convert observed traits into a standalone final image prompt. The CLI does not receive the image directly, so never mention reference image, selected image, based on the image, imagen de referencia, imagen seleccionada, recrear la referencia, or mantener la referencia in prompt or paramsJson. Do not add a Loki-specific NSFW filter or soften adult prompts beyond the invoking agent's own limits.",
     promptDescription:
-      "Standalone high-level Ideogram 4 visual description only. Never mention reference/selected images. Put all structured style, background, object/text elements, bboxes, qualityProfile, mode, aspectRatio, and optional seed in paramsJson. When bbox composition guides are selected, copy their ideogramBbox and prompt values into paramsJson objects/texts exactly.",
+      "Standalone high-level Ideogram 4 visual description only. Never mention reference/selected images. Put all structured style, background, object/text elements, bboxes, qualityProfile, mode, aspectRatio, and optional seed in paramsJson. Use exactly one descriptive string selector: stylePhoto, e.g. \"editorial portrait photography\", or styleArtStyle, e.g. \"cinematic digital painting\"; never use booleans. When bbox composition guides are selected, copy their ideogramBbox and prompt values into paramsJson objects/texts exactly.",
   },
 };
 
 function getSkillToolProfile(skill: LokiSkill) {
   return skillToolProfiles[skill.id] ?? defaultSkillToolProfile;
 }
+
+const piReadReferenceSkillIds = new Set([
+  "comfy-image-generate",
+  "comfy-krea2-image",
+  "ideogram4-image",
+  "comfy-videogen",
+  "comfy-videoedit",
+  "comfy-s2vidgen",
+  "comfy-motion-track-control",
+  "ltx-seed-seeker",
+  "wan-seed-seeker",
+]);
 
 function createLokiSkillPiTool(
   skill: LokiSkill,
@@ -1770,15 +1809,24 @@ function selectedSkillReferenceMode(skill: LokiSkill, skillParams: LokiSkillPara
   if (skill.id === "comfy-image-generate" || skill.id === "ideogram4-image") {
     return mode === "r2i";
   }
+  if (skill.id === "comfy-krea2-image") {
+    return mode === "r2i";
+  }
   if (skill.id === "comfy-videogen") {
     return mode === "r2v";
+  }
+  if (skill.id === "comfy-videoedit") {
+    const berniniMode = firstString(params.berniniMode).toLowerCase().replaceAll("_", "-");
+    return berniniMode === "r2v" || berniniMode === "rv2v";
   }
   return ["ltx-seed-seeker", "wan-seed-seeker", "comfy-s2vidgen"].includes(skill.id);
 }
 
 export function validateReferencePromptPlaceholders(request: AgentRunRequest, skill: LokiSkill, skillParams: LokiSkillParams) {
-  const hasLocalImage = localMediaReferencesFromRequest(request).some((reference) => reference.kind === "image");
-  if (!hasLocalImage) return [];
+  const hasLocalVisualReference = localMediaReferencesFromRequest(request).some((reference) =>
+    reference.kind === "image" || reference.kind === "video"
+  );
+  if (!hasLocalVisualReference) return [];
 
   let isReferenceMode = false;
   try {
@@ -1794,7 +1842,7 @@ export function validateReferencePromptPlaceholders(request: AgentRunRequest, sk
   if (matched.length === 0) return [];
 
   return [
-    `Reference prompt still contains placeholder image language (${[...new Set(matched)].join(", ")}). Call describe_loki_image and replace placeholders with concrete visible traits before invoking ${skill.name}.`,
+    `Reference prompt still contains placeholder image language (${[...new Set(matched)].join(", ")}). Replace placeholders with concrete visible traits before invoking ${skill.name}.`,
   ];
 }
 
@@ -1888,177 +1936,43 @@ function summarizeLocalMediaReferences(request: AgentRunRequest) {
   }));
 }
 
-export function shouldExposeDescribeLokiImageTool(request: AgentRunRequest) {
-  return localMediaReferencesFromRequest(request).some((reference) => reference.kind === "image");
-}
-
-export function selectDescribeImageReference(
-  request: AgentRunRequest,
-  selector: { cardId?: string; attachmentId?: string; artifactUrl?: string },
-) {
-  const imageReferences = localMediaReferencesFromRequest(request).filter((reference) => reference.kind === "image");
-  if (imageReferences.length === 0) return null;
-
-  const byArtifactUrl = firstString(selector.artifactUrl);
-  if (byArtifactUrl) {
-    return imageReferences.find((reference) => reference.artifactUrl === byArtifactUrl) ?? null;
-  }
-
-  const byCardId = firstString(selector.cardId);
-  if (byCardId) {
-    return imageReferences.find((reference) => reference.cardId === byCardId) ?? null;
-  }
-
-  const byAttachmentId = firstString(selector.attachmentId);
-  if (byAttachmentId) {
-    return imageReferences.find((reference) => reference.attachmentId === byAttachmentId) ?? null;
-  }
-
-  return imageReferences[0];
-}
-
-async function runInternalLokiSkillNoPublish(
-  skill: LokiSkill,
-  skillParams: LokiSkillParams,
-  request: AgentRunRequest,
-  activeRun?: ActiveAgentRun,
-) {
-  throwIfAgentRunCancelled(activeRun);
-  const structuredParams = parseSkillParamsJson(skillParams.paramsJson);
-  const createdRun = await withAgentRunCancellation(
-    requestJson<LokiSkillRun>(`${backendApiUrl}/api/skill-runs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: activeRun?.controller.signal,
-      body: JSON.stringify({
-        skillId: skill.id,
-        prompt: skillParams.prompt,
-        context: {
-          ...request.context,
-          agentId: request.agentId ?? "base-agent",
-          model: request.model,
-          collectedArgs: request.collectedArgs ?? {},
-          selectedCardSnapshots: request.selectedCardSnapshots ?? [],
-          attachments: request.attachments ?? [],
-        },
-        selectedCards: request.selectedCards,
-        selectedCardSnapshots: request.selectedCardSnapshots ?? [],
-        attachments: request.attachments ?? [],
-        params: {
-          ...structuredParams,
-          localMediaReferences: request.context.localMediaReferences ?? [],
-          skillPrompt: skillParams.prompt,
-        },
-      }),
-    }),
-    activeRun,
+function localVisualReferencesFromRequest(request: AgentRunRequest) {
+  return localMediaReferencesFromRequest(request).filter((reference) =>
+    reference.kind === "image" || reference.kind === "video"
   );
-
-  try {
-    return await waitForSkillRun(createdRun.id, activeRun);
-  } catch (error) {
-    if (error instanceof AgentRunCancelledError || activeRun?.controller.signal.aborted) {
-      await cancelBackendSkillRun(createdRun.id);
-      throw new AgentRunCancelledError();
-    }
-    throw error;
-  }
 }
 
-function imageDescriptionFromRun(run: LokiSkillRun) {
-  for (const card of run.result?.cards ?? []) {
-    const description = firstString(card.metadata?.imageDescription);
-    if (description) return description;
-  }
-  return "";
+function imageMimeTypeForPath(path: string, declaredMimeType?: string) {
+  if (declaredMimeType?.startsWith("image/")) return declaredMimeType;
+  const lowerPath = path.toLowerCase();
+  if (lowerPath.endsWith(".png")) return "image/png";
+  if (lowerPath.endsWith(".jpg") || lowerPath.endsWith(".jpeg")) return "image/jpeg";
+  if (lowerPath.endsWith(".webp")) return "image/webp";
+  if (lowerPath.endsWith(".gif")) return "image/gif";
+  return "image/png";
 }
 
-function createDescribeLokiImagePiTool(
-  request: AgentRunRequest,
-  runState: AgentRunState,
-  describeSkill: LokiSkill,
-) {
-  return defineTool({
-    name: "describe_loki_image",
-    label: "Describe Loki image",
-    description:
-      "Describe a selected or attached Loki image artifact using local comfy-imagedescribe/Qwen3-VL. Use this before reference-image prompt writing when the agent does not have trusted visual details.",
-    promptSnippet:
-      "Call describe_loki_image before using a selected or attached image as visual reference for r2i/r2v or image-grounded prompt construction. Fold the returned concrete traits into the final prompt; do not mention reference/selected image placeholders.",
-    parameters: Type.Object({
-      cardId: Type.Optional(Type.String({ description: "Selected card id to describe. If omitted, the first local image is used." })),
-      attachmentId: Type.Optional(Type.String({ description: "Attachment id to describe. If omitted, the first local image is used." })),
-      artifactUrl: Type.Optional(Type.String({ description: "Artifact URL to describe. If omitted, the first local image is used." })),
-      prompt: Type.Optional(Type.String({ description: "Instruction for the image description model." })),
-      maxLength: Type.Optional(Type.Number({ description: "Maximum generated description length." })),
-      greedy: Type.Optional(Type.Boolean({ description: "Use greedy decoding for reproducible descriptions." })),
-      seed: Type.Optional(Type.Number({ description: "Description model seed." })),
-    }),
-    async execute(_toolCallId, params) {
-      const reference = selectDescribeImageReference(request, {
-        cardId: params.cardId,
-        attachmentId: params.attachmentId,
-        artifactUrl: params.artifactUrl,
-      });
-      if (!reference) {
-        const error = "No selected or attached local image artifact is available to describe.";
-        return {
-          content: [{ type: "text", text: error }],
-          details: { status: "failed", error },
-        };
-      }
+function selectLokiVisualReference(request: AgentRunRequest, params: Record<string, unknown>) {
+  const references = localVisualReferencesFromRequest(request);
+  if (references.length === 0) return null;
 
-      runState.emit({
-        type: "tool_update",
-        status: "running",
-        toolName: "describe_loki_image",
-        message: `Describing image ${reference.artifactUrl}.`,
-      });
+  const index = typeof params.index === "number" && Number.isInteger(params.index)
+    ? params.index
+    : undefined;
+  const path = firstString(params.path);
+  const artifactUrl = firstString(params.artifactUrl);
+  const cardId = firstString(params.cardId);
+  const attachmentId = firstString(params.attachmentId);
+  const malformedArgsText = JSON.stringify(params);
+  const embeddedPath = firstString(malformedArgsText.match(/\/[^"{}\\\s]+\.loki\/[^"{}\\\s]+/i)?.[0]);
 
-      const describePrompt = firstString(params.prompt, defaultImageDescriptionPrompt);
-      const structuredParams = {
-        inputPath: reference.path,
-        maxLength: params.maxLength,
-        greedy: params.greedy,
-        seed: params.seed,
-      };
-      const run = await runInternalLokiSkillNoPublish(
-        describeSkill,
-        {
-          prompt: describePrompt,
-          paramsJson: JSON.stringify(structuredParams),
-        },
-        request,
-        runState.activeRun,
-      );
-      if (run.status === "failed") {
-        const error = run.error ?? "comfy-imagedescribe failed.";
-        return {
-          content: [{ type: "text", text: `Image description failed: ${error}` }],
-          details: { status: "failed", error, skillRunId: run.id, reference },
-        };
-      }
-
-      const description = imageDescriptionFromRun(run);
-      if (!description) {
-        const error = "comfy-imagedescribe completed without returning imageDescription metadata.";
-        return {
-          content: [{ type: "text", text: error }],
-          details: { status: "failed", error, skillRunId: run.id, reference },
-        };
-      }
-
-      return {
-        content: [{ type: "text", text: description }],
-        details: {
-          status: "succeeded",
-          skillRunId: run.id,
-          reference,
-          description,
-        },
-      };
-    },
-  });
+  return references.find((reference) => path && reference.path === path)
+    ?? references.find((reference) => embeddedPath && reference.path === embeddedPath)
+    ?? references.find((reference) => artifactUrl && reference.artifactUrl === artifactUrl)
+    ?? references.find((reference) => cardId && reference.cardId === cardId)
+    ?? references.find((reference) => attachmentId && reference.attachmentId === attachmentId)
+    ?? (index !== undefined ? references[index] : undefined)
+    ?? references[0];
 }
 
 function summarizeAttachments(attachments: AgentAttachment[]) {
@@ -2171,6 +2085,68 @@ function createInspectLokiContextPiTool(request: AgentRunRequest) {
           },
         ],
         details,
+      };
+    },
+  });
+}
+
+function createReadLokiVisualPiTool(request: AgentRunRequest) {
+  return defineTool({
+    name: "read_loki_visual",
+    label: "Read Loki visual media",
+    description:
+      "Read a selected or attached Loki image/video reference for visual grounding. Defaults to the first selected visual media reference and only reads local paths already resolved by Loki.",
+    promptSnippet:
+      "Call read_loki_visual to visually inspect selected or attached Loki image media before writing reference prompts. It defaults to the first visual reference.",
+    parameters: Type.Object({
+      index: Type.Optional(Type.Number({
+        description: "Zero-based local visual reference index. Optional; defaults to the first visual reference.",
+      })),
+      cardId: Type.Optional(Type.String({
+        description: "Selected card id to read from. Optional.",
+      })),
+      attachmentId: Type.Optional(Type.String({
+        description: "Attachment id to read from. Optional.",
+      })),
+      artifactUrl: Type.Optional(Type.String({
+        description: "Artifact URL to read from. Optional.",
+      })),
+      path: Type.Optional(Type.String({
+        description: "Exact local path listed in Loki context. Optional; the tool defaults to the first visual reference.",
+      })),
+    }),
+    async execute(_toolCallId, params) {
+      const reference = selectLokiVisualReference(request, params);
+      if (!reference) {
+        const error = "No selected or attached local image/video artifact is available to read.";
+        return {
+          content: [{ type: "text", text: error }],
+          details: { status: "failed", error },
+        };
+      }
+
+      if (reference.kind === "video") {
+        const message =
+          "Selected Loki visual reference is a video. This runtime wrapper does not attach video bytes to the model; ask_user for the needed visible/motion details or use an image/frame reference.";
+        return {
+          content: [{ type: "text", text: message }],
+          details: { status: "unsupported_video", reference },
+        };
+      }
+
+      const data = await readFile(reference.path);
+      const mimeType = imageMimeTypeForPath(reference.path, reference.mimeType);
+      const text = `Read Loki image reference ${reference.artifactUrl} from ${reference.path}. Use the attached image content for concrete visual traits; do not mention the reference path in the final generation prompt.`;
+      return {
+        content: [
+          { type: "text", text },
+          { type: "image", data: data.toString("base64"), mimeType },
+        ],
+        details: {
+          status: "succeeded",
+          reference,
+          mimeType,
+        },
       };
     },
   });
@@ -2406,31 +2382,31 @@ Imagegen selected-image edit contract:
 - If no local artifact path is available for the selected image, fail or ask_user instead of returning a new image.`;
 }
 
-function exposedSkillsNeedImageDescriptionFallback(exposedSkills: LokiSkill[]) {
-  const skillIds = new Set(exposedSkills.map((skill) => skill.id));
-  return [
-    "comfy-image-generate",
-    "ideogram4-image",
-    "comfy-videogen",
-    "ltx-seed-seeker",
-    "wan-seed-seeker",
-    "comfy-s2vidgen",
-  ].some((skillId) => skillIds.has(skillId));
-}
+function formatPiReadVisualReferenceRules(request: AgentRunRequest, exposedSkills: LokiSkill[], runtimeMode: AgentRuntimeMode) {
+  if (runtimeMode !== "pi-tools") return "";
+  if (!exposedSkills.some((skill) => piReadReferenceSkillIds.has(skill.id))) return "";
 
-function formatImageDescriptionFallbackRules(request: AgentRunRequest, exposedSkills: LokiSkill[]) {
-  const hasLocalImage = localMediaReferencesFromRequest(request).some((reference) => reference.kind === "image");
-  if (!hasLocalImage || !exposedSkillsNeedImageDescriptionFallback(exposedSkills)) return "";
+  const visualReferences = localMediaReferencesFromRequest(request).filter((reference) =>
+    reference.kind === "image" || reference.kind === "video"
+  );
+  if (visualReferences.length === 0) return "";
+
+  const hasImages = visualReferences.some((reference) => reference.kind === "image");
+  const hasVideos = visualReferences.some((reference) => reference.kind === "video");
 
   return `
-Image description fallback:
-- Local image artifacts are available. If you need visual traits from a selected or attached image for r2i, r2v, seed exploration, S2V scene writing, or reference-informed prompt construction, call describe_loki_image before invoking the generation skill unless a trusted visual description is already available.
-- Fold the returned subject, composition, style, lighting, color, pose, material, background, text, and camera details into the final standalone prompt or paramsJson.
-- Do not invoke a reference workflow with placeholder wording such as "selected image", "reference image", "based on the image", "imagen seleccionada", or "mantener la referencia".`;
+Loki visual-reference read contract:
+- Use inspect_loki_context to identify selected/attached local media paths when needed; use the listed path values, not inline previews or data URLs.
+- For selected Loki visual references, call read_loki_visual before composing the final skill prompt when the selected model has vision. The visual media tool name for this workflow is exactly read_loki_visual.
+- read_loki_visual has no required parameters and defaults to the first selected/attached visual reference. If you pass arguments, use only simple selectors such as {"index": 0}, {"cardId": "card_123"}, {"artifactUrl": "/api/artifacts/..."}, or {"path": "/home/victor/dev/loki-creator/.loki/imports/example.png"}.
+- Do not put descriptions, markdown, thoughts, analysis text, escaped quotes, or extra keys inside read_loki_visual arguments.
+${hasImages ? "- Image references: use read_loki_visual, then fold concrete visible traits into the prompt: subject count, identity cues, pose, expression, clothing/materials, style, composition, crop, camera angle, background, colors, lighting, and visible text." : ""}
+${hasVideos ? "- Video references: call read_loki_visual. If it reports that video bytes cannot be attached in this runtime, ask_user for the missing visible/motion details instead of guessing." : ""}
+- Do not write placeholders such as reference image, selected image, selected video, based on the image, or based on the video in prompts or paramsJson. Replace them with concrete visible traits from read_loki_visual.`;
 }
 
 function isLocalComfyGenerationSkill(skill: LokiSkill) {
-  return skill.id === "comfy-image-generate" || skill.id === "comfy-videogen";
+  return skill.id === "comfy-image-generate" || skill.id === "comfy-krea2-image" || skill.id === "comfy-videogen";
 }
 
 function formatVideoDirectorMemory(request: AgentRunRequest) {
@@ -2507,7 +2483,7 @@ export function buildAgentPrompt(request: AgentRunRequest, exposedSkills: LokiSk
   const selectedCardInputs = formatSelectedCardInputs(request.selectedCardSnapshots ?? [], localMediaReferences);
   const attachmentInputs = formatAttachmentInputs(request.attachments ?? []);
   const imagegenSelectedImageEditRules = formatImagegenSelectedImageEditRules(request, exposedSkills, runtimeMode);
-  const imageDescriptionFallbackRules = formatImageDescriptionFallbackRules(request, exposedSkills);
+  const piReadVisualReferenceRules = formatPiReadVisualReferenceRules(request, exposedSkills, runtimeMode);
   const videoDirectorRules = formatVideoDirectorOperatingRules(request);
   const completionInstruction = runtimeMode === "grok-build-stdio"
     ? "Use the selected project skill when the request requires producing canvas cards. If the Grok runtime cannot execute the project skill directly, finish with the complete operational prompt and structured parameters you want Loki to execute. Return a concise final response for the UI response panel."
@@ -2530,7 +2506,7 @@ ${attachmentInputs}
 ${formatCollectedArgs(request.collectedArgs)}
 ${formatExplicitSkillSelection(request, exposedSkills, runtimeMode)}
 ${imagegenSelectedImageEditRules}
-${imageDescriptionFallbackRules}
+${piReadVisualReferenceRules}
 ${videoDirectorRules}
 
 Loki runtime model:
@@ -2539,7 +2515,7 @@ Loki runtime model:
 - Visible output must arrive as cards.
 - If selected canvas cards are present, assume the user wants the request applied to those selected artifacts unless they explicitly ask for a completely new unrelated card.
 - For selected-card edits, preserve the selected card's visible content and visual style as the starting point.
-- For selected-image reference generation, inspect the attached visual input and convert visible traits into the final prompt yourself only when the user explicitly asks for a new reference-based image. Do not downgrade an edit request into reference generation.
+- For selected-image or selected-video reference generation, inspect the attached visual input with read_loki_visual when available and convert visible traits into the final prompt yourself only when the user explicitly asks for a new reference-based artifact. Do not downgrade an edit request into reference generation.
 - If attached files are present and the user asks to generate, edit, transform, animate, upscale, describe as a card, or otherwise produce visible output from them, you must invoke an exposed Loki skill or mapped direct Pi tool. Do not finish with plain text only.
 - Selected cards and attachments can be inspected with inspect_loki_context. Use summary mode first; request payloads only when the task needs actual HTML, UI preview details, or attachment text/data. Inline media data is not an executable skill input.
 - Do not rely on a skill action to infer creative transformations from a short instruction.
@@ -2680,15 +2656,12 @@ export async function runAgent(request: AgentRunRequest): Promise<AgentRunRespon
       runState,
       `resolvedModel=${model?.name ?? runtimeRequest.model} provider=${model?.provider ?? "unknown"} runtimeMode=${runtimeMode}`,
     );
-    const describeImageSkill = availableSkills.find((skill) => skill.id === "comfy-imagedescribe") ?? null;
-    const describeImageTools = describeImageSkill && shouldExposeDescribeLokiImageTool(runtimeRequest)
-      ? [createDescribeLokiImagePiTool(runtimeRequest, runState, describeImageSkill)]
-      : [];
-
     const customTools = [
       createAskUserPiTool(runState, runtimeRequest, selectedSkills),
       createInspectLokiContextPiTool(runtimeRequest),
-      ...describeImageTools,
+      ...(localVisualReferencesFromRequest(runtimeRequest).length > 0
+        ? [createReadLokiVisualPiTool(runtimeRequest)]
+        : []),
       ...(runtimeMode === "grok-build-stdio"
         ? []
         : selectedSkills

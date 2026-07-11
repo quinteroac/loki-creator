@@ -34,6 +34,7 @@ export const agents: LokiAgent[] = [
       "video-director-os",
       "imagegen",
       "comfy-image-generate",
+      "comfy-krea2-image",
       "comfy-image-edit",
       "comfy-videogen",
       "comfy-videoedit",

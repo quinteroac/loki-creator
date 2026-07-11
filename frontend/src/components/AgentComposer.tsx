@@ -19,6 +19,9 @@ import type {
   ComfyDuration,
   ComfyImageMode,
   ComfyImageProfile,
+  ComfyImageUpscaleEngine,
+  ComfyImageUpscaleQuality,
+  ComfyImageUpscaleResolution,
   ComfyResolution,
   ComfyTool,
   ComfyVideoMode,
@@ -54,6 +57,9 @@ type AgentComposerProps = {
   comfyDuration: ComfyDuration;
   comfyImageMode: ComfyImageMode;
   comfyImageProfile: ComfyImageProfile;
+  comfyImageUpscaleEngine: ComfyImageUpscaleEngine;
+  comfyImageUpscaleQuality: ComfyImageUpscaleQuality;
+  comfyImageUpscaleResolution: ComfyImageUpscaleResolution;
   comfyResolution: ComfyResolution;
   comfyTool: ComfyTool;
   comfyVideoMode: ComfyVideoMode;
@@ -75,6 +81,9 @@ type AgentComposerProps = {
   onComfyDurationChange: (duration: ComfyDuration) => void;
   onComfyImageModeChange: (mode: ComfyImageMode) => void;
   onComfyImageProfileChange: (profile: ComfyImageProfile) => void;
+  onComfyImageUpscaleEngineChange: (engine: ComfyImageUpscaleEngine) => void;
+  onComfyImageUpscaleQualityChange: (quality: ComfyImageUpscaleQuality) => void;
+  onComfyImageUpscaleResolutionChange: (resolution: ComfyImageUpscaleResolution) => void;
   onComfyResolutionChange: (resolution: ComfyResolution) => void;
   onComfyToolChange: (tool: ComfyTool) => void;
   onComfyVideoModeChange: (mode: ComfyVideoMode) => void;
@@ -136,6 +145,9 @@ export function AgentComposer({
   comfyDuration,
   comfyImageMode,
   comfyImageProfile,
+  comfyImageUpscaleEngine,
+  comfyImageUpscaleQuality,
+  comfyImageUpscaleResolution,
   comfyResolution,
   comfyTool,
   comfyVideoMode,
@@ -157,6 +169,9 @@ export function AgentComposer({
   onComfyDurationChange,
   onComfyImageModeChange,
   onComfyImageProfileChange,
+  onComfyImageUpscaleEngineChange,
+  onComfyImageUpscaleQualityChange,
+  onComfyImageUpscaleResolutionChange,
   onComfyResolutionChange,
   onComfyToolChange,
   onComfyVideoModeChange,
@@ -873,6 +888,53 @@ export function AgentComposer({
                           <option value="wan22-bernini-image">Bernini Image</option>
                         </select>
                       </label>
+                    )}
+                    {comfyImageMode === "upscale" && (
+                      <>
+                        <label className="composer-select-chip">
+                          <span>Engine</span>
+                          <select
+                            value={comfyImageUpscaleEngine}
+                            onChange={(event) => onComfyImageUpscaleEngineChange(event.target.value as ComfyImageUpscaleEngine)}
+                            aria-label="Comfy image upscale engine"
+                          >
+                            <option value="clear-reality">ClearReality</option>
+                            <option value="rtx-vsr">RTX VSR</option>
+                          </select>
+                        </label>
+                        {comfyImageUpscaleEngine === "rtx-vsr" && (
+                          <>
+                            <label className="composer-select-chip">
+                              <span>Resolution</span>
+                              <select
+                                value={comfyImageUpscaleResolution}
+                                onChange={(event) => onComfyImageUpscaleResolutionChange(event.target.value as ComfyImageUpscaleResolution)}
+                                aria-label="Comfy RTX image upscale resolution"
+                              >
+                                <option value="480p">480p</option>
+                                <option value="720p">720p</option>
+                                <option value="1080p">1080p</option>
+                                <option value="1440p">1440p</option>
+                                <option value="4k">4K</option>
+                                <option value="8k">8K</option>
+                              </select>
+                            </label>
+                            <label className="composer-select-chip">
+                              <span>Quality</span>
+                              <select
+                                value={comfyImageUpscaleQuality}
+                                onChange={(event) => onComfyImageUpscaleQualityChange(event.target.value as ComfyImageUpscaleQuality)}
+                                aria-label="Comfy RTX image upscale quality"
+                              >
+                                <option value="LOW">Low</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="HIGH">High</option>
+                                <option value="ULTRA">Ultra</option>
+                              </select>
+                            </label>
+                          </>
+                        )}
+                      </>
                     )}
                   </>
                 ) : (

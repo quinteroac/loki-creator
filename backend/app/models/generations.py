@@ -119,6 +119,9 @@ class ComfyGenerationRequest(BaseModel):
     model_profile: str = Field(default="", alias="modelProfile")
     aspect_ratio: Literal["1:1", "4:3", "16:9", "9:16"] = Field(default="1:1", alias="aspectRatio")
     resolution: Literal["360p", "480p", "720p", "1080p"] = "480p"
+    image_upscale_engine: Literal["clear-reality", "rtx-vsr"] = Field(default="clear-reality", alias="imageUpscaleEngine")
+    image_upscale_resolution: Literal["480p", "720p", "1080p", "1440p", "4k", "8k"] = Field(default="1080p", alias="imageUpscaleResolution")
+    image_upscale_quality: Literal["LOW", "MEDIUM", "HIGH", "ULTRA"] = Field(default="ULTRA", alias="imageUpscaleQuality")
     duration: Literal[4, 5, 7, 10, 15] = 5
     seed: int | None = None
     selected_card_snapshots: list[dict[str, Any]] = Field(default_factory=list, alias="selectedCardSnapshots")

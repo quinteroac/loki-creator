@@ -9,7 +9,7 @@
     "dev:agent-bridge": "bun run agent-bridge/server.ts"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^0.75.3",
+    "@earendil-works/pi-coding-agent": "^0.80.1",
     "@elysiajs/cors": "^1.4.2",
     "elysia": "^1.4.28",
     "react": "^19.2.3",

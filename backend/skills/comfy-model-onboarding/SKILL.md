@@ -53,6 +53,7 @@ Only configure these architectures in v1:
 - `flux-klein`: base profile `flux-klein-9b-snofs`, capabilities `imagegen.generate`, `imagegen.edit`.
 - `krea2`: base profile `krea2-turbo`, capability `imagegen.krea2-generate`.
 - `upscale-model`: base profile `clear-reality`, capability `imagegen.upscale`.
+- `rtx-vsr`: base profile `rtx-vsr`, capabilities `imagegen.rtx-upscale`, `videogen.rtx-upscale`; no model files.
 - `ltx23`: base profile `ltx23-10eros`, capabilities `videogen.t2v`, `videogen.i2v`, `videogen.flf2v`, `videogen.ia2av`.
 - `ace-step-1.5`: base profile `ace15-base`, capability `musicgen.generate`.
 - `seedance2-api`: remote profile `seedance2-api`, capabilities `videogen.seedance2-t2v`, `videogen.seedance2-r2v`, `videogen.seedance2-flf2v`.
@@ -71,6 +72,11 @@ Grok Imagine is also remote-only. Do not create local checkpoint profiles for
 `grok-imagine-api`, do not route it through `models_dir`, and do not use
 `comfy-model-downloader`. It requires `COMFY_ORG_API_KEY` and a
 `comfy-diffusion` version that vendors the Grok API nodes.
+
+NVIDIA RTX VSR is also not a checkpoint architecture. Do not download or
+validate model files for `rtx-vsr`; image RTX upscale uses
+`imagegen.rtx-upscale` and video RTX upscale uses `videogen.rtx-upscale` with
+local NVIDIA RTX/CUDA runtime dependencies.
 
 ## Onboarding Flow
 
@@ -153,6 +159,17 @@ This profile uses `diffusion_models/krea2_turbo_fp8_scaled.safetensors`,
 `vae/qwen_image_vae.safetensors`. It is image generation only and does not
 support `imagegen.edit` or ad hoc `--extra-lora` arguments.
 
+NVIDIA RTX VSR:
+
+```bash
+uv run comfy-imagegen rtx-upscale --input path/to/input.png --resolution 1080p --quality ULTRA --out outputs
+uv run comfy-models set-default imagegen.rtx-upscale rtx-vsr
+```
+
+This profile has no model files. Missing NVIDIA RTX/CUDA or `nvidia-vfx`
+dependencies must be fixed through the Comfy tool runtime, not the model
+downloader.
+
 ACE-Step 1.5 variant:
 
 ```bash
@@ -170,6 +187,7 @@ uv run comfy-models set-default musicgen.generate my-ace15
 - Krea2 generate: `uv run comfy-imagegen krea2-generate --prompt "simple cinematic portrait" --width 512 --height 512`
 - Image edit: use a small existing PNG and a simple prompt.
 - Upscale: use a small existing PNG.
+- RTX image upscale: use a small existing PNG with `rtx-upscale --resolution 1080p --quality ULTRA`.
 - Video: use `--length 49 --fps 24`.
 - Music: use `--duration 30 --steps 8 --cfg 1`.
 

@@ -237,8 +237,12 @@ present-tense paragraph. For `v2v` and `rv2v`, treat Bernini as a preservative
 edit model: keep prompts minimal, change-focused, and explicit about preserving
 the selected source video. If selected reference images are used, describe only
 the reference details the user asked to transfer; do not add unrelated scene
-detail. For `r2v`, there is no source video to preserve, so the prompt may
-describe the target video, but it still must not add unrequested details.
+detail. In agent mode with a vision-capable PI model, use `read_loki_visual` on
+selected local images before writing those reference details. For selected video
+references, call `read_loki_visual`; if it reports that video bytes cannot be
+attached in this runtime, ask for the missing visual details instead of
+inventing them. For `r2v`, there is no source video to preserve, so the prompt
+may describe the target video, but it still must not add unrequested details.
 
 ## Params
 

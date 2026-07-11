@@ -99,15 +99,17 @@ the user explicitly asks for them.
 ## Modes
 
 - `t2i`: transform the user's text into an Ideogram 4 structured prompt.
-- `r2i`: inspect selected or attached image artifacts, describe visible
-  subjects, style, layout, colors, text, and composition, then combine that with
-  the user's prompt. The CLI has no image-conditioning flag; the selected image
-  is interpreted by the agent before invoking the skill.
+- `r2i`: in agent mode, use `read_loki_visual` on selected or attached local image
+  artifacts, describe visible subjects, style, layout, colors, text, and
+  composition, then combine that with the user's prompt. The CLI has no
+  image-conditioning flag; the selected image is interpreted by the agent before
+  invoking the skill.
 
 For `r2i`, require at least one selected or attached local image artifact. Do
 not use inline previews, data URLs, or vague placeholders.
-If the agent does not already have a trusted visual description, call
-`describe_loki_image` before composing the structured Ideogram prompt.
+In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+selected local image and compose the structured Ideogram prompt from
+concrete visible traits before invoking this skill.
 
 ## Required paramsJson
 
@@ -119,7 +121,12 @@ Pass these fields in `paramsJson`:
 - `styleAesthetics`: concise style qualities.
 - `styleLighting`: concrete lighting direction and mood.
 - `styleMedium`: medium such as photograph, poster, illustration, logo, or 3D render.
-- Exactly one of `stylePhoto` or `styleArtStyle`.
+- Exactly one of `stylePhoto` or `styleArtStyle`, as a non-empty descriptive
+  string. Do not use booleans.
+  - Use `stylePhoto` for photographic outputs, for example:
+    `"editorial portrait photography"` or `"commercial product photography"`.
+  - Use `styleArtStyle` for illustration/design outputs, for example:
+    `"cinematic digital painting"` or `"vector poster art"`.
 - `background`: the global background/setting.
 - At least one `objects` or `texts` element.
 
@@ -177,8 +184,9 @@ For reference-informed prompts:
 
 - Describe what is visibly present in the selected images: subject count, pose,
   materials, style, palette, camera angle, layout, text, and background.
-- If those traits are not already trusted context, call `describe_loki_image`
-  and use its description as the visual grounding source.
+- Use `read_loki_visual` on the selected local image as the visual grounding
+  source when the agent model has vision. If visual reading is unavailable, ask
+  for the missing visual details instead of inventing them.
 - Write the final image prompt as a standalone visual description.
 - Do not include phrases such as `reference image`, `selected image`, `based on
   the image`, `imagen de referencia`, `imagen seleccionada`, `recrear la

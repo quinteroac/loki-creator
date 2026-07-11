@@ -86,6 +86,7 @@ VIDEO_DIMENSIONS = {
 WAN_FPS = 16
 BERNINI_IMAGE_PROFILE = "wan22-bernini-image"
 KREA2_IMAGE_PROFILE = "krea2-turbo"
+IMAGE_RTX_UPSCALE_PROFILE = "rtx-vsr"
 BERNINI_MODEL_OVERRIDES = {
     "unet-high": "diffusion_models/Wan22_Bernini_HIGH_mxfp8.safetensors",
     "unet-low": "diffusion_models/Wan22_Bernini_LOW_mxfp8.safetensors",
@@ -142,6 +143,23 @@ def normalize_video_profile(value: str) -> str:
         "boundbite": "wan22-dasiwa-boundbite-i2v",
     }
     return aliases.get(value.strip(), value.strip())
+
+
+def normalize_image_upscale_engine(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-").replace(" ", "-")
+    aliases = {
+        "clear": "clear-reality",
+        "clear-reality": "clear-reality",
+        "clearreality": "clear-reality",
+        "clear-reality-upscale": "clear-reality",
+        "upscale": "clear-reality",
+        "rtx": IMAGE_RTX_UPSCALE_PROFILE,
+        "rtx-vsr": IMAGE_RTX_UPSCALE_PROFILE,
+        "rtx-upscale": IMAGE_RTX_UPSCALE_PROFILE,
+        "nvidia": IMAGE_RTX_UPSCALE_PROFILE,
+        "nvidia-rtx": IMAGE_RTX_UPSCALE_PROFILE,
+    }
+    return aliases.get(normalized, normalized)
 
 
 def image_cli_mode(image_mode: str, profile: str) -> str:
@@ -357,6 +375,8 @@ class ComfyGenerationService:
 
         if payload.image_mode == "edit" and profile == BERNINI_IMAGE_PROFILE:
             return self.build_bernini_image_command(payload, prompt, out_dir, media)
+        if payload.image_mode == "upscale" and normalize_image_upscale_engine(payload.image_upscale_engine) == IMAGE_RTX_UPSCALE_PROFILE:
+            return self.build_rtx_image_upscale_command(payload, out_dir, media)
 
         cli_mode = image_cli_mode(payload.image_mode, profile)
         command = [self.executable("comfy-imagegen"), cli_mode, "--out", str(out_dir)]
@@ -383,6 +403,37 @@ class ComfyGenerationService:
             "modelProfile": profile,
             "aspectRatio": payload.aspect_ratio,
             "seed": payload.seed,
+        }
+        return command, cwd, "image", params
+
+    def build_rtx_image_upscale_command(
+        self,
+        payload: ComfyGenerationRequest,
+        out_dir: Path,
+        media: dict[str, list[Path]],
+    ) -> tuple[list[str], Path, Literal["image"], dict[str, Any]]:
+        command = [
+            self.executable("comfy-imagegen"),
+            "rtx-upscale",
+            "--input",
+            str(media["image"][0]),
+            "--resolution",
+            payload.image_upscale_resolution,
+            "--quality",
+            payload.image_upscale_quality,
+            "--out",
+            str(out_dir),
+        ]
+        cwd = self.write_run_comfy_config(out_dir.parent, capability="imagegen.rtx-upscale", model_profile=IMAGE_RTX_UPSCALE_PROFILE)
+        params = {
+            "tool": payload.tool,
+            "imageMode": payload.image_mode,
+            "modelProfile": IMAGE_RTX_UPSCALE_PROFILE,
+            "aspectRatio": payload.aspect_ratio,
+            "seed": payload.seed,
+            "imageUpscaleEngine": IMAGE_RTX_UPSCALE_PROFILE,
+            "imageUpscaleResolution": payload.image_upscale_resolution,
+            "imageUpscaleQuality": payload.image_upscale_quality,
         }
         return command, cwd, "image", params
 

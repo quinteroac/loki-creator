@@ -249,6 +249,38 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(command[command.index("--input") + 1], str(image))
         self.assertEqual(kind, "image")
 
+    def test_builds_rtx_image_upscale_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            image = self.media_file(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, cwd, kind, params = service.build_command(
+                    self.request(
+                        imageMode="upscale",
+                        modelProfile="",
+                        imageUpscaleEngine="rtx-vsr",
+                        imageUpscaleResolution="4k",
+                        imageUpscaleQuality="HIGH",
+                    ),
+                    "upscale",
+                    out_dir,
+                    {"image": [image], "video": [], "audio": []},
+                )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "rtx-upscale"])
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[command.index("--resolution") + 1], "4k")
+        self.assertEqual(command[command.index("--quality") + 1], "HIGH")
+        self.assertNotIn("--models-dir", command)
+        self.assertEqual(kind, "image")
+        self.assertEqual(params["modelProfile"], "rtx-vsr")
+        self.assertEqual(params["imageUpscaleEngine"], "rtx-vsr")
+        self.assertEqual(params["imageUpscaleResolution"], "4k")
+        self.assertEqual(params["imageUpscaleQuality"], "HIGH")
+        self.assertIn('"imagegen.rtx-upscale": "rtx-vsr"', config)
+
     def test_builds_video_i2v_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = self.service(tmpdir)

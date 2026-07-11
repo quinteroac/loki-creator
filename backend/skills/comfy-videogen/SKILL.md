@@ -247,10 +247,11 @@ Video mode choices:
 
 - `i2v`: image-to-video. Each selected image becomes one video segment/card.
 - `r2v`: reference-guided text-to-video. Requires one selected or attached image.
-  The agent must inspect the selected image, write a concrete visual description
-  into the generation prompt, then run text-to-video from that prompt. The
-  runtime validates that a reference image exists, but does not pass it to the
-  Comfy video CLI as `--input`. Supported profiles are `ltx23-10eros`,
+  In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+  selected local image, write a concrete visual description into the
+  generation prompt, then run text-to-video from that prompt. The runtime
+  validates that a reference image exists, but does not pass it to the Comfy
+  video CLI as `--input`. Supported profiles are `ltx23-10eros`,
   `ltx23-dasiwa-golden-lace-v3`, `wan22-t2v`, `wan22-i2v`,
   `wan22-dasiwa-tastysin-i2v`, and `wan22-dasiwa-boundbite-i2v`; WAN image
   profiles are converted to their matching T2V profile for execution, preserving
@@ -281,8 +282,11 @@ Comfy image-conditioning input. Before invoking the skill action, describe the
 reference image in the final generation prompt: subject identity, composition,
 style, lighting, materials, palette, and any details the video should preserve.
 Then add the intended motion, camera behavior, temporal change, and audio cues.
-If the agent does not already have a trusted visual description, call
-`describe_loki_image` first and fold its concrete traits into the final prompt.
+Use `read_loki_visual` on the selected local image and fold its concrete
+subject, composition, style, lighting, materials, palette, and identity traits
+into the final prompt. If visual reading is unavailable because the selected
+agent model does not have vision, ask for the missing visual details instead of inventing
+them.
 
 Duration, WAN FPS, and WAN step choices:
 

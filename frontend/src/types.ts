@@ -91,6 +91,12 @@ export type ComfyAspectRatio = "1:1" | "4:3" | "16:9" | "9:16";
 
 export type ComfyResolution = "360p" | "480p" | "720p" | "1080p";
 
+export type ComfyImageUpscaleEngine = "clear-reality" | "rtx-vsr";
+
+export type ComfyImageUpscaleResolution = "480p" | "720p" | "1080p" | "1440p" | "4k" | "8k";
+
+export type ComfyImageUpscaleQuality = "LOW" | "MEDIUM" | "HIGH" | "ULTRA";
+
 export type ComfyDuration = 4 | 5 | 7 | 10 | 15;
 
 export type CodexImageResolution =
@@ -180,6 +186,9 @@ export type ComfyGenerationRequest = {
   modelProfile: string;
   aspectRatio: ComfyAspectRatio;
   resolution: ComfyResolution;
+  imageUpscaleEngine: ComfyImageUpscaleEngine;
+  imageUpscaleResolution: ComfyImageUpscaleResolution;
+  imageUpscaleQuality: ComfyImageUpscaleQuality;
   duration: ComfyDuration;
   seed?: number | null;
   selectedCardSnapshots: SelectedCardSnapshot[];
