@@ -26,11 +26,16 @@ prefer `uv run comfy-models`; outside the repo, use the installed CLI.
 ## Capability Mapping
 
 - Image generation: `imagegen.generate`
+- Krea2 Turbo image generation: `imagegen.krea2-generate`
 - Image editing: `imagegen.edit`
 - Image upscale: `imagegen.upscale`
+- NVIDIA RTX image upscale: `imagegen.rtx-upscale`
 - Text to video: `videogen.t2v`
 - Image to video: `videogen.i2v`
 - First/last frame video: `videogen.flf2v`
+- MiniMax H3 text-to-video: `videogen.minimax-h3-t2v`
+- MiniMax H3 image-to-video: `videogen.minimax-h3-i2v`
+- MiniMax H3 reference-to-video: `videogen.minimax-h3-r2v`
 - Image plus audio to video: `videogen.ia2av`
 - WAN 2.2 Bernini video or single-frame image edit: `videogen.wan22-bernini`
 - WAN 2.2 sound to video: `videogen.wan22-s2v`
@@ -41,6 +46,9 @@ Do not map Seedance 2.0 API requests to downloads. `videogen.seedance2-t2v`,
 `seedance2-api` profile and require `COMFY_ORG_API_KEY`, not local model files.
 Do not map Grok Imagine API requests to downloads either. `imagegen.grok-generate`
 and `imagegen.grok-edit` use the remote `grok-imagine-api` profile.
+Do not map NVIDIA RTX image upscale to downloads. `imagegen.rtx-upscale` uses
+the `rtx-vsr` profile, requires local NVIDIA RTX/CUDA runtime support, and does
+not use local model files.
 
 ## Flow
 
@@ -70,8 +78,13 @@ uv run comfy-models validate-profile anima-base
 - `anima-base`: Anima Base v1.0 image generation with the turbo LoRA.
 - `qwen-edit2511`: Qwen Image Edit 2511 generation/editing.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 generation/editing with SNOFS.
+- `krea2-turbo`: Krea2 Turbo FP8 image generation.
+- `krea2-turbo-int4-fast`: Krea2 Turbo INT4 Fast. Its optimized UNet is
+  local-only; `download-profile` can fetch only the shared text encoder and VAE.
 - `clear-reality`: ClearReality image upscaling.
+- `rtx-vsr`: NVIDIA RTX image upscaling; no downloadable model files.
 - `ltx23-10eros`: LTX 2.3 video and IA2AV.
+- `minimax-h3`: MiniMax H3 local T2V/I2V/R2V with native synchronized audio.
 - `wan22-bernini`: WAN 2.2 Bernini reference-guided video and single-frame
   image editing.
 - `wan22-s2v`: WAN 2.2 sound-to-video.
@@ -80,10 +93,16 @@ uv run comfy-models validate-profile anima-base
 
 `seedance2-api` is intentionally excluded: it is a remote Comfy API profile, not
 a downloadable model profile. `grok-imagine-api` is excluded for the same reason.
+`rtx-vsr` is also excluded from downloads because it is backed by NVIDIA RTX
+runtime dependencies instead of model files.
 
 Do not download models for custom local profiles unless the CLI provides a
 source. For unknown custom checkpoints, use `comfy-model-onboarding` and ask the
 user for the file.
+
+For `krea2-turbo-int4-fast`, require the user-supplied
+`diffusion_models/krea2_turbo_convrot_int4_fast.safetensors` before validating
+the profile. Do not claim that the downloader can retrieve this checkpoint.
 
 ## Auth And Sources
 
@@ -106,5 +125,6 @@ only after validation.
 - Do not install ComfyUI custom nodes or start a server.
 - Do not download or validate local files for Seedance 2.0 API generation.
 - Do not download or validate local files for Grok Imagine API generation.
+- Do not download or validate local files for NVIDIA RTX image upscaling.
 - Do not redistribute FLUX.2 Klein or SNOFS weights, and do not use SNOFS for a
   public/commercial generation service without separate licensing.

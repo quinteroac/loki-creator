@@ -63,6 +63,7 @@ export type LokiSkillRun = {
       metadata?: Record<string, unknown> | null;
     }>;
   } | null;
+  rawResult?: LokiSkillRawResult | null;
   error?: string | null;
 };
 

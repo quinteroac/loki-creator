@@ -19,6 +19,11 @@ import type {
   ComfyDuration,
   ComfyImageMode,
   ComfyImageProfile,
+  ComfyImageUpscaleEngine,
+  ComfyImageUpscaleQuality,
+  ComfyImageUpscaleResolution,
+  ComfyMegapixels,
+  ComfyQuality,
   ComfyResolution,
   ComfyTool,
   ComfyVideoMode,
@@ -54,7 +59,14 @@ type AgentComposerProps = {
   comfyDuration: ComfyDuration;
   comfyImageMode: ComfyImageMode;
   comfyImageProfile: ComfyImageProfile;
+  comfyImageUpscaleEngine: ComfyImageUpscaleEngine;
+  comfyImageUpscaleQuality: ComfyImageUpscaleQuality;
+  comfyImageUpscaleResolution: ComfyImageUpscaleResolution;
   comfyResolution: ComfyResolution;
+  comfyMegapixels: ComfyMegapixels;
+  comfyQuality: ComfyQuality;
+  comfySageAttention: boolean;
+  comfyEasycache: boolean;
   comfyTool: ComfyTool;
   comfyVideoMode: ComfyVideoMode;
   comfyVideoProfile: ComfyVideoProfile;
@@ -75,7 +87,14 @@ type AgentComposerProps = {
   onComfyDurationChange: (duration: ComfyDuration) => void;
   onComfyImageModeChange: (mode: ComfyImageMode) => void;
   onComfyImageProfileChange: (profile: ComfyImageProfile) => void;
+  onComfyImageUpscaleEngineChange: (engine: ComfyImageUpscaleEngine) => void;
+  onComfyImageUpscaleQualityChange: (quality: ComfyImageUpscaleQuality) => void;
+  onComfyImageUpscaleResolutionChange: (resolution: ComfyImageUpscaleResolution) => void;
   onComfyResolutionChange: (resolution: ComfyResolution) => void;
+  onComfyMegapixelsChange: (megapixels: ComfyMegapixels) => void;
+  onComfyQualityChange: (quality: ComfyQuality) => void;
+  onComfySageAttentionChange: (enabled: boolean) => void;
+  onComfyEasycacheChange: (enabled: boolean) => void;
   onComfyToolChange: (tool: ComfyTool) => void;
   onComfyVideoModeChange: (mode: ComfyVideoMode) => void;
   onComfyVideoProfileChange: (profile: ComfyVideoProfile) => void;
@@ -136,7 +155,14 @@ export function AgentComposer({
   comfyDuration,
   comfyImageMode,
   comfyImageProfile,
+  comfyImageUpscaleEngine,
+  comfyImageUpscaleQuality,
+  comfyImageUpscaleResolution,
   comfyResolution,
+  comfyMegapixels,
+  comfyQuality,
+  comfySageAttention,
+  comfyEasycache,
   comfyTool,
   comfyVideoMode,
   comfyVideoProfile,
@@ -157,7 +183,14 @@ export function AgentComposer({
   onComfyDurationChange,
   onComfyImageModeChange,
   onComfyImageProfileChange,
+  onComfyImageUpscaleEngineChange,
+  onComfyImageUpscaleQualityChange,
+  onComfyImageUpscaleResolutionChange,
   onComfyResolutionChange,
+  onComfyMegapixelsChange,
+  onComfyQualityChange,
+  onComfySageAttentionChange,
+  onComfyEasycacheChange,
   onComfyToolChange,
   onComfyVideoModeChange,
   onComfyVideoProfileChange,
@@ -640,6 +673,7 @@ export function AgentComposer({
                     <option value="auto">Auto</option>
                     <option value="prompt-only">Prompt only</option>
                     <option value="seedance-openrouter">Seedance OR</option>
+                    <option value="hailuo-openrouter">MiniMax H3 OR</option>
                     <option value="wan-flf2v">WAN FLF</option>
                     <option value="wan-i2v">WAN I2V</option>
                     <option value="ltx-i2v">LTX I2V</option>
@@ -863,15 +897,70 @@ export function AgentComposer({
                         <span>Profile</span>
                         <select
                           value={comfyImageProfile}
-                          onChange={(event) => onComfyImageProfileChange(event.target.value as ComfyImageProfile)}
+                          onChange={(event) => {
+                            const profile = event.target.value as ComfyImageProfile;
+                            onComfyImageProfileChange(profile);
+                            if (!["krea2-turbo", "krea2-turbo-int4-fast"].includes(profile) && ["3:2", "21:9", "2:3", "3:4"].includes(comfyAspectRatio)) {
+                              onComfyAspectRatioChange("1:1");
+                            }
+                          }}
                           aria-label="Comfy image profile"
                         >
                           <option value="anima-base">Anima</option>
                           <option value="qwen-edit2511">Qwen Edit</option>
                           <option value="flux-klein-9b-snofs">Flux Klein</option>
+                          <option value="krea2-turbo">Krea2 Turbo</option>
+                          <option value="krea2-turbo-int4-fast">Krea2 INT4 Fast</option>
                           <option value="wan22-bernini-image">Bernini Image</option>
                         </select>
                       </label>
+                    )}
+                    {comfyImageMode === "upscale" && (
+                      <>
+                        <label className="composer-select-chip">
+                          <span>Engine</span>
+                          <select
+                            value={comfyImageUpscaleEngine}
+                            onChange={(event) => onComfyImageUpscaleEngineChange(event.target.value as ComfyImageUpscaleEngine)}
+                            aria-label="Comfy image upscale engine"
+                          >
+                            <option value="clear-reality">ClearReality</option>
+                            <option value="rtx-vsr">RTX VSR</option>
+                          </select>
+                        </label>
+                        {comfyImageUpscaleEngine === "rtx-vsr" && (
+                          <>
+                            <label className="composer-select-chip">
+                              <span>Resolution</span>
+                              <select
+                                value={comfyImageUpscaleResolution}
+                                onChange={(event) => onComfyImageUpscaleResolutionChange(event.target.value as ComfyImageUpscaleResolution)}
+                                aria-label="Comfy RTX image upscale resolution"
+                              >
+                                <option value="480p">480p</option>
+                                <option value="720p">720p</option>
+                                <option value="1080p">1080p</option>
+                                <option value="1440p">1440p</option>
+                                <option value="4k">4K</option>
+                                <option value="8k">8K</option>
+                              </select>
+                            </label>
+                            <label className="composer-select-chip">
+                              <span>Quality</span>
+                              <select
+                                value={comfyImageUpscaleQuality}
+                                onChange={(event) => onComfyImageUpscaleQualityChange(event.target.value as ComfyImageUpscaleQuality)}
+                                aria-label="Comfy RTX image upscale quality"
+                              >
+                                <option value="LOW">Low</option>
+                                <option value="MEDIUM">Medium</option>
+                                <option value="HIGH">High</option>
+                                <option value="ULTRA">Ultra</option>
+                              </select>
+                            </label>
+                          </>
+                        )}
+                      </>
                     )}
                   </>
                 ) : (
@@ -888,6 +977,7 @@ export function AgentComposer({
                         <option value="wan22-i2v">WAN 2.2</option>
                         <option value="wan22-dasiwa-tastysin-i2v">WAN Tastysin</option>
                         <option value="wan22-dasiwa-boundbite-i2v">WAN Boundbite</option>
+                        <option value="minimax-h3">MiniMax H3</option>
                       </select>
                     </label>
                     <label className="composer-select-chip">
@@ -902,6 +992,11 @@ export function AgentComposer({
                         <option value="flf2v">First/Last</option>
                         <option value="wan22-i2v">WAN Image</option>
                         <option value="wan22-flf2v">WAN First/Last</option>
+                        {comfyVideoProfile === "minimax-h3" ? <>
+                          <option value="minimax-h3-t2v">MiniMax Text</option>
+                          <option value="minimax-h3-i2v">MiniMax Image</option>
+                          <option value="minimax-h3-r2v">MiniMax Reference</option>
+                        </> : null}
                       </select>
                     </label>
                   </>
@@ -914,25 +1009,36 @@ export function AgentComposer({
                     aria-label="Comfy aspect ratio"
                   >
                     <option value="1:1">1:1</option>
+                    {comfyTool === "image" && ["krea2-turbo", "krea2-turbo-int4-fast"].includes(comfyImageProfile) || comfyTool === "video" && comfyVideoProfile === "minimax-h3" ? (
+                      <>
+                        <option value="3:2">3:2</option>
+                      </>
+                    ) : null}
                     <option value="4:3">4:3</option>
                     <option value="16:9">16:9</option>
+                    {(comfyTool === "image" && ["krea2-turbo", "krea2-turbo-int4-fast"].includes(comfyImageProfile) || comfyTool === "video" && comfyVideoProfile === "minimax-h3") && (
+                      <>
+                        {comfyVideoProfile === "minimax-h3" && <option value="21:9">21:9</option>}
+                        <option value="2:3">2:3</option>
+                        <option value="3:4">3:4</option>
+                      </>
+                    )}
                     <option value="9:16">9:16</option>
                   </select>
                 </label>
                 {comfyTool === "video" && (
                   <>
                     <label className="composer-select-chip">
-                      <span>Res</span>
-                      <select
-                        value={comfyResolution}
-                        onChange={(event) => onComfyResolutionChange(event.target.value as ComfyResolution)}
-                        aria-label="Comfy video resolution"
-                      >
-                        <option value="360p">360p</option>
-                        <option value="480p">480p</option>
-                        <option value="720p">720p</option>
-                        <option value="1080p">1080p</option>
-                      </select>
+                      <span>{comfyVideoProfile === "minimax-h3" ? "MP" : "Res"}</span>
+                      {comfyVideoProfile === "minimax-h3" ? (
+                        <select value={comfyMegapixels} onChange={(event) => onComfyMegapixelsChange(event.target.value as ComfyMegapixels)} aria-label="MiniMax H3 megapixels">
+                          {(["0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.98", "1.0", "1.2", "1.5", "1.8", "2.0"] as ComfyMegapixels[]).map((value) => <option key={value} value={value}>{value} MP</option>)}
+                        </select>
+                      ) : (
+                        <select value={comfyResolution} onChange={(event) => onComfyResolutionChange(event.target.value as ComfyResolution)} aria-label="Comfy video resolution">
+                          <option value="360p">360p</option><option value="480p">480p</option><option value="720p">720p</option><option value="1080p">1080p</option>
+                        </select>
+                      )}
                     </label>
                     <label className="composer-select-chip">
                       <span>Duration</span>
@@ -941,13 +1047,40 @@ export function AgentComposer({
                         onChange={(event) => onComfyDurationChange(Number(event.target.value) as ComfyDuration)}
                         aria-label="Comfy video duration"
                       >
-                        <option value={4}>4s</option>
+                        {comfyVideoProfile === "minimax-h3" && <option value={3}>3s</option>}
+                        {comfyVideoProfile !== "minimax-h3" && <option value={4}>4s</option>}
                         <option value={5}>5s</option>
                         <option value={7}>7s</option>
                         <option value={10}>10s</option>
                         <option value={15}>15s</option>
                       </select>
                     </label>
+                    {comfyVideoProfile === "minimax-h3" && (
+                      <>
+                        <label className="composer-select-chip">
+                          <span>Quality</span>
+                          <select value={comfyQuality} onChange={(event) => onComfyQualityChange(event.target.value as ComfyQuality)} aria-label="MiniMax H3 quality">
+                            <option value="low">Low · 8 steps</option>
+                            <option value="medium">Medium · 12 steps</option>
+                            <option value="high">High · 20 steps</option>
+                          </select>
+                        </label>
+                        <label className="composer-select-chip">
+                          <span>SageAttention</span>
+                          <select value={comfySageAttention ? "true" : "false"} onChange={(event) => onComfySageAttentionChange(event.target.value === "true")} aria-label="MiniMax H3 SageAttention">
+                            <option value="false">Off</option>
+                            <option value="true">On</option>
+                          </select>
+                        </label>
+                        <label className="composer-select-chip">
+                          <span>EasyCache</span>
+                          <select value={comfyEasycache ? "true" : "false"} onChange={(event) => onComfyEasycacheChange(event.target.value === "true")} aria-label="MiniMax H3 EasyCache">
+                            <option value="false">Off</option>
+                            <option value="true">On</option>
+                          </select>
+                        </label>
+                      </>
+                    )}
                   </>
                 )}
               </>

@@ -107,6 +107,7 @@ The upstream corpus is Seedance-oriented. In Loki, apply it as a prompt and
 filmmaking OS across multiple engines:
 
 - Seedance via OpenRouter: `openrouter-seedance-video`
+- MiniMax H3 via OpenRouter: `openrouter-hailuo-video`
 - WAN/LTX generation: `comfy-videogen`
 - WAN/LTX seed exploration: `wan-seed-seeker`, `ltx-seed-seeker`
 - Grok video: `grok-imagine-video`
@@ -119,7 +120,8 @@ filmmaking OS across multiple engines:
 
 When upstream instructions mention Seedance-specific API surfaces, translate the
 prompt-construction idea to the selected Loki engine unless the selected engine
-is explicitly `seedance-openrouter`.
+is explicitly `seedance-openrouter`. Route `hailuo-openrouter` through
+`openrouter-hailuo-video` with zero, one, or two ordered image references.
 
 ## Operating Loop
 

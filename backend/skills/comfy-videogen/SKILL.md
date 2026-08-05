@@ -1,6 +1,6 @@
 ---
 name: comfy-videogen
-description: Generate MP4 videos with comfy-diffusion using local LTX 2.3 10Eros or Dasiwa Golden Lace, local WAN 2.2 image/first-last-frame workflows, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed text-to-video, image-to-video, image+audio-to-video, first/last-frame video generation, LTX motion-track IC-LoRA control, WAN 2.2 image-guided video, or Seedance 2.0 API text/reference/first-last-frame video saved into the workspace. Do not use for WAN audio-driven clips. Do not use for image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
+description: Generate MP4 videos with comfy-diffusion using local LTX 2.3, WAN 2.2, MiniMax H3 T2V/I2V/R2V, or remote ByteDance Seedance 2.0 API nodes. Use when the user wants local GPU-backed video generation saved into the workspace. Do not use for WAN audio-driven clips, image-only generation, music-only generation, voice generation, model downloads, ComfyUI server workflows, UI work, custom node installation, or non-Seedance hosted video APIs.
 metadata:
   loki:
     visibility: user
@@ -37,6 +37,9 @@ metadata:
           - value: seedance2-api
             label: Seedance 2.0 API
             description: Remote ByteDance Seedance 2.0 API nodes through ComfyUI API Nodes.
+          - value: minimax-h3
+            label: MiniMax H3 Local
+            description: Local MiniMax H3 video with synchronized native audio.
       - id: aspectRatio
         label: Aspect ratio
         description: Choose the video frame.
@@ -88,6 +91,15 @@ metadata:
           - value: flf2v
             label: First/last frame
             description: Use selected images as storyboard pairs. One image duplicates as first and last; two images create one transition; three or four images create two transitions.
+          - value: minimax-h3-t2v
+            label: MiniMax text to video
+            description: Generate a local MiniMax H3 clip from text with synchronized native audio.
+          - value: minimax-h3-i2v
+            label: MiniMax image to video
+            description: Animate one selected image with local MiniMax H3 and synchronized native audio.
+          - value: minimax-h3-r2v
+            label: MiniMax reference to video
+            description: Generate from one or more selected reference images with local MiniMax H3.
       - id: duration
         label: Duration
         description: Choose the target video duration.
@@ -165,6 +177,30 @@ metadata:
         askWhen: missing
         order: 110
         options: []
+      - id: sageAttention
+        label: SageAttention
+        description: Enable SageAttention for MiniMax H3. Requires the sageattention package.
+        type: choice
+        required: false
+        askWhen: missing
+        order: 120
+        options:
+          - value: "false"
+            label: "Off"
+          - value: "true"
+            label: "On"
+      - id: easycache
+        label: EasyCache
+        description: Enable EasyCache for MiniMax H3 to reduce render time, with some possible quality loss.
+        type: choice
+        required: false
+        askWhen: missing
+        order: 130
+        options:
+          - value: "false"
+            label: "Off"
+          - value: "true"
+            label: "On"
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -247,10 +283,11 @@ Video mode choices:
 
 - `i2v`: image-to-video. Each selected image becomes one video segment/card.
 - `r2v`: reference-guided text-to-video. Requires one selected or attached image.
-  The agent must inspect the selected image, write a concrete visual description
-  into the generation prompt, then run text-to-video from that prompt. The
-  runtime validates that a reference image exists, but does not pass it to the
-  Comfy video CLI as `--input`. Supported profiles are `ltx23-10eros`,
+  In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+  selected local image, write a concrete visual description into the
+  generation prompt, then run text-to-video from that prompt. The runtime
+  validates that a reference image exists, but does not pass it to the Comfy
+  video CLI as `--input`. Supported profiles are `ltx23-10eros`,
   `ltx23-dasiwa-golden-lace-v3`, `wan22-t2v`, `wan22-i2v`,
   `wan22-dasiwa-tastysin-i2v`, and `wan22-dasiwa-boundbite-i2v`; WAN image
   profiles are converted to their matching T2V profile for execution, preserving
@@ -281,8 +318,11 @@ Comfy image-conditioning input. Before invoking the skill action, describe the
 reference image in the final generation prompt: subject identity, composition,
 style, lighting, materials, palette, and any details the video should preserve.
 Then add the intended motion, camera behavior, temporal change, and audio cues.
-If the agent does not already have a trusted visual description, call
-`describe_loki_image` first and fold its concrete traits into the final prompt.
+Use `read_loki_visual` on the selected local image and fold its concrete
+subject, composition, style, lighting, materials, palette, and identity traits
+into the final prompt. If visual reading is unavailable because the selected
+agent model does not have vision, ask for the missing visual details instead of inventing
+them.
 
 Duration, WAN FPS, and WAN step choices:
 
@@ -452,6 +492,26 @@ COMFY_ORG_API_KEY=... uv run comfy-videogen seedance2-flf2v \
 ```
 
 ## Prompt Guidance
+
+MiniMax H3 T2V and I2V prompts use the official three-field structure:
+`integrated_multimodal_description`, `overall_soundscape`, and
+`non_diegetic_music`. I2V prompts begin with the exact first-frame instruction.
+MiniMax H3 R2V prompts use the official full-reference six-section structure:
+`subject_definitions`, `summary`, `retention_analysis`,
+`detailed_description`, `overall_soundscape`, and `non_diegetic_music`.
+R2V keeps `<Picture N>`/`<Subject N>` labels stable. Describe shots, camera
+motion, actions, dialogue, visible text, and diegetic sound concretely; keep
+dialogue verbatim inside `<d>` tags. Consult the official MiniMax H3 base and
+full-reference prompt guides when constructing these prompts.
+
+The prompt sent to the selected video model must be final model-facing text.
+Do not write it as a request to an agent, a workflow handoff, or an explanation
+of the prompt. Avoid `Create a ... clip`, `using the supplied image`, execution
+notes, parameter notes, JSON, Markdown fences, and explanations of H3 field
+names. For H3, retain only the required field labels and their content; use the
+three-field format for T2V/I2V and the six-section full-reference format for
+R2V. Use `<Picture N>`/`<Subject N>` only where the model needs those reference
+labels.
 
 For local Comfy video profiles, Loki does not add an NSFW filter and does not
 rewrite adult prompts into softer substitutes. Preserve adult/NSFW user intent

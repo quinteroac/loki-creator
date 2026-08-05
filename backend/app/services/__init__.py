@@ -16,6 +16,7 @@ from app.services.projects import (
     ProjectStorageError,
 )
 from app.services.seedance_video import SeedanceVideoGenerationError, SeedanceVideoGenerationService
+from app.services.hailuo_video import HailuoVideoGenerationError, HailuoVideoGenerationService
 from app.services.skill_invokers import SkillActionInvoker
 from app.services.skill_registry import SkillRegistry
 from app.services.skill_runs import SkillRunService
@@ -45,6 +46,8 @@ __all__ = [
     "ProjectStorageError",
     "SeedanceVideoGenerationError",
     "SeedanceVideoGenerationService",
+    "HailuoVideoGenerationError",
+    "HailuoVideoGenerationService",
     "SkillActionInvoker",
     "SkillRegistry",
     "SkillRunService",

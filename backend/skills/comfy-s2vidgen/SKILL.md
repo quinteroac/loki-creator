@@ -145,9 +145,11 @@ Write prompts in this shape:
   or other scene context.
 - Preserve important visual identity from the selected image, but phrase it as
   scene content rather than as input mechanics.
-- If the agent does not already have a trusted visual description, call
-  `describe_loki_image` first and use its concrete subject, style, lighting,
-  clothing/material, background, and camera details in the scene prompt.
+- In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+  selected local image, then use its concrete subject, style, lighting,
+  clothing/material, background, and camera details in the scene prompt. If
+  visual reading is unavailable, ask for the missing visual details instead of
+  inventing them.
 
 Good prompt:
 

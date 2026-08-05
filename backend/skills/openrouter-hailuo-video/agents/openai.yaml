@@ -1,0 +1,4 @@
+interface:
+  display_name: "MiniMax H3 Video"
+  short_description: "Generate H3 videos through OpenRouter"
+  default_prompt: "Use $openrouter-hailuo-video to generate a video with MiniMax H3."

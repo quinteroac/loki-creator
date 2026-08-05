@@ -77,6 +77,30 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(command[command.index("--prompt") + 1], original_prompt)
         self.assertEqual(kind, "image")
 
+    def test_builds_krea2_image_generate_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict("os.environ", {"LOKI_COMFY_MODELS_DIR": str(Path(tmpdir) / "models")}):
+            service = self.service(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, cwd, kind, params = service.build_command(
+                    self.request(modelProfile="krea2-turbo", seed=77),
+                    "cinematic portrait, dramatic rim light",
+                    out_dir,
+                    {"image": [], "video": [], "audio": []},
+                )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "krea2-generate"])
+        self.assertEqual(command[command.index("--profile") + 1], "krea2-turbo")
+        self.assertEqual(command[command.index("--models-dir") + 1], str(Path(tmpdir) / "models"))
+        self.assertEqual(command[command.index("--prompt") + 1], "cinematic portrait, dramatic rim light")
+        self.assertEqual(command[command.index("--width") + 1], "1360")
+        self.assertEqual(command[command.index("--height") + 1], "768")
+        self.assertEqual(command[command.index("--seed") + 1], "77")
+        self.assertEqual(kind, "image")
+        self.assertEqual(params["modelProfile"], "krea2-turbo")
+        self.assertIn('"imagegen.krea2-generate": "krea2-turbo"', config)
+
     def test_builds_image_r2i_as_generate_command_with_selected_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = self.service(tmpdir)
@@ -95,6 +119,58 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(command[command.index("--prompt") + 1], "masterpiece, best quality, anime illustration, 1girl, solo, red jacket")
         self.assertEqual(kind, "image")
         self.assertEqual(params["imageMode"], "r2i")
+
+    def test_builds_krea2_image_r2i_command_with_selected_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            image = self.media_file(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, _cwd, kind, params = service.build_command(
+                    self.request(imageMode="r2i", modelProfile="krea2-turbo"),
+                    "cinematic portrait of a woman in a red jacket, rain-lit alley, shallow depth of field",
+                    out_dir,
+                    {"image": [image], "video": [], "audio": []},
+                )
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "krea2-generate"])
+        self.assertNotIn("--input", command)
+        self.assertEqual(kind, "image")
+        self.assertEqual(params["modelProfile"], "krea2-turbo")
+        self.assertEqual(params["imageMode"], "r2i")
+
+    def test_builds_krea2_int4_fast_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, cwd, _kind, params = service.build_command(
+                    self.request(modelProfile="krea2-turbo-int4-fast"),
+                    "cinematic portrait, dramatic rim light",
+                    out_dir,
+                    {"image": [], "video": [], "audio": []},
+                )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "krea2-generate"])
+        self.assertEqual(command[command.index("--profile") + 1], "krea2-turbo-int4-fast")
+        self.assertEqual(params["modelProfile"], "krea2-turbo-int4-fast")
+        self.assertIn('"imagegen.krea2-generate": "krea2-turbo-int4-fast"', config)
+
+    def test_builds_krea2_with_ideogram_frame_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, _cwd, _kind, _params = service.build_command(
+                    self.request(modelProfile="krea2-turbo", aspectRatio="21:9"),
+                    "wide landscape",
+                    out_dir,
+                    {"image": [], "video": [], "audio": []},
+                )
+
+        self.assertEqual(command[command.index("--width") + 1], "1344")
+        self.assertEqual(command[command.index("--height") + 1], "576")
 
     def test_rejects_image_r2i_without_selected_image(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -115,6 +191,18 @@ class ComfyGenerationServiceTest(unittest.TestCase):
                 service.build_command(
                     self.request(imageMode="r2i", modelProfile="flux-klein-9b-snofs"),
                     "use the reference image as the same character",
+                    service.output_dir("run"),
+                    {"image": [image], "video": [], "audio": []},
+                )
+
+    def test_rejects_krea2_image_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            image = self.media_file(tmpdir)
+            with self.assertRaisesRegex(ComfyGenerationError, "Krea2 Turbo only supports"):
+                service.build_command(
+                    self.request(imageMode="edit", modelProfile="krea2-turbo"),
+                    "change it",
                     service.output_dir("run"),
                     {"image": [image], "video": [], "audio": []},
                 )
@@ -195,6 +283,38 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(command[command.index("--input") + 1], str(image))
         self.assertEqual(kind, "image")
 
+    def test_builds_rtx_image_upscale_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            image = self.media_file(tmpdir)
+            out_dir = service.output_dir("run")
+            with patch.object(service, "executable", return_value="comfy-imagegen"):
+                command, cwd, kind, params = service.build_command(
+                    self.request(
+                        imageMode="upscale",
+                        modelProfile="",
+                        imageUpscaleEngine="rtx-vsr",
+                        imageUpscaleResolution="4k",
+                        imageUpscaleQuality="HIGH",
+                    ),
+                    "upscale",
+                    out_dir,
+                    {"image": [image], "video": [], "audio": []},
+                )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-imagegen", "rtx-upscale"])
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(command[command.index("--resolution") + 1], "4k")
+        self.assertEqual(command[command.index("--quality") + 1], "HIGH")
+        self.assertNotIn("--models-dir", command)
+        self.assertEqual(kind, "image")
+        self.assertEqual(params["modelProfile"], "rtx-vsr")
+        self.assertEqual(params["imageUpscaleEngine"], "rtx-vsr")
+        self.assertEqual(params["imageUpscaleResolution"], "4k")
+        self.assertEqual(params["imageUpscaleQuality"], "HIGH")
+        self.assertIn('"imagegen.rtx-upscale": "rtx-vsr"', config)
+
     def test_builds_video_i2v_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             service = self.service(tmpdir)
@@ -215,6 +335,44 @@ class ComfyGenerationServiceTest(unittest.TestCase):
         self.assertEqual(command[command.index("--length") + 1], "120")
         self.assertEqual(kind, "video")
         self.assertEqual(params["modelProfile"], "ltx23-10eros")
+
+    def test_builds_minimax_h3_t2v_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            with patch.object(service, "executable", return_value="comfy-videogen"):
+                command, cwd, kind, params = service.build_command(
+                    self.request(tool="video", videoMode="minimax-h3-t2v", modelProfile="minimax-h3", aspectRatio="16:9", megapixels="0.98", duration=5, sageAttention=True, easycache=True),
+                    "integrated_multimodal_description: [Shot 1] ...\noverall_soundscape: ...\nnon_diegetic_music: N/A",
+                    service.output_dir("run"),
+                    {"image": [], "video": [], "audio": []},
+                )
+            config = (cwd / ".comfy-agent-tools.json").read_text(encoding="utf-8")
+
+        self.assertEqual(command[:2], ["comfy-videogen", "minimax-h3-t2v"])
+        self.assertIn("--sageattention", command)
+        self.assertIn("--easycache", command)
+        self.assertNotIn("--input", command)
+        self.assertNotIn("--quality", command)
+        self.assertEqual(params["videoMode"], "minimax-h3-t2v")
+        self.assertIn('"videogen.minimax-h3-t2v": "minimax-h3"', config)
+        self.assertEqual(kind, "video")
+
+    def test_builds_minimax_h3_i2v_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = self.service(tmpdir)
+            image = self.media_file(tmpdir)
+            with patch.object(service, "executable", return_value="comfy-videogen"):
+                command, _cwd, kind, params = service.build_command(
+                    self.request(tool="video", videoMode="minimax-h3-i2v", modelProfile="minimax-h3", aspectRatio="16:9", megapixels="0.98", duration=5),
+                    "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] ...\noverall_soundscape: ...\nnon_diegetic_music: N/A",
+                    service.output_dir("run"),
+                    {"image": [image], "video": [], "audio": []},
+                )
+
+        self.assertEqual(command[:2], ["comfy-videogen", "minimax-h3-i2v"])
+        self.assertEqual(command[command.index("--input") + 1], str(image))
+        self.assertEqual(params["videoMode"], "minimax-h3-i2v")
+        self.assertEqual(kind, "video")
 
     def test_direct_video_generation_does_not_apply_nsfw_filter(self) -> None:
         original_prompt = "adult erotic scene in a private room, slow intimate camera drift, explicit mature styling"

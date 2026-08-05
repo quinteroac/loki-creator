@@ -33,6 +33,16 @@ IMAGE_DIMENSIONS = {
     "16:9": (1344, 768),
     "9:16": (768, 1344),
 }
+KREA2_IMAGE_DIMENSIONS = {
+    "1:1": (1024, 1024),
+    "3:2": (1248, 832),
+    "4:3": (1152, 864),
+    "16:9": (1360, 768),
+    "21:9": (1344, 576),
+    "2:3": (832, 1248),
+    "3:4": (864, 1152),
+    "9:16": (768, 1360),
+}
 FORBIDDEN_REFERENCE_PHRASES = (
     "reference image",
     "selected image",
@@ -83,8 +93,14 @@ VIDEO_DIMENSIONS = {
         "9:16": (1080, 1920),
     },
 }
+MINIMAX_H3_ASPECT_RATIOS = {"1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"}
+MINIMAX_H3_QUALITY_STEPS = {"low": 8, "medium": 12, "high": 20}
 WAN_FPS = 16
 BERNINI_IMAGE_PROFILE = "wan22-bernini-image"
+KREA2_IMAGE_PROFILE = "krea2-turbo"
+KREA2_INT4_FAST_IMAGE_PROFILE = "krea2-turbo-int4-fast"
+KREA2_IMAGE_PROFILES = {KREA2_IMAGE_PROFILE, KREA2_INT4_FAST_IMAGE_PROFILE}
+IMAGE_RTX_UPSCALE_PROFILE = "rtx-vsr"
 BERNINI_MODEL_OVERRIDES = {
     "unet-high": "diffusion_models/Wan22_Bernini_HIGH_mxfp8.safetensors",
     "unet-low": "diffusion_models/Wan22_Bernini_LOW_mxfp8.safetensors",
@@ -112,6 +128,14 @@ def normalize_image_profile(value: str) -> str:
         "qwen-edit-2511": "qwen-edit2511",
         "flux-klein-snofs": "flux-klein-9b-snofs",
         "flux-2-klein-9b-snofs": "flux-klein-9b-snofs",
+        "krea": KREA2_IMAGE_PROFILE,
+        "krea2": KREA2_IMAGE_PROFILE,
+        "krea-2": KREA2_IMAGE_PROFILE,
+        "krea2-fp8": KREA2_IMAGE_PROFILE,
+        "krea2-turbo-fp8": KREA2_IMAGE_PROFILE,
+        "krea2-int4": KREA2_INT4_FAST_IMAGE_PROFILE,
+        "krea2-int4-fast": KREA2_INT4_FAST_IMAGE_PROFILE,
+        "krea2-turbo-int4": KREA2_INT4_FAST_IMAGE_PROFILE,
         "bernini": BERNINI_IMAGE_PROFILE,
         "wan22-bernini": BERNINI_IMAGE_PROFILE,
         "wan-bernini-image": BERNINI_IMAGE_PROFILE,
@@ -134,8 +158,36 @@ def normalize_video_profile(value: str) -> str:
         "dasiwa-tastysin": "wan22-dasiwa-tastysin-i2v",
         "tastysin": "wan22-dasiwa-tastysin-i2v",
         "boundbite": "wan22-dasiwa-boundbite-i2v",
+        "minimax": "minimax-h3",
+        "minimax-h3": "minimax-h3",
+        "h3": "minimax-h3",
     }
     return aliases.get(value.strip(), value.strip())
+
+
+def normalize_image_upscale_engine(value: str) -> str:
+    normalized = value.strip().lower().replace("_", "-").replace(" ", "-")
+    aliases = {
+        "clear": "clear-reality",
+        "clear-reality": "clear-reality",
+        "clearreality": "clear-reality",
+        "clear-reality-upscale": "clear-reality",
+        "upscale": "clear-reality",
+        "rtx": IMAGE_RTX_UPSCALE_PROFILE,
+        "rtx-vsr": IMAGE_RTX_UPSCALE_PROFILE,
+        "rtx-upscale": IMAGE_RTX_UPSCALE_PROFILE,
+        "nvidia": IMAGE_RTX_UPSCALE_PROFILE,
+        "nvidia-rtx": IMAGE_RTX_UPSCALE_PROFILE,
+    }
+    return aliases.get(normalized, normalized)
+
+
+def image_cli_mode(image_mode: str, profile: str) -> str:
+    if image_mode == "r2i":
+        return "krea2-generate" if profile in KREA2_IMAGE_PROFILES else "generate"
+    if image_mode == "generate" and profile in KREA2_IMAGE_PROFILES:
+        return "krea2-generate"
+    return image_mode
 
 
 def divisible_by_16(value: int) -> int:
@@ -338,12 +390,18 @@ class ComfyGenerationService:
             raise ComfyGenerationError(f"Comfy image {payload.image_mode} requires one selected or attached image.")
         if payload.image_mode == "r2i":
             reject_reference_language(prompt)
+        if profile in KREA2_IMAGE_PROFILES and payload.image_mode not in {"generate", "r2i"}:
+            raise ComfyGenerationError("Krea2 Turbo only supports Comfy image generate and r2i modes.")
 
         if payload.image_mode == "edit" and profile == BERNINI_IMAGE_PROFILE:
             return self.build_bernini_image_command(payload, prompt, out_dir, media)
+        if payload.image_mode == "upscale" and normalize_image_upscale_engine(payload.image_upscale_engine) == IMAGE_RTX_UPSCALE_PROFILE:
+            return self.build_rtx_image_upscale_command(payload, out_dir, media)
 
-        cli_mode = "generate" if payload.image_mode == "r2i" else payload.image_mode
+        cli_mode = image_cli_mode(payload.image_mode, profile)
         command = [self.executable("comfy-imagegen"), cli_mode, "--out", str(out_dir)]
+        if cli_mode == "krea2-generate":
+            command.extend(["--profile", profile])
         if payload.image_mode in {"generate", "r2i", "edit", "upscale"}:
             command.extend(["--models-dir", str(self.models_dir())])
         if payload.image_mode in {"generate", "r2i", "edit"}:
@@ -351,7 +409,11 @@ class ComfyGenerationService:
         if payload.image_mode in {"edit", "upscale"}:
             command.extend(["--input", str(media["image"][0])])
         if payload.image_mode in {"generate", "r2i"}:
-            width, height = IMAGE_DIMENSIONS[payload.aspect_ratio]
+            dimensions = KREA2_IMAGE_DIMENSIONS if profile in KREA2_IMAGE_PROFILES else IMAGE_DIMENSIONS
+            try:
+                width, height = dimensions[payload.aspect_ratio]
+            except KeyError as exc:
+                raise ComfyGenerationError(f"Unsupported aspect ratio for {profile}: {payload.aspect_ratio}") from exc
             command.extend(["--width", str(width), "--height", str(height)])
         if payload.image_mode == "edit" and profile == "flux-klein-9b-snofs":
             input_width, input_height = self.image_dimensions(media["image"][0])
@@ -367,6 +429,37 @@ class ComfyGenerationService:
             "modelProfile": profile,
             "aspectRatio": payload.aspect_ratio,
             "seed": payload.seed,
+        }
+        return command, cwd, "image", params
+
+    def build_rtx_image_upscale_command(
+        self,
+        payload: ComfyGenerationRequest,
+        out_dir: Path,
+        media: dict[str, list[Path]],
+    ) -> tuple[list[str], Path, Literal["image"], dict[str, Any]]:
+        command = [
+            self.executable("comfy-imagegen"),
+            "rtx-upscale",
+            "--input",
+            str(media["image"][0]),
+            "--resolution",
+            payload.image_upscale_resolution,
+            "--quality",
+            payload.image_upscale_quality,
+            "--out",
+            str(out_dir),
+        ]
+        cwd = self.write_run_comfy_config(out_dir.parent, capability="imagegen.rtx-upscale", model_profile=IMAGE_RTX_UPSCALE_PROFILE)
+        params = {
+            "tool": payload.tool,
+            "imageMode": payload.image_mode,
+            "modelProfile": IMAGE_RTX_UPSCALE_PROFILE,
+            "aspectRatio": payload.aspect_ratio,
+            "seed": payload.seed,
+            "imageUpscaleEngine": IMAGE_RTX_UPSCALE_PROFILE,
+            "imageUpscaleResolution": payload.image_upscale_resolution,
+            "imageUpscaleQuality": payload.image_upscale_quality,
         }
         return command, cwd, "image", params
 
@@ -423,12 +516,45 @@ class ComfyGenerationService:
         profile = normalize_video_profile(payload.model_profile)
         if not profile:
             raise ComfyGenerationError("Comfy video generation requires modelProfile.")
+        if profile == "minimax-h3" or payload.video_mode.startswith("minimax-h3-"):
+            mode = payload.video_mode if payload.video_mode.startswith("minimax-h3-") else {
+                "t2v": "minimax-h3-t2v",
+                "i2v": "minimax-h3-i2v",
+            }.get(payload.video_mode, "minimax-h3-r2v")
+            if mode == "minimax-h3-i2v" and not media["image"]:
+                raise ComfyGenerationError("MiniMax H3 I2V requires one selected or attached image.")
+            if mode == "minimax-h3-r2v" and not media["image"]:
+                raise ComfyGenerationError("MiniMax H3 R2V requires at least one selected or attached reference image.")
+            if mode == "minimax-h3-t2v" and media["image"]:
+                raise ComfyGenerationError("MiniMax H3 T2V does not accept image inputs.")
+            if payload.aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
+                raise ComfyGenerationError(f"Unsupported MiniMax H3 aspect ratio: {payload.aspect_ratio}")
+            megapixels = payload.megapixels
+            ratio_width, ratio_height = (float(value) for value in payload.aspect_ratio.split(":"))
+            area = float(megapixels) * 1_000_000
+            width = max(32, round((area * ratio_width / ratio_height) ** 0.5 / 32) * 32)
+            height = max(32, round((area * ratio_height / ratio_width) ** 0.5 / 32) * 32)
+            command = [self.executable("comfy-videogen"), mode, "--out", str(out_dir), "--models-dir", str(self.models_dir()), "--prompt", prompt, "--width", str(width), "--height", str(height), "--length", str(payload.duration * 24), "--steps", str(MINIMAX_H3_QUALITY_STEPS[payload.quality])]
+            if payload.sage_attention:
+                command.append("--sageattention")
+            if payload.easycache:
+                command.append("--easycache")
+            if mode == "minimax-h3-i2v":
+                command.extend(["--input", str(media["image"][0])])
+            elif mode == "minimax-h3-r2v":
+                for image in media["image"]:
+                    command.extend(["--input", str(image)])
+            cwd = self.write_run_comfy_config(out_dir.parent, capability=f"videogen.{mode}", model_profile="minimax-h3")
+            return command, cwd, "video", {"tool": payload.tool, "videoMode": mode, "modelProfile": "minimax-h3", "aspectRatio": payload.aspect_ratio, "megapixels": megapixels, "duration": payload.duration, "quality": payload.quality, "sageAttention": payload.sage_attention, "easycache": payload.easycache, "seed": payload.seed}
         if payload.video_mode in {"i2v", "wan22-i2v"} and not media["image"]:
             raise ComfyGenerationError(f"Comfy video {payload.video_mode} requires one selected or attached image.")
         if payload.video_mode in {"flf2v", "wan22-flf2v"} and not media["image"]:
             raise ComfyGenerationError(f"Comfy video {payload.video_mode} requires at least one selected or attached image.")
 
-        width, height = VIDEO_DIMENSIONS[payload.resolution][payload.aspect_ratio]
+        try:
+            width, height = VIDEO_DIMENSIONS[payload.resolution][payload.aspect_ratio]
+        except KeyError as exc:
+            raise ComfyGenerationError(f"Unsupported video aspect ratio: {payload.aspect_ratio}") from exc
         fps = WAN_FPS if payload.video_mode.startswith("wan22-") else 24
         length = payload.duration * fps + (1 if payload.video_mode.startswith("wan22-") else 0)
         command = [

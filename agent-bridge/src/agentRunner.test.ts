@@ -12,8 +12,6 @@ import {
   parseSkillParamsJson,
   selectSkillsForAgent,
   skillParamsFromGrokBuildText,
-  selectDescribeImageReference,
-  shouldExposeDescribeLokiImageTool,
   validateIdeogram4ParamsJson,
   validateReferencePromptPlaceholders,
   validateSelectedBboxGuidePropagation,
@@ -107,6 +105,7 @@ describe("agent bridge contracts", () => {
       makeSkill({ id: "imagegen", name: "imagegen" }),
       makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
       makeSkill({ id: "openrouter-seedance-video", name: "openrouter-seedance-video" }),
+      makeSkill({ id: "openrouter-hailuo-video", name: "openrouter-hailuo-video" }),
       makeSkill({ id: "grok-imagine-video", name: "grok-imagine-video" }),
       makeSkill({ id: "unrelated", name: "unrelated" }),
     ];
@@ -117,6 +116,7 @@ describe("agent bridge contracts", () => {
     expect(selected).toContain("imagegen");
     expect(selected).toContain("comfy-videoedit");
     expect(selected).toContain("openrouter-seedance-video");
+    expect(selected).toContain("openrouter-hailuo-video");
     expect(selected).toContain("grok-imagine-video");
     expect(selected).not.toContain("unrelated");
     expect(agents.find((agent) => agent.id === "video-director")?.name).toBe("Video Director");
@@ -203,6 +203,26 @@ describe("agent bridge contracts", () => {
     expect(errors).toEqual([]);
   });
 
+  test("ideogram4 params validation rejects boolean style selectors with actionable error", () => {
+    const errors = validateIdeogram4ParamsJson({
+      prompt: "Cinematic portrait",
+      paramsJson: JSON.stringify({
+        mode: "t2i",
+        qualityProfile: "Turbo",
+        aspectRatio: "9:16",
+        styleAesthetics: "cinematic, high detail",
+        styleLighting: "soft romantic key light",
+        styleMedium: "photograph",
+        stylePhoto: true,
+        background: "warm soft-focus background",
+        objects: [{ bbox: [120, 120, 880, 880], description: "two adult women kissing romantically" }],
+      }),
+    });
+
+    expect(errors.join(" ")).toContain("stylePhoto must be a descriptive string");
+    expect(errors.join(" ")).toContain("not a boolean");
+  });
+
   test("direct Pi tool routing is explicit", () => {
     expect(directPiToolForSkill(makeSkill({ id: "imagegen" }))).toBeUndefined();
     expect(directPiToolForSkill(makeSkill({ id: "comfy-image-generate" }))).toBeUndefined();
@@ -212,8 +232,15 @@ describe("agent bridge contracts", () => {
     expect(formatAvailableAgentModels([
       { id: "bytedance/seedance-2.0-fast", provider: "openrouter", name: "Seedance 2.0 Fast" },
       { id: "gpt-5.4-mini", provider: "openai-codex", name: "GPT-5.4 mini" },
+      { id: "gpt-5.6-luna", provider: "openai-codex", name: "GPT-5.6 Luna" },
       { id: "grok-build", provider: "pi-grok-build", name: "Grok Build" },
     ])).toEqual([
+      {
+        id: "gpt-5.6-luna",
+        provider: "openai-codex",
+        name: "GPT-5.6 Luna",
+        label: "GPT-5.6 Luna (openai-codex)",
+      },
       {
         id: "gpt-5.4-mini",
         provider: "openai-codex",
@@ -274,7 +301,7 @@ describe("agent bridge contracts", () => {
     expect(prompt).toContain("Otherwise invoke exactly one selected Loki skill tool");
   });
 
-  test("agent prompt tells reference image skills to use describe_loki_image", () => {
+  test("agent prompt does not expose the image description fallback", () => {
     const request: AgentRunRequest = {
       prompt: "make a new image from this reference",
       agentId: "base-agent",
@@ -300,42 +327,46 @@ describe("agent bridge contracts", () => {
       "pi-tools",
     );
 
-    expect(prompt).toContain("Image description fallback");
-    expect(prompt).toContain("call describe_loki_image");
+    expect(prompt).not.toContain("describe_loki_image");
+    expect(prompt).not.toContain("Image description fallback");
+    expect(prompt).toContain("Loki visual-reference read contract");
+    expect(prompt).toContain("call read_loki_visual");
+    expect(prompt).toContain("tool name for this workflow is exactly read_loki_visual");
+    expect(prompt).toContain('{"index": 0}');
+    expect(prompt).toContain('{"path": "/home/victor/dev/loki-creator/.loki/imports/example.png"}');
+    expect(prompt).toContain("/home/victor/dev/loki-creator/.loki/imports/reference.png");
   });
 
-  test("describe_loki_image exposure and selection use local image references", () => {
+  test("agent prompt uses Loki visual read for video reference workflows", () => {
     const request: AgentRunRequest = {
-      prompt: "describe selected",
+      prompt: "make the new clip follow this video reference",
       agentId: "base-agent",
       model: "GPT-5.4 mini (openai-codex)",
-      skills: ["comfy-image-generate"],
-      selectedCards: ["card_1", "card_2"],
+      skills: ["comfy-videoedit"],
+      selectedCards: ["card_1"],
       context: {
         localMediaReferences: [
           {
-            kind: "image",
-            artifactUrl: "/api/artifacts/imports/first.png",
-            path: "/home/victor/dev/loki-creator/.loki/imports/first.png",
+            kind: "video",
+            artifactUrl: "/api/artifacts/imports/reference.mp4",
+            path: "/home/victor/dev/loki-creator/.loki/imports/reference.mp4",
             source: "selected-card-media-asset",
             cardId: "card_1",
-          },
-          {
-            kind: "image",
-            artifactUrl: "/api/artifacts/imports/second.png",
-            path: "/home/victor/dev/loki-creator/.loki/imports/second.png",
-            source: "selected-card-media-asset",
-            cardId: "card_2",
           },
         ],
       },
     };
 
-    expect(shouldExposeDescribeLokiImageTool(request)).toBe(true);
-    expect(selectDescribeImageReference(request, {})?.artifactUrl).toBe("/api/artifacts/imports/first.png");
-    expect(selectDescribeImageReference(request, { cardId: "card_2" })?.artifactUrl).toBe("/api/artifacts/imports/second.png");
-    expect(selectDescribeImageReference(request, { artifactUrl: "/api/artifacts/imports/second.png" })?.cardId).toBe("card_2");
-    expect(shouldExposeDescribeLokiImageTool({ ...request, context: { localMediaReferences: [] } })).toBe(false);
+    const prompt = buildAgentPrompt(
+      request,
+      [makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" })],
+      "pi-tools",
+    );
+
+    expect(prompt).toContain("Loki visual-reference read contract");
+    expect(prompt).toContain("Video references: call read_loki_visual");
+    expect(prompt).toContain("ask_user for the missing visible/motion details");
+    expect(prompt).not.toContain("describe_loki_image");
   });
 
   test("reference placeholder guard rejects ungrounded r2i prompts", () => {
@@ -367,7 +398,39 @@ describe("agent bridge contracts", () => {
       },
     );
 
-    expect(errors.join(" ")).toContain("Call describe_loki_image");
+    expect(errors.join(" ")).toContain("Replace placeholders with concrete visible traits");
+  });
+
+  test("reference placeholder guard rejects ungrounded video prompts", () => {
+    const request: AgentRunRequest = {
+      prompt: "make a new clip from this reference",
+      agentId: "base-agent",
+      model: "GPT-5.4 mini (openai-codex)",
+      skills: ["comfy-videoedit"],
+      selectedCards: ["card_1"],
+      context: {
+        localMediaReferences: [
+          {
+            kind: "video",
+            artifactUrl: "/api/artifacts/imports/reference.mp4",
+            path: "/home/victor/dev/loki-creator/.loki/imports/reference.mp4",
+            source: "selected-card-media-asset",
+            cardId: "card_1",
+          },
+        ],
+      },
+    };
+
+    const errors = validateReferencePromptPlaceholders(
+      request,
+      makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
+      {
+        prompt: "Create a new video based on the selected video.",
+        paramsJson: JSON.stringify({ editMode: "bernini", berniniMode: "r2v" }),
+      },
+    );
+
+    expect(errors.join(" ")).toContain("Replace placeholders with concrete visible traits");
   });
 
   test("grok-build prompt asks for bridge-executable skill params", () => {
@@ -412,6 +475,7 @@ describe("agent bridge contracts", () => {
     const prompt = buildAgentPrompt(request, [
       makeSkill({ id: "video-director-os", name: "video-director-os" }),
       makeSkill({ id: "openrouter-seedance-video", name: "openrouter-seedance-video" }),
+      makeSkill({ id: "openrouter-hailuo-video", name: "openrouter-hailuo-video" }),
       makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
     ], "pi-tools");
 
@@ -421,6 +485,7 @@ describe("agent bridge contracts", () => {
     expect(prompt).toContain("Prompt only mode: ACTIVE");
     expect(prompt).toContain("Do not invoke image, video, audio, ffmpeg, Seedance, Grok, Comfy, or HyperFrames skills");
     expect(prompt).toContain("Seedance via OpenRouter means use openrouter-seedance-video");
+    expect(prompt).toContain("MiniMax H3 via OpenRouter means use openrouter-hailuo-video");
     expect(prompt).toContain('paramsJson.editMode="bernini"');
     expect(prompt).toContain('paramsJson.modelProfile="wan22-bernini"');
     expect(prompt).toContain("Resolve conversational references from project memory");

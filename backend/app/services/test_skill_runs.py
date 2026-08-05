@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from app.models import SkillDefinition, SkillPackagedRunRequest
+from app.models import SkillDefinition, SkillPackagedRunRequest, SkillRawResult, SkillRunRequest
 from app.services.skill_runs import SkillRunService
 
 
@@ -18,6 +18,14 @@ class StaticSkillRegistry:
 
     def get_skill(self, skill_id: str) -> SkillDefinition | None:
         return self.skill if skill_id == self.skill.id else None
+
+
+class StaticInvoker:
+    def __init__(self, raw_result: SkillRawResult) -> None:
+        self.raw_result = raw_result
+
+    def invoke(self, *_args: object, **_kwargs: object) -> SkillRawResult:
+        return self.raw_result
 
 
 class PackagedSkillRunTest(unittest.TestCase):
@@ -107,6 +115,65 @@ class PackagedSkillRunTest(unittest.TestCase):
             self.assertEqual(card.metadata.width, 18)
             self.assertEqual(card.metadata.height, 12)
             self.assertTrue((root / ".loki" / card.metadata.artifact_url.removeprefix("/api/artifacts/")).is_file())
+
+    def test_create_packaged_run_preserves_raw_result_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            service = self.create_service(root)
+            run = service.create_packaged_run(
+                SkillPackagedRunRequest(
+                    skillId="imagegen",
+                    prompt="describe",
+                    rawResult={
+                        "text": "A blue robot on a neon street.",
+                        "metadata": {"imageDescription": "A blue robot on a neon street."},
+                    },
+                )
+            )
+
+            self.assertEqual(run.status, "succeeded")
+            self.assertIsNotNone(run.raw_result)
+            assert run.raw_result is not None
+            self.assertEqual(run.raw_result.metadata["imageDescription"], "A blue robot on a neon street.")
+            self.assertEqual(run.raw_result.text, "A blue robot on a neon street.")
+
+    def test_run_skill_preserves_raw_result_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            skill = SkillDefinition(
+                id="imagegen",
+                name="Imagegen",
+                description="Generate images.",
+                path=str(root / "skills" / "imagegen"),
+                capabilities=["image-generation"],
+            )
+            raw_result = SkillRawResult(
+                text="A red-haired character in warm studio light.",
+                metadata={"imageDescription": "A red-haired character in warm studio light."},
+            )
+            service = SkillRunService(
+                registry=StaticSkillRegistry(skill),  # type: ignore[arg-type]
+                invoker=StaticInvoker(raw_result),  # type: ignore[arg-type]
+            )
+            request = SkillRunRequest(
+                skillId="imagegen",
+                prompt="describe",
+                selectedCards=[],
+                selectedCardSnapshots=[],
+                attachments=[],
+                context={},
+            )
+            run = service.create_run(request)
+
+            service.run_skill(run.id, request)
+            completed = service.get_run(run.id)
+
+            self.assertIsNotNone(completed)
+            assert completed is not None
+            self.assertEqual(completed.status, "succeeded")
+            self.assertIsNotNone(completed.raw_result)
+            assert completed.raw_result is not None
+            self.assertEqual(completed.raw_result.metadata["imageDescription"], "A red-haired character in warm studio light.")
 
 
 if __name__ == "__main__":

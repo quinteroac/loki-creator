@@ -32,6 +32,8 @@ from app.models.generations import (
     GrokVideoGenerationRequest,
     SeedanceVideoGenerationRequest,
     SeedanceVideoGenerationResponse,
+    HailuoVideoGenerationRequest,
+    HailuoVideoGenerationResponse,
 )
 from app.models.projects import (
     ProjectCanvasNode,
@@ -96,6 +98,8 @@ __all__ = [
     "GrokVideoGenerationRequest",
     "SeedanceVideoGenerationRequest",
     "SeedanceVideoGenerationResponse",
+    "HailuoVideoGenerationRequest",
+    "HailuoVideoGenerationResponse",
     "ProjectCanvasNode",
     "ProjectCanvasNodeFrame",
     "ProjectAgentMemoryRequest",

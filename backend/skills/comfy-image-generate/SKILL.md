@@ -1,6 +1,6 @@
 ---
 name: comfy-image-generate
-description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
+description: Generate new raster images with comfy-diffusion, including local Anima Base v1.0 with turbo LoRA, FLUX.2 Klein 9B SNOFS, Qwen Image Edit 2511 generation, and remote Grok Imagine API nodes. Use for text-to-image generation from the current machine with outputs saved into the workspace. Do not use for Krea2 Turbo, editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
     visibility: user
@@ -76,10 +76,13 @@ metadata:
 
 # comfy-image-generate
 
-Use this skill only for creating new images through the `comfy-imagegen` CLI.
+Use this skill only for creating new non-Krea2 images through the
+`comfy-imagegen` CLI.
 Local modes use the models directory declared in this skill's Loki metadata.
 If a supported built-in model is missing, use `comfy-model-downloader` to fetch
 only the requested capability before running inference.
+
+Use `comfy-krea2-image` for Krea2 Turbo.
 
 The CLI is quiet by default and prints only final JSON. Use `--verbose` only when
 debugging ComfyUI runtime output, warnings, or progress bars.
@@ -94,16 +97,17 @@ checkpoint/fine-tune/default, use `comfy-model-onboarding` first.
 ## Modes
 
 - `t2i`: transform the user's text into the final model prompt.
-- `r2i`: inspect selected or attached image artifacts, describe visible
-  subjects, style, layout, colors, pose, crop, background, and lighting, then
-  combine that with the user's prompt. The CLI has no image-conditioning flag in
-  this mode; the selected image is interpreted by the agent before invoking the
-  skill.
+- `r2i`: in agent mode, use `read_loki_visual` on selected or attached local image
+  artifacts, describe visible subjects, style, layout, colors, pose, crop,
+  background, and lighting, then combine that with the user's prompt. The CLI
+  has no image-conditioning flag in this mode; the selected image is
+  interpreted by the agent before invoking the skill.
 
 For `r2i`, require at least one selected or attached local image artifact. Do
 not use inline previews, data URLs, or vague placeholders.
-If the agent does not already have a trusted visual description, call
-`describe_loki_image` before composing the final prompt.
+In agent mode with a vision-capable PI model, use `read_loki_visual` on the
+selected local image and compose the final prompt from concrete visible
+traits before invoking this skill.
 
 ## Required Arguments
 
@@ -123,12 +127,12 @@ Common generation profiles:
 - `grok-imagine-api`: remote Grok Imagine generation, only when the API key is configured.
 
 If model validation fails with `missing_model_file`, use
-`comfy-model-downloader` with `imagegen.generate` for the active generation
-profile.
+`comfy-model-downloader` with `imagegen.generate` for active local generation
+profiles. Krea2 downloads belong to `comfy-krea2-image`.
 
-If the user asks to use or organize a LoRA by name or purpose, use
-`comfy-lora-onboarding` to search `loras/<architecture>/` first and pass the
-chosen file with `--extra-lora`.
+If the user asks to use or organize a LoRA by name or purpose for Anima, Qwen,
+or FLUX profiles, use `comfy-lora-onboarding` to search
+`loras/<architecture>/` first and pass the chosen file with `--extra-lora`.
 
 ## Commands
 
@@ -228,8 +232,9 @@ For reference-informed prompts:
 - Describe what is visibly present in the selected images: subject count, pose,
   clothing, materials, style, palette, camera angle, layout, text, background,
   linework, and lighting.
-- If those traits are not already trusted context, call `describe_loki_image`
-  and use its description as the visual grounding source.
+- Use `read_loki_visual` on the selected local image as the visual
+  grounding source when the agent model has vision. If visual reading is
+  unavailable, ask for the missing visual details instead of inventing them.
 - Write the final image prompt as a standalone visual description or, for Anima,
   as standalone visual tags.
 - Do not include phrases such as `reference image`, `selected image`, `based on

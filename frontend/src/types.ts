@@ -52,6 +52,7 @@ export type VideoDirectorEngine =
   | "auto"
   | "prompt-only"
   | "seedance-openrouter"
+  | "hailuo-openrouter"
   | "wan-flf2v"
   | "wan-i2v"
   | "ltx-i2v"
@@ -76,22 +77,33 @@ export type ComfyTool = "image" | "video";
 
 export type ComfyImageMode = "generate" | "r2i" | "edit" | "upscale";
 
-export type ComfyVideoMode = "t2v" | "i2v" | "flf2v" | "wan22-i2v" | "wan22-flf2v";
+export type ComfyVideoMode = "t2v" | "i2v" | "flf2v" | "wan22-i2v" | "wan22-flf2v" | "minimax-h3-t2v" | "minimax-h3-i2v" | "minimax-h3-r2v";
 
-export type ComfyImageProfile = "anima-base" | "qwen-edit2511" | "flux-klein-9b-snofs" | "wan22-bernini-image" | "";
+export type ComfyImageProfile = "anima-base" | "qwen-edit2511" | "flux-klein-9b-snofs" | "krea2-turbo" | "krea2-turbo-int4-fast" | "wan22-bernini-image" | "";
 
 export type ComfyVideoProfile =
   | "ltx23-10eros"
   | "ltx23-dasiwa-golden-lace-v3"
   | "wan22-i2v"
   | "wan22-dasiwa-tastysin-i2v"
-  | "wan22-dasiwa-boundbite-i2v";
+  | "wan22-dasiwa-boundbite-i2v"
+  | "minimax-h3";
 
-export type ComfyAspectRatio = "1:1" | "4:3" | "16:9" | "9:16";
+export type ComfyAspectRatio = "1:1" | "3:2" | "4:3" | "16:9" | "21:9" | "2:3" | "3:4" | "9:16";
 
 export type ComfyResolution = "360p" | "480p" | "720p" | "1080p";
 
-export type ComfyDuration = 4 | 5 | 7 | 10 | 15;
+export type ComfyMegapixels = "0.2" | "0.3" | "0.4" | "0.5" | "0.6" | "0.7" | "0.8" | "0.9" | "0.98" | "1.0" | "1.2" | "1.5" | "1.8" | "2.0";
+
+export type ComfyQuality = "low" | "medium" | "high";
+
+export type ComfyImageUpscaleEngine = "clear-reality" | "rtx-vsr";
+
+export type ComfyImageUpscaleResolution = "480p" | "720p" | "1080p" | "1440p" | "4k" | "8k";
+
+export type ComfyImageUpscaleQuality = "LOW" | "MEDIUM" | "HIGH" | "ULTRA";
+
+export type ComfyDuration = 3 | 4 | 5 | 7 | 10 | 15;
 
 export type CodexImageResolution =
   | "1024x1024"
@@ -180,6 +192,13 @@ export type ComfyGenerationRequest = {
   modelProfile: string;
   aspectRatio: ComfyAspectRatio;
   resolution: ComfyResolution;
+  megapixels?: ComfyMegapixels;
+  quality: ComfyQuality;
+  sageAttention: boolean;
+  easycache: boolean;
+  imageUpscaleEngine: ComfyImageUpscaleEngine;
+  imageUpscaleResolution: ComfyImageUpscaleResolution;
+  imageUpscaleQuality: ComfyImageUpscaleQuality;
   duration: ComfyDuration;
   seed?: number | null;
   selectedCardSnapshots: SelectedCardSnapshot[];

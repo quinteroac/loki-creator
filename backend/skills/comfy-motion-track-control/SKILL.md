@@ -73,6 +73,10 @@ Use the prompt to complement the control video, not replace it. The trajectories
 define the main motion path; the prompt should describe what the subject is, how
 the camera behaves, what secondary motion should accompany the tracks, and which
 visual details must remain coherent.
+In agent mode with a vision-capable PI model, use `read_loki_visual` on selected
+local images and selected local videos before writing visual traits from those
+references into the prompt. If it cannot inspect the needed visual media, ask
+for the missing details instead of inventing them.
 
 For LTX 2.3 motion-track prompts:
 

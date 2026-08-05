@@ -85,6 +85,7 @@ Models are downloaded on demand into `/workspace/.loki/models/comfyui`.
 ```bash
 scripts/runpod/models.sh <pod-id> list
 scripts/runpod/models.sh <pod-id> download imagegen.generate
+scripts/runpod/models.sh <pod-id> download imagegen.krea2-generate
 scripts/runpod/models.sh <pod-id> download videogen.i2v
 scripts/runpod/models.sh <pod-id> validate
 ```
@@ -93,12 +94,21 @@ You can also set `LOKI_MODEL_CAPABILITIES` in `runpod.config.env` for first
 boot, for example:
 
 ```env
-LOKI_MODEL_CAPABILITIES=imagegen.generate,videogen.i2v
+LOKI_MODEL_CAPABILITIES=imagegen.generate,imagegen.krea2-generate,videogen.i2v
 ```
 
 `comfy-imagedescribe` expects the HuggingFace model directory
 `LLM/Qwen-VL/Qwen3-VL-2B-Instruct` under `/workspace/.loki/models/comfyui`.
 This Qwen3-VL directory is not auto-downloaded by `comfy-models`.
+
+Krea2 INT4 Fast uses the `krea2-turbo-int4-fast` profile. Its optimized UNet is
+local-only, so place `diffusion_models/krea2_turbo_convrot_int4_fast.safetensors`
+under the models directory before selecting it in Loki. `comfy-models` can still
+download the shared Krea2 text encoder and VAE.
+
+NVIDIA RTX image/video upscaling uses the `rtx-vsr` profile and does not
+download model files. It requires the Comfy tool runtime to include the NVIDIA
+RTX/CUDA dependencies, including `nvidia-vfx`.
 
 ## Health Check
 
