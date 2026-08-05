@@ -1,6 +1,6 @@
 ---
 name: comfy-krea2-image
-description: Generate local Krea2 Turbo raster images through comfy-agent-tools. Use for high-fidelity text-to-image or reference-informed image prompt construction with Krea2 Turbo saved into the Loki workspace. Do not use for editing existing images, upscaling, video, music, voice, LoRAs, model downloads, custom node installation, or ComfyUI server workflows.
+description: Generate local Krea2 Turbo raster images through comfy-agent-tools, using either the standard FP8 profile or the local Krea2 INT4 Fast profile. Use for high-fidelity text-to-image or reference-informed image prompt construction saved into the Loki workspace. Do not use for editing existing images, upscaling, video, music, voice, model downloads, custom node installation, or ComfyUI server workflows.
 metadata:
   loki:
     visibility: user
@@ -33,15 +33,41 @@ metadata:
           - value: "1:1"
             label: Square
             description: Balanced square image.
+          - value: "3:2"
+            label: Landscape 3:2
+            description: Classic photographic landscape frame.
           - value: "4:3"
             label: Landscape 4:3
             description: Classic horizontal frame.
           - value: "16:9"
             label: Widescreen
             description: Wide cinematic frame.
+          - value: "21:9"
+            label: Ultrawide
+            description: Panoramic cinematic frame.
+          - value: "2:3"
+            label: Portrait 2:3
+            description: Classic vertical photographic frame.
+          - value: "3:4"
+            label: Portrait 3:4
+            description: Taller editorial portrait frame.
           - value: "9:16"
             label: Portrait
             description: Vertical mobile frame.
+      - id: modelProfile
+        label: Krea2 profile
+        description: Choose the standard FP8 checkpoint or the locally supplied INT4 Fast checkpoint.
+        type: choice
+        required: true
+        askWhen: always
+        order: 15
+        options:
+          - value: krea2-turbo
+            label: Krea2 Turbo FP8
+            description: Standard Krea2 Turbo checkpoint.
+          - value: krea2-turbo-int4-fast
+            label: Krea2 INT4 Fast
+            description: Fast local INT4 checkpoint; its UNet file must already be present.
     action:
       type: cli-local
       command: [python3, ../_comfy_runtime/comfy_action.py]
@@ -55,8 +81,8 @@ metadata:
 
 Use this skill only for Krea2 Turbo local image generation through
 `comfy-imagegen krea2-generate`. Loki fixes the model profile to
-`krea2-turbo`; do not ask for `modelProfile` and do not route Krea2 through
-`comfy-image-generate`.
+`krea2-turbo` by default, or accepts `krea2-turbo-int4-fast` for the local
+INT4 Fast checkpoint. Do not route Krea2 through `comfy-image-generate`.
 
 If `comfy-imagegen`, `comfy-models`, or the `krea2-generate` subcommand is not
 available, use `comfy-tools-setup` first. If Krea2 model files are missing, use
@@ -115,21 +141,30 @@ Follow these rules strictly:
 9. **Preserve User Medium:** When the user explicitly requests a medium such as
    photo, photograph, illustration, painting, sketch, or 3D render, honor it.
    Do not pivot to a different medium to avoid difficulty.
+10. **Keep Runtime Controls Out of the Prompt:** LoRAs are loaded by the CLI as
+    structured runtime parameters. Never write instructions such as "apply the
+    LoRA", "use the Sayaka LoRA", "carga esta LoRA", or the LoRA filename in
+    the final prompt. Preserve only the visual intent and concrete image
+    description. If the user asks for a LoRA, put it in `paramsJson.extraLora`
+    and keep it out of the prose prompt.
 
 For `r2i`, treat the concrete visual traits from `read_loki_visual` as part of
 the user's input, while still preserving the user's requested change or desired
 new image. Do not mention the image-reading mechanism in the final prompt.
+Write a standalone visual description, not an instruction to reinterpret,
+modify, or apply a model/LoRA. Describe the desired final image directly.
 
 ## Required paramsJson
 
 Pass:
 
 - `mode`: `t2i` or `r2i`.
-- `aspectRatio`: `1:1`, `4:3`, `16:9`, or `9:16`.
+- `aspectRatio`: `1:1`, `3:2`, `4:3`, `16:9`, `21:9`, `2:3`, `3:4`, or `9:16`.
+- `modelProfile`: `krea2-turbo` or `krea2-turbo-int4-fast`.
 - Optional `seed`.
-
-Do not pass `modelProfile`; Loki sets `krea2-turbo`. Do not pass LoRA params;
-upstream `krea2-generate` does not expose LoRA flags in this integration.
+- Optional `extraLora`: compatible LoRA name or path, with optional strength such
+  as `style:0.8:0.0`. Resolve user-requested LoRAs from `loras/krea2/` first.
+  This parameter is runtime-only and must never be repeated in the prompt.
 
 ## Runtime Contract
 
@@ -137,16 +172,21 @@ The action builds:
 
 ```bash
 uv run comfy-imagegen krea2-generate \
+  --profile <modelProfile> \
   --models-dir .loki/models/comfyui \
   --prompt "<final one-paragraph prompt>" \
   --width <derived from aspectRatio> \
   --height <derived from aspectRatio> \
+  --extra-lora <optional PATH[:MODEL_STRENGTH[:CLIP_STRENGTH]]> \
   --seed <optional seed> \
   --out outputs
 ```
 
 The runtime writes `.comfy-agent-tools.json` with capability
-`imagegen.krea2-generate` and profile `krea2-turbo`.
+`imagegen.krea2-generate` and the selected Krea2 profile. The INT4 Fast
+profile expects `diffusion_models/krea2_turbo_convrot_int4_fast.safetensors`;
+that optimized UNet is intentionally local-only and is not downloaded by
+`comfy-models`.
 
 ## Preflight Checklist
 

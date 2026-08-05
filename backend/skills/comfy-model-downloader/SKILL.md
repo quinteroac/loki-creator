@@ -33,6 +33,9 @@ prefer `uv run comfy-models`; outside the repo, use the installed CLI.
 - Text to video: `videogen.t2v`
 - Image to video: `videogen.i2v`
 - First/last frame video: `videogen.flf2v`
+- MiniMax H3 text-to-video: `videogen.minimax-h3-t2v`
+- MiniMax H3 image-to-video: `videogen.minimax-h3-i2v`
+- MiniMax H3 reference-to-video: `videogen.minimax-h3-r2v`
 - Image plus audio to video: `videogen.ia2av`
 - WAN 2.2 Bernini video or single-frame image edit: `videogen.wan22-bernini`
 - WAN 2.2 sound to video: `videogen.wan22-s2v`
@@ -76,9 +79,12 @@ uv run comfy-models validate-profile anima-base
 - `qwen-edit2511`: Qwen Image Edit 2511 generation/editing.
 - `flux-klein-9b-snofs`: FLUX.2 Klein 9B FP8 generation/editing with SNOFS.
 - `krea2-turbo`: Krea2 Turbo FP8 image generation.
+- `krea2-turbo-int4-fast`: Krea2 Turbo INT4 Fast. Its optimized UNet is
+  local-only; `download-profile` can fetch only the shared text encoder and VAE.
 - `clear-reality`: ClearReality image upscaling.
 - `rtx-vsr`: NVIDIA RTX image upscaling; no downloadable model files.
 - `ltx23-10eros`: LTX 2.3 video and IA2AV.
+- `minimax-h3`: MiniMax H3 local T2V/I2V/R2V with native synchronized audio.
 - `wan22-bernini`: WAN 2.2 Bernini reference-guided video and single-frame
   image editing.
 - `wan22-s2v`: WAN 2.2 sound-to-video.
@@ -93,6 +99,10 @@ runtime dependencies instead of model files.
 Do not download models for custom local profiles unless the CLI provides a
 source. For unknown custom checkpoints, use `comfy-model-onboarding` and ask the
 user for the file.
+
+For `krea2-turbo-int4-fast`, require the user-supplied
+`diffusion_models/krea2_turbo_convrot_int4_fast.safetensors` before validating
+the profile. Do not claim that the downloader can retrieve this checkpoint.
 
 ## Auth And Sources
 

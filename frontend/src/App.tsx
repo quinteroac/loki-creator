@@ -62,6 +62,8 @@ import type {
   ComfyImageUpscaleEngine,
   ComfyImageUpscaleQuality,
   ComfyImageUpscaleResolution,
+  ComfyMegapixels,
+  ComfyQuality,
   ComfyResolution,
   ComfyTool,
   ComfyVideoMode,
@@ -94,7 +96,7 @@ const fallbackModels: AgentModel[] = [
     label: "Loki Default",
   },
 ];
-const preferredAgentModelId = "gpt-5.4-mini";
+const preferredAgentModelId = "gpt-5.6-luna";
 
 function createClientId(prefix: string) {
   const randomId = globalThis.crypto?.randomUUID?.().replaceAll("-", "")
@@ -138,6 +140,10 @@ export function App() {
   const [comfyVideoProfile, setComfyVideoProfile] = useState<ComfyVideoProfile>("ltx23-10eros");
   const [comfyAspectRatio, setComfyAspectRatio] = useState<ComfyAspectRatio>("16:9");
   const [comfyResolution, setComfyResolution] = useState<ComfyResolution>("480p");
+  const [comfyMegapixels, setComfyMegapixels] = useState<ComfyMegapixels>("0.98");
+  const [comfyQuality, setComfyQuality] = useState<ComfyQuality>("high");
+  const [comfySageAttention, setComfySageAttention] = useState(false);
+  const [comfyEasycache, setComfyEasycache] = useState(false);
   const [comfyDuration, setComfyDuration] = useState<ComfyDuration>(5);
   const [geminiImageResolution, setGeminiImageResolution] = useState<GeminiImageResolution>("1024x1024");
   const [geminiImageModel, setGeminiImageModel] = useState<GeminiImageModel>("Gemini 3.5 Flash (Medium)");
@@ -916,6 +922,10 @@ export function App() {
                     : comfyVideoProfile,
                   aspectRatio: comfyAspectRatio,
                   resolution: comfyResolution,
+                  megapixels: comfyMegapixels,
+                  quality: comfyQuality,
+                  sageAttention: comfySageAttention,
+                  easycache: comfyEasycache,
                   imageUpscaleEngine: comfyImageUpscaleEngine,
                   imageUpscaleResolution: comfyImageUpscaleResolution,
                   imageUpscaleQuality: comfyImageUpscaleQuality,
@@ -1406,6 +1416,10 @@ export function App() {
         comfyImageUpscaleQuality={comfyImageUpscaleQuality}
         comfyImageUpscaleResolution={comfyImageUpscaleResolution}
         comfyResolution={comfyResolution}
+        comfyMegapixels={comfyMegapixels}
+        comfyQuality={comfyQuality}
+        comfySageAttention={comfySageAttention}
+        comfyEasycache={comfyEasycache}
         comfyTool={comfyTool}
         comfyVideoMode={comfyVideoMode}
         comfyVideoProfile={comfyVideoProfile}
@@ -1429,9 +1443,18 @@ export function App() {
         onComfyImageUpscaleQualityChange={setComfyImageUpscaleQuality}
         onComfyImageUpscaleResolutionChange={setComfyImageUpscaleResolution}
         onComfyResolutionChange={setComfyResolution}
+        onComfyMegapixelsChange={setComfyMegapixels}
+        onComfyQualityChange={setComfyQuality}
+        onComfySageAttentionChange={setComfySageAttention}
+        onComfyEasycacheChange={setComfyEasycache}
         onComfyToolChange={setComfyTool}
         onComfyVideoModeChange={setComfyVideoMode}
-        onComfyVideoProfileChange={setComfyVideoProfile}
+        onComfyVideoProfileChange={(profile) => {
+          setComfyVideoProfile(profile);
+          if (profile !== "minimax-h3" && comfyVideoMode.startsWith("minimax-h3-")) {
+            setComfyVideoMode("i2v");
+          }
+        }}
         onGeminiImageModelChange={setGeminiImageModel}
         onGeminiImageResolutionChange={setGeminiImageResolution}
         onInstructionChange={setComposerInstruction}

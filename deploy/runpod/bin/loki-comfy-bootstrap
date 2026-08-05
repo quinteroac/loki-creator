@@ -7,9 +7,10 @@ source /usr/local/lib/loki-runpod/common.sh
 bootstrap_persistent_paths
 load_runtime_secrets
 
-package_ref="${LOKI_COMFY_PACKAGE_REF:-git+https://github.com/quinteroac/comfy-agent-tools}"
+package_ref="${LOKI_COMFY_PACKAGE_REF:-git+https://github.com/quinteroac/comfy-agent-tools@fc120080463aef1135f1bad95faed6ff0d8ed7a6}"
 tool_python="${LOKI_COMFY_TOOL_DIR}/comfy-agent-tools/bin/python"
 stamp_file="${LOKI_COMFY_RUNTIME_DIR}/.cuda124-ready"
+package_ref_file="${LOKI_COMFY_RUNTIME_DIR}/.package-ref"
 lock_file="${LOKI_COMFY_RUNTIME_DIR}/.bootstrap.lock"
 
 validate_cuda() {
@@ -48,7 +49,7 @@ install_comfy_tools() {
 (
   flock 9
 
-  if [[ -x "$tool_python" && -f "$stamp_file" ]]; then
+  if [[ -x "$tool_python" && -f "$stamp_file" && -f "$package_ref_file" && "$(<"$package_ref_file")" == "$package_ref" ]]; then
     validate_cuda >/dev/null
     exit 0
   fi
@@ -56,4 +57,5 @@ install_comfy_tools() {
   install_comfy_tools
   validate_cuda
   date -u +"%Y-%m-%dT%H:%M:%SZ" > "$stamp_file"
+  printf '%s\n' "$package_ref" > "$package_ref_file"
 ) 9>"$lock_file"

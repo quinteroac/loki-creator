@@ -22,6 +22,23 @@ class SeedanceVideoGenerationResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class HailuoVideoGenerationRequest(BaseModel):
+    prompt: str
+    aspect_ratio: Literal["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"] = Field(alias="aspectRatio")
+    duration: Literal[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    selected_card_snapshots: list[dict[str, Any]] = Field(default_factory=list, alias="selectedCardSnapshots")
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class HailuoVideoGenerationResponse(BaseModel):
+    cards: list[GeneratedCard] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class GrokImageGenerationRequest(BaseModel):
     prompt: str
     aspect_ratio: Literal["1:1", "4:3", "16:9", "9:16"] = Field(alias="aspectRatio")
@@ -115,14 +132,21 @@ class ComfyGenerationRequest(BaseModel):
     prompt: str
     tool: Literal["image", "video"] = "image"
     image_mode: Literal["generate", "r2i", "edit", "upscale"] = Field(default="generate", alias="imageMode")
-    video_mode: Literal["t2v", "i2v", "flf2v", "wan22-i2v", "wan22-flf2v"] = Field(default="t2v", alias="videoMode")
+    video_mode: Literal[
+        "t2v", "i2v", "flf2v", "wan22-i2v", "wan22-flf2v",
+        "minimax-h3-t2v", "minimax-h3-i2v", "minimax-h3-r2v",
+    ] = Field(default="t2v", alias="videoMode")
     model_profile: str = Field(default="", alias="modelProfile")
-    aspect_ratio: Literal["1:1", "4:3", "16:9", "9:16"] = Field(default="1:1", alias="aspectRatio")
+    aspect_ratio: Literal["1:1", "3:2", "4:3", "16:9", "21:9", "2:3", "3:4", "9:16"] = Field(default="1:1", alias="aspectRatio")
     resolution: Literal["360p", "480p", "720p", "1080p"] = "480p"
     image_upscale_engine: Literal["clear-reality", "rtx-vsr"] = Field(default="clear-reality", alias="imageUpscaleEngine")
     image_upscale_resolution: Literal["480p", "720p", "1080p", "1440p", "4k", "8k"] = Field(default="1080p", alias="imageUpscaleResolution")
     image_upscale_quality: Literal["LOW", "MEDIUM", "HIGH", "ULTRA"] = Field(default="ULTRA", alias="imageUpscaleQuality")
-    duration: Literal[4, 5, 7, 10, 15] = 5
+    duration: Literal[3, 4, 5, 7, 10, 15] = 5
+    megapixels: Literal["0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.98", "1.0", "1.2", "1.5", "1.8", "2.0"] = "0.98"
+    quality: Literal["low", "medium", "high"] = "high"
+    sage_attention: bool = Field(default=False, alias="sageAttention")
+    easycache: bool = False
     seed: int | None = None
     selected_card_snapshots: list[dict[str, Any]] = Field(default_factory=list, alias="selectedCardSnapshots")
     attachments: list[dict[str, Any]] = Field(default_factory=list)

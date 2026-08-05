@@ -58,6 +58,10 @@ class SkillRegistryTest(unittest.TestCase):
         arguments = {argument.id: argument for argument in skill.arguments}
         self.assertEqual([option.value for option in arguments["mode"].options], ["t2i", "r2i"])
         self.assertIn("aspectRatio", arguments)
+        self.assertEqual(
+            [option.value for option in arguments["modelProfile"].options],
+            ["krea2-turbo", "krea2-turbo-int4-fast"],
+        )
 
     def test_comfy_image_generate_no_longer_exposes_krea2_profile(self) -> None:
         skill = SkillRegistry().get_skill("comfy-image-generate")

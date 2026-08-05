@@ -54,10 +54,10 @@ Install the CLIs:
 uv tool install git+https://github.com/quinteroac/comfy-agent-tools
 ```
 
-Upgrade the CLIs:
+Upgrade the CLIs to the current upstream revision:
 
 ```bash
-uv tool upgrade comfy-agent-tools
+uv tool install --force git+https://github.com/quinteroac/comfy-agent-tools@70bc48bedf17e3cd36253581e44fe9af83a21156
 ```
 
 Validate that the expected commands exist:
@@ -76,11 +76,18 @@ profiles:
 ```bash
 comfy-imagegen --help | grep krea2-generate
 comfy-imagegen --help | grep rtx-upscale
+comfy-imagegen krea2-generate --help | grep -- --profile
 ```
 
-If `krea2-generate` or `rtx-upscale` is missing, upgrade the tool with
-`uv tool upgrade comfy-agent-tools` or reinstall it with `uv tool install
---force git+https://github.com/quinteroac/comfy-agent-tools`.
+If `krea2-generate`, its `--profile` option, or `rtx-upscale` is missing,
+reinstall the current upstream revision with the command above. Validate H3
+support with `comfy-videogen --help | grep minimax-h3` and confirm that
+`minimax-h3-t2v`, `minimax-h3-i2v`, and `minimax-h3-r2v` are present.
+The MiniMax H3 R2V runner must preserve ComfyUI's normal VRAM mode and release
+conditioning models before loading the diffusion model. Do not add a global
+`COMFY_VRAM_MODE=low` override to work around H3 memory errors.
+MiniMax H3 also supports the `--sageattention` and `--easycache` flags; ask
+whether to enable each one before generation when the user is running H3.
 
 ## Model Config
 

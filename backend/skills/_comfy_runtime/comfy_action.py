@@ -100,6 +100,9 @@ VIDEO_RESOLUTION_DIMENSIONS = {
 }
 WAN_FPS_VALUES = {16, 24}
 BERNINI_IMAGE_PROFILE = "wan22-bernini-image"
+KREA2_IMAGE_PROFILE = "krea2-turbo"
+KREA2_INT4_FAST_IMAGE_PROFILE = "krea2-turbo-int4-fast"
+KREA2_IMAGE_PROFILES = {KREA2_IMAGE_PROFILE, KREA2_INT4_FAST_IMAGE_PROFILE}
 IDEOGRAM4_DEFAULT_LORA = "Realism_Engine_Ideogram4_beta.safetensors"
 MUSIC_QUALITY_DEFAULTS = {
     "steps": "64",
@@ -108,6 +111,9 @@ MUSIC_QUALITY_DEFAULTS = {
 CHANGE_ASPECT_RATIOS = set(ASPECT_DIMENSIONS)
 IMAGE_UPSCALE_ENGINES = {"clear-reality", "rtx-vsr"}
 VIDEO_UPSCALE_ENGINES = {"rtx-vsr", "seedvr2"}
+MINIMAX_H3_ASPECT_RATIOS = {"1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"}
+MINIMAX_H3_MEGAPIXELS = {"0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "0.98", "1.0", "1.2", "1.5", "1.8", "2.0"}
+MINIMAX_H3_QUALITY_STEPS = {"low": 8, "medium": 12, "high": 20}
 RTX_UPSCALE_RESOLUTIONS = {"480p", "720p", "1080p", "1440p", "4k", "8k"}
 SEEDVR2_UPSCALE_RESOLUTIONS = {"720p", "1080p", "1440p", "4k"}
 RTX_UPSCALE_QUALITIES = {"LOW", "MEDIUM", "HIGH", "ULTRA"}
@@ -321,6 +327,9 @@ def normalize_video_mode(value: str) -> str:
         "img2vid": "i2v",
         "reference-to-video": "r2v",
         "reference-image-to-video": "r2v",
+        "minimax-h3-text-to-video": "minimax-h3-t2v",
+        "minimax-h3-image-to-video": "minimax-h3-i2v",
+        "minimax-h3-reference-to-video": "minimax-h3-r2v",
         "image-audio-to-video": "ia2av",
         "image-plus-audio-to-video": "ia2av",
         "image-and-audio-to-video": "ia2av",
@@ -407,6 +416,11 @@ def ideogram_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]
     return IDEOGRAM_ASPECT_DIMENSIONS.get(aspect_ratio, (width, height))
 
 
+def krea2_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
+    """Use the same production frame matrix as Ideogram 4 for Krea2."""
+    return ideogram_dimensions(params)
+
+
 def video_dimensions(params: dict[str, Any]) -> tuple[int | None, int | None]:
     width = as_int(params.get("width"))
     height = as_int(params.get("height"))
@@ -427,6 +441,20 @@ def video_dimensions_for_resolution(params: dict[str, Any]) -> tuple[int | None,
     if resolution in VIDEO_RESOLUTION_DIMENSIONS and aspect_ratio in VIDEO_RESOLUTION_DIMENSIONS[resolution]:
         return VIDEO_RESOLUTION_DIMENSIONS[resolution][aspect_ratio]
     return None, None
+
+
+def minimax_h3_dimensions(params: dict[str, Any]) -> tuple[int, int]:
+    megapixels = first_text(params.get("megapixels"), "0.98")
+    aspect_ratio = first_text(params.get("aspectRatio"), "16:9")
+    if megapixels not in MINIMAX_H3_MEGAPIXELS:
+        raise RuntimeError(f"MiniMax H3 megapixels must be one of: {', '.join(sorted(MINIMAX_H3_MEGAPIXELS, key=float))}.")
+    if aspect_ratio not in MINIMAX_H3_ASPECT_RATIOS:
+        raise RuntimeError(f"MiniMax H3 aspectRatio must be one of: {', '.join(sorted(MINIMAX_H3_ASPECT_RATIOS))}.")
+    ratio_width, ratio_height = (float(value) for value in aspect_ratio.split(":"))
+    area = float(megapixels) * 1_000_000
+    width = max(32, round(math.sqrt(area * ratio_width / ratio_height) / 32) * 32)
+    height = max(32, round(math.sqrt(area * ratio_height / ratio_width) / 32) * 32)
+    return width, height
 
 
 def parse_music_duration_seconds(text: str) -> str:
@@ -612,6 +640,9 @@ def normalize_model_profile(value: str) -> str:
         "krea-2": "krea2-turbo",
         "krea2-fp8": "krea2-turbo",
         "krea2-turbo-fp8": "krea2-turbo",
+        "krea2-int4": KREA2_INT4_FAST_IMAGE_PROFILE,
+        "krea2-int4-fast": KREA2_INT4_FAST_IMAGE_PROFILE,
+        "krea2-turbo-int4": KREA2_INT4_FAST_IMAGE_PROFILE,
         "bernini": BERNINI_IMAGE_PROFILE,
         "wan22-bernini": BERNINI_IMAGE_PROFILE,
         "wan-bernini-image": BERNINI_IMAGE_PROFILE,
@@ -1032,7 +1063,7 @@ def maybe_adjust_imagegen_mode_for_profile(mode: str, model_profile: str) -> str
         return "grok-generate"
     if model_profile == "grok-imagine-api" and mode == "edit":
         return "grok-edit"
-    if model_profile == "krea2-turbo" and mode == "generate":
+    if model_profile in KREA2_IMAGE_PROFILES and mode == "generate":
         return "krea2-generate"
     return mode
 
@@ -1068,7 +1099,7 @@ def lora_architecture_for_profile(model_profile: str) -> str:
         return "qwen-image-edit"
     if model_profile == "flux-klein-9b-snofs":
         return "flux-klein"
-    if model_profile == "krea2-turbo":
+    if model_profile in KREA2_IMAGE_PROFILES:
         return "krea2"
     return ""
 
@@ -1988,6 +2019,8 @@ def build_imagegen_command(
             return build_image_rtx_upscale_command(params=params, out_dir=out_dir, media=media, skill_label=skill_label)
 
     command = ["comfy-imagegen", mode, "--out", str(out_dir)]
+    if mode == "krea2-generate":
+        command.extend(["--profile", model_profile])
     if mode in {"generate", "edit", "upscale", "krea2-generate"}:
         command.extend(["--models-dir", str(model_dir)])
     if mode in {"generate", "edit", "grok-generate", "grok-edit", "krea2-generate"}:
@@ -1999,7 +2032,7 @@ def build_imagegen_command(
         if image_input:
             command.extend(["--input", image_input])
 
-    width, height = dimensions(params)
+    width, height = krea2_dimensions(params) if model_profile in KREA2_IMAGE_PROFILES else dimensions(params)
     image_input_path = selected_input(media, "image")
     if mode == "edit" and model_profile == "flux-klein-9b-snofs" and (not width or not height):
         input_width, input_height = image_dimensions(image_input_path)
@@ -2013,7 +2046,7 @@ def build_imagegen_command(
         command.extend(["--aspect-ratio", aspect_ratio])
     if as_int(params.get("seed")) is not None:
         command.extend(["--seed", str(as_int(params.get("seed")))])
-    if mode in {"generate", "edit"}:
+    if mode in {"generate", "edit", "krea2-generate"}:
         append_extra_loras(command, params, model_profile)
 
     cwd = write_run_comfy_config(out_dir.parent, capability=imagegen_capability(mode), model_profile=model_profile) if model_profile else repo_root()
@@ -2061,7 +2094,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         if requested_mode not in {"t2i", "r2i"}:
             raise RuntimeError("comfy-image-generate params.mode must be t2i or r2i.")
         model_profile = normalize_model_profile(first_text(params.get("modelProfile"), params.get("profile")))
-        if model_profile == "krea2-turbo":
+        if model_profile in KREA2_IMAGE_PROFILES:
             raise RuntimeError("Krea2 Turbo now uses the dedicated comfy-krea2-image skill, not comfy-image-generate.")
         return build_imagegen_command(
             mode="r2i" if requested_mode == "r2i" else "generate",
@@ -2079,7 +2112,10 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         requested_mode = normalize_imagegen_mode(command_from_params(params, "t2i"))
         if requested_mode not in {"t2i", "r2i"}:
             raise RuntimeError("comfy-krea2-image params.mode must be t2i or r2i.")
-        krea2_params = {**params, "modelProfile": "krea2-turbo"}
+        krea2_profile = normalize_model_profile(first_text(params.get("modelProfile"), params.get("profile"))) or KREA2_IMAGE_PROFILE
+        if krea2_profile not in KREA2_IMAGE_PROFILES:
+            raise RuntimeError("comfy-krea2-image modelProfile must be krea2-turbo or krea2-turbo-int4-fast.")
+        krea2_params = {**params, "modelProfile": krea2_profile}
         return build_imagegen_command(
             mode="r2i" if requested_mode == "r2i" else "generate",
             params=krea2_params,
@@ -2133,6 +2169,56 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
     if skill_id == "ideogram4-image":
         return build_ideogram4_command(params=params, prompt=prompt, out_dir=out_dir, media=media)
 
+    if skill_id == "comfy-minimax-videogen":
+        images = media.get("image", [])
+        requested_mode = normalize_video_mode(command_from_params(params, "minimax-h3-r2v"))
+        if requested_mode not in {"minimax-h3-t2v", "minimax-h3-i2v", "minimax-h3-r2v"}:
+            raise RuntimeError("comfy-minimax-videogen mode must be minimax-h3-t2v, minimax-h3-i2v, or minimax-h3-r2v.")
+        if requested_mode == "minimax-h3-i2v" and not images:
+            raise RuntimeError("comfy-minimax-videogen I2V requires one selected or attached image.")
+        if requested_mode == "minimax-h3-r2v" and not images:
+            raise RuntimeError("comfy-minimax-videogen R2V requires at least one selected or attached reference image.")
+        if requested_mode == "minimax-h3-t2v" and images:
+            raise RuntimeError("comfy-minimax-videogen T2V does not accept image inputs.")
+        width, height = minimax_h3_dimensions(params)
+        duration = as_int(params.get("duration")) or 5
+        if duration not in {3, 5, 7, 10, 15}:
+            raise RuntimeError("MiniMax H3 duration must be 3, 5, 7, 10, or 15 seconds.")
+        command = [
+            "comfy-videogen",
+            requested_mode,
+            "--out", str(out_dir),
+            "--models-dir", str(model_dir),
+            "--prompt", prompt,
+            "--width", str(width),
+            "--height", str(height),
+            "--length", str(duration * 24),
+        ]
+        if requested_mode == "minimax-h3-i2v":
+            command.extend(["--input", str(images[0])])
+        elif requested_mode == "minimax-h3-r2v":
+            for image in images:
+                command.extend(["--input", str(image)])
+            ref_image_size = first_text(params.get("refImageSize"), "match")
+            if ref_image_size not in {"match", "max"}:
+                raise RuntimeError("MiniMax H3 refImageSize must be match or max.")
+            command.extend(["--ref-image-size", ref_image_size])
+        if as_int(params.get("steps")) is None:
+            quality = first_text(params.get("quality"), "high").lower()
+            if quality not in MINIMAX_H3_QUALITY_STEPS:
+                raise RuntimeError("MiniMax H3 quality must be low, medium, or high.")
+            command.extend(["--steps", str(MINIMAX_H3_QUALITY_STEPS[quality])])
+        if truthy_param(params.get("sageAttention")):
+            command.append("--sageattention")
+        if truthy_param(params.get("easycache")):
+            command.append("--easycache")
+        for key, cli_key in (("steps", "steps"), ("seed", "seed")):
+            value = as_int(params.get(key))
+            if value is not None:
+                command.extend([f"--{cli_key}", str(value)])
+        cwd = write_run_comfy_config(out_dir.parent, capability=f"videogen.{requested_mode}", model_profile="minimax-h3")
+        return command, cwd
+
     if skill_id in {"comfy-videogen", "comfy-motion-track-control"}:
         has_image = selected_input(media, "image") is not None
         has_audio = selected_input(media, "audio") is not None
@@ -2143,13 +2229,25 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         if not model_profile and skill_id == "comfy-videogen":
             raise RuntimeError("comfy-videogen requires params.modelProfile. The agent must ask the user which video model to use.")
         requested_mode = normalize_video_mode(command_from_params(params, default_mode))
+        if model_profile == "minimax-h3":
+            if requested_mode == "minimax-h3-t2v" and has_image:
+                raise RuntimeError("MiniMax H3 T2V does not accept image inputs.")
+            if requested_mode in {"minimax-h3-i2v", "minimax-h3-r2v"} and not has_image:
+                raise RuntimeError(f"{requested_mode} requires a selected or attached image.")
         if skill_id == "comfy-videogen" and (requested_mode == "wan22-s2v" or (is_wan22_s2v_profile(model_profile) and requested_mode != "r2v")):
             raise RuntimeError("WAN S2V generation has moved to comfy-s2vidgen.")
         if skill_id == "comfy-videogen" and requested_mode == "r2v":
             if not (first_text(params.get("inputPath")) or selected_input(media, "image")):
                 raise RuntimeError("comfy-videogen r2v requires one input image from params.inputPath or a selected card snapshot.")
         mode = requested_mode
-        mode = video_mode_for_profile(mode, model_profile, media)
+        if model_profile == "minimax-h3":
+            mode = mode if mode.startswith("minimax-h3-") else {
+                "t2v": "minimax-h3-t2v",
+                "i2v": "minimax-h3-i2v",
+                "r2v": "minimax-h3-r2v",
+            }.get(mode, mode)
+        else:
+            mode = video_mode_for_profile(mode, model_profile, media)
         effective_model_profile = effective_video_model_profile(requested_mode, mode, model_profile)
         cwd = write_run_comfy_config(
             out_dir.parent,
@@ -2162,7 +2260,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         command.extend(["--prompt", prompt])
         image_input = first_text(params.get("inputPath")) or str(selected_input(media, "image") or "")
         image_input = maybe_half_scale_ltx_image_input(image_input, out_dir, mode)
-        if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v", "wan22-i2v", "wan22-s2v"} and image_input:
+        if mode in {"i2v", "ia2av", "motion-track", "seedance2-r2v", "wan22-i2v", "wan22-s2v", "minimax-h3-i2v"} and image_input:
             command.extend(["--input", image_input])
         if mode in {"flf2v", "seedance2-flf2v", "wan22-flf2v"}:
             image_inputs = media.get("image", [])
@@ -2186,7 +2284,7 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
         control_video = first_text(params.get("controlVideoPath")) or str(selected_input(media, "video") or "")
         if mode == "motion-track" and control_video:
             command.extend(["--control-video", control_video])
-        width, height = video_dimensions(params)
+        width, height = minimax_h3_dimensions(params) if mode.startswith("minimax-h3-") else video_dimensions(params)
         if width and height and not mode.startswith("seedance2-"):
             command.extend(["--width", str(width), "--height", str(height)])
         if first_text(params.get("aspectRatio")) and mode.startswith("seedance2-"):
@@ -2224,6 +2322,15 @@ def build_cli_command(payload: dict[str, Any], out_dir: Path, media: dict[str, l
                 if value is not None:
                     command.extend([f"--{cli_key}", str(value)])
             append_wan_video_loras(command, params, effective_model_profile)
+        if mode == "minimax-h3-r2v":
+            for image in media.get("image", []):
+                command.extend(["--input", str(image)])
+            command.extend(["--ref-image-size", first_text(params.get("refImageSize"), "match")])
+        if mode.startswith("minimax-h3-"):
+            if truthy_param(params.get("sageAttention")):
+                command.append("--sageattention")
+            if truthy_param(params.get("easycache")):
+                command.append("--easycache")
         return command, cwd
 
     if skill_id == "comfy-musicgen":
@@ -2381,7 +2488,10 @@ def comfy_agent_tools_install_command(uv: str) -> list[str]:
         "sageattention",
         "--with",
         "nvidia-vfx",
-        "git+https://github.com/quinteroac/comfy-agent-tools",
+        os.environ.get(
+            "LOKI_COMFY_PACKAGE_REF",
+            "git+https://github.com/quinteroac/comfy-agent-tools@70bc48bedf17e3cd36253581e44fe9af83a21156",
+        ),
     ]
 
 

@@ -101,6 +101,11 @@ LOKI_MODEL_CAPABILITIES=imagegen.generate,imagegen.krea2-generate,videogen.i2v
 `LLM/Qwen-VL/Qwen3-VL-2B-Instruct` under `/workspace/.loki/models/comfyui`.
 This Qwen3-VL directory is not auto-downloaded by `comfy-models`.
 
+Krea2 INT4 Fast uses the `krea2-turbo-int4-fast` profile. Its optimized UNet is
+local-only, so place `diffusion_models/krea2_turbo_convrot_int4_fast.safetensors`
+under the models directory before selecting it in Loki. `comfy-models` can still
+download the shared Krea2 text encoder and VAE.
+
 NVIDIA RTX image/video upscaling uses the `rtx-vsr` profile and does not
 download model files. It requires the Comfy tool runtime to include the NVIDIA
 RTX/CUDA dependencies, including `nvidia-vfx`.

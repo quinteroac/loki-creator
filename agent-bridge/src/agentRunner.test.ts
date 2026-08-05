@@ -105,6 +105,7 @@ describe("agent bridge contracts", () => {
       makeSkill({ id: "imagegen", name: "imagegen" }),
       makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
       makeSkill({ id: "openrouter-seedance-video", name: "openrouter-seedance-video" }),
+      makeSkill({ id: "openrouter-hailuo-video", name: "openrouter-hailuo-video" }),
       makeSkill({ id: "grok-imagine-video", name: "grok-imagine-video" }),
       makeSkill({ id: "unrelated", name: "unrelated" }),
     ];
@@ -115,6 +116,7 @@ describe("agent bridge contracts", () => {
     expect(selected).toContain("imagegen");
     expect(selected).toContain("comfy-videoedit");
     expect(selected).toContain("openrouter-seedance-video");
+    expect(selected).toContain("openrouter-hailuo-video");
     expect(selected).toContain("grok-imagine-video");
     expect(selected).not.toContain("unrelated");
     expect(agents.find((agent) => agent.id === "video-director")?.name).toBe("Video Director");
@@ -230,8 +232,15 @@ describe("agent bridge contracts", () => {
     expect(formatAvailableAgentModels([
       { id: "bytedance/seedance-2.0-fast", provider: "openrouter", name: "Seedance 2.0 Fast" },
       { id: "gpt-5.4-mini", provider: "openai-codex", name: "GPT-5.4 mini" },
+      { id: "gpt-5.6-luna", provider: "openai-codex", name: "GPT-5.6 Luna" },
       { id: "grok-build", provider: "pi-grok-build", name: "Grok Build" },
     ])).toEqual([
+      {
+        id: "gpt-5.6-luna",
+        provider: "openai-codex",
+        name: "GPT-5.6 Luna",
+        label: "GPT-5.6 Luna (openai-codex)",
+      },
       {
         id: "gpt-5.4-mini",
         provider: "openai-codex",
@@ -466,6 +475,7 @@ describe("agent bridge contracts", () => {
     const prompt = buildAgentPrompt(request, [
       makeSkill({ id: "video-director-os", name: "video-director-os" }),
       makeSkill({ id: "openrouter-seedance-video", name: "openrouter-seedance-video" }),
+      makeSkill({ id: "openrouter-hailuo-video", name: "openrouter-hailuo-video" }),
       makeSkill({ id: "comfy-videoedit", name: "comfy-videoedit" }),
     ], "pi-tools");
 
@@ -475,6 +485,7 @@ describe("agent bridge contracts", () => {
     expect(prompt).toContain("Prompt only mode: ACTIVE");
     expect(prompt).toContain("Do not invoke image, video, audio, ffmpeg, Seedance, Grok, Comfy, or HyperFrames skills");
     expect(prompt).toContain("Seedance via OpenRouter means use openrouter-seedance-video");
+    expect(prompt).toContain("MiniMax H3 via OpenRouter means use openrouter-hailuo-video");
     expect(prompt).toContain('paramsJson.editMode="bernini"');
     expect(prompt).toContain('paramsJson.modelProfile="wan22-bernini"');
     expect(prompt).toContain("Resolve conversational references from project memory");

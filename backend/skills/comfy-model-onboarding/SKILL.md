@@ -51,10 +51,12 @@ Only configure these architectures in v1:
 - `qwen-image-edit`: base profile `qwen-edit2511`, capabilities `imagegen.generate`, `imagegen.edit`.
 - `anima`: base profile `anima-base`, capability `imagegen.generate`.
 - `flux-klein`: base profile `flux-klein-9b-snofs`, capabilities `imagegen.generate`, `imagegen.edit`.
-- `krea2`: base profile `krea2-turbo`, capability `imagegen.krea2-generate`.
+- `krea2`: base profiles `krea2-turbo` and `krea2-turbo-int4-fast`, capability
+  `imagegen.krea2-generate`.
 - `upscale-model`: base profile `clear-reality`, capability `imagegen.upscale`.
 - `rtx-vsr`: base profile `rtx-vsr`, capabilities `imagegen.rtx-upscale`, `videogen.rtx-upscale`; no model files.
 - `ltx23`: base profile `ltx23-10eros`, capabilities `videogen.t2v`, `videogen.i2v`, `videogen.flf2v`, `videogen.ia2av`.
+- `minimax-h3`: local MiniMax H3 profile, capabilities `videogen.minimax-h3-t2v`, `videogen.minimax-h3-i2v`, and `videogen.minimax-h3-r2v`, with native synchronized audio.
 - `ace-step-1.5`: base profile `ace15-base`, capability `musicgen.generate`.
 - `seedance2-api`: remote profile `seedance2-api`, capabilities `videogen.seedance2-t2v`, `videogen.seedance2-r2v`, `videogen.seedance2-flf2v`.
 - `grok-imagine-api`: remote profile `grok-imagine-api`, capabilities `imagegen.grok-generate`, `imagegen.grok-edit`.
@@ -158,6 +160,19 @@ This profile uses `diffusion_models/krea2_turbo_fp8_scaled.safetensors`,
 `text_encoders/qwen3vl_4b_fp8_scaled.safetensors`, and
 `vae/qwen_image_vae.safetensors`. It is image generation only and does not
 support `imagegen.edit` or ad hoc `--extra-lora` arguments.
+
+Krea2 Turbo INT4 Fast:
+
+```bash
+uv run comfy-models download-profile krea2-turbo-int4-fast --yes
+uv run comfy-models validate-profile krea2-turbo-int4-fast
+```
+
+This profile requires the locally supplied
+`diffusion_models/krea2_turbo_convrot_int4_fast.safetensors`. The downloader
+can fetch the shared Krea2 text encoder and VAE but cannot retrieve that INT4
+UNet. Use it per invocation through Loki's Krea2 profile picker; do not make it
+the persistent default unless the user asks.
 
 NVIDIA RTX VSR:
 

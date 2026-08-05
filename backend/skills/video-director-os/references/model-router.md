@@ -8,6 +8,9 @@ Seedance Skill OS.
   references, visual development, and promptable image edits.
 - `openrouter-seedance-video`: Seedance through OpenRouter. Use only for the
   Video Director Seedance route; do not route Seedance through ComfyUI here.
+- `openrouter-hailuo-video`: MiniMax H3 through OpenRouter. Use for 2K
+  text-to-video, one-image I2V, or selected first/last-frame clips with generated
+  audio. Preserve selected-card order for the first and last frames.
 - `comfy-videogen` WAN FLF2V: first/last-frame clips with local endpoint
   control and multi-segment storyboard generation.
 - `comfy-videogen` WAN I2V: animate selected images locally with WAN.

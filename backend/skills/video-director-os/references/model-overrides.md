@@ -10,6 +10,7 @@ the finished prompt to the selected Loki engine.
 
 - `prompt-only`: never invoke generation, editing, post, or assembly skills.
 - `seedance-openrouter`: use `openrouter-seedance-video`.
+- `hailuo-openrouter`: use `openrouter-hailuo-video`.
 - `wan-flf2v`: use `comfy-videogen` with first/last-frame mode.
 - `wan-i2v`: use `comfy-videogen` with image-to-video mode.
 - `ltx-i2v`: use `comfy-videogen` with an LTX profile and image-to-video mode.

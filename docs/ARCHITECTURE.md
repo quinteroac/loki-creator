@@ -29,6 +29,7 @@ The backend owns the stable runtime contracts and execution boundary:
 - `backend/app/services/skill_registry.py`: reads skill folders from `backend/skills/`.
 - `backend/app/services/skill_invokers.py`: executes declared skill actions.
 - `backend/app/services/card_packager.py`: converts raw skill outputs into Loki cards.
+- `backend/app/services/openrouter_video.py`: owns shared OpenRouter video job submission, polling, local reference encoding, download, and card packaging.
 - `backend/app/services/projects.py`: persists named canvas projects under `.loki/projects/`.
 - `backend/app/services/skill_runs.py`: in-memory async run state and action execution.
 - `backend/app/api/routes.py`: FastAPI endpoints for skills, skill runs, instructions, and artifacts.
@@ -118,6 +119,12 @@ The first real skill is `backend/skills/imagegen/`. It vendors the standard Code
 Comfy skills from `quinteroac/comfy-agent-tools` are copied under `backend/skills/comfy-*` with minimal Loki metadata. Image workflows are split by visible intent into `comfy-image-generate`, `comfy-krea2-image`, `comfy-image-edit`, and `comfy-image-upscale`, while the private implementation still calls the upstream `comfy-imagegen` CLI. Agent visual-reference workflows use Loki-resolved local media references and the bridge `read_loki_visual` tool for model-visible image grounding. Their functional skill instructions remain standard; a shared private wrapper at `backend/skills/_comfy_runtime/` calls installed `comfy-*` CLIs and returns raw artifacts or diagnostics. Local model configuration uses `.comfy-agent-tools.json`; the default Loki models path is `.loki/models/comfyui`.
 
 The frontend also exposes a direct Comfy composer mode through `POST /api/generations/comfy`. This mode bypasses agents and skill-runs, but intentionally uses the same installed `comfy-agent-tools` CLIs for v1 (`comfy-imagegen` and `comfy-videogen`) because the `comfy-diffusion` CLI does not expose generation subcommands. The direct service builds the dedicated CLI command from typed request fields, validates local artifact inputs, and packages returned artifacts through the normal card packager.
+
+OpenRouter video engines share the provider transport in `openrouter_video.py`
+while keeping model contracts separate. Seedance requires image-reference input
+and may accept audio references. Local MiniMax H3 is exposed separately through
+the `comfy-minimax-videogen` skill and the direct Comfy composer; it uses the
+local H3 profile and packages native synchronized audio/video as one video card.
 
 Skill arguments are Loki-specific metadata. The bridge asks them one at a time before launching the agent, stores answers in an in-memory conversation, and passes the collected values to skill actions through `params`.
 Arguments may include `dependsOn` to ask a field only when previously collected
